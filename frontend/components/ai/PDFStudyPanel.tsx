@@ -1395,7 +1395,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         // Normal chat view
         return (
           <>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto sidebar-scrollbar">
               <ChatMessageList
                 messages={activeBranch}
                 workspaceContext={buildWorkspaceContext(
@@ -1438,7 +1438,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         // Show history grid if no flashcard set is selected and history exists
         if (!selectedFlashcardSetId && flashcardHistory.length > 0 && flashcards.length === 0) {
           return (
-            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto sidebar-scrollbar">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Flashcard Sets</h3>
                 <button
@@ -1563,7 +1563,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         const currentCard = flashcards[currentFlashcardIndex];
         return (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto sidebar-scrollbar">
               <div className="p-4 pb-0">
                 <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
                   <div className="flex items-center gap-3">
@@ -1640,7 +1640,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-foreground">Ask questions about this flashcard</p>
                     </div>
-                    <div className="min-h-[200px] overflow-y-auto border border-border rounded-lg bg-background">
+                    <div className="min-h-[200px] overflow-y-auto sidebar-scrollbar border border-border rounded-lg bg-background">
                       <ChatMessageList
                         messages={flashcardChatActiveBranch}
                         workspaceContext={buildWorkspaceContext(
@@ -1689,7 +1689,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         // Show history grid if no quiz is selected and history exists
         if (!selectedQuizId && quizHistory.length > 0 && quizQuestions.length === 0) {
           return (
-            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto sidebar-scrollbar">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Quiz History</h3>
                 <button
@@ -1909,7 +1909,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         const isAnswered = currentUserAnswer !== null;
 
         return (
-          <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto text-sm">
+          <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto sidebar-scrollbar text-sm">
             {/* Header with score and progress */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -2201,7 +2201,7 @@ The user is studying this flashcard and may ask questions about it, need help un
             </div>
             <div 
               ref={summaryContainerRef}
-              className="flex-1 prose prose-sm max-w-none dark:prose-invert overflow-y-auto" 
+              className="flex-1 prose prose-sm max-w-none dark:prose-invert overflow-y-auto sidebar-scrollbar" 
               data-summary-content="true"
             >
               <MarkdownRenderer content={summary} />
