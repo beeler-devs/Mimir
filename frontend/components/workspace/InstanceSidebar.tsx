@@ -499,7 +499,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+        <div className="flex-1 overflow-y-auto sidebar-scrollbar px-4 py-3 space-y-1">
           {instances.length === 0 && folders.length === 0 && !creatingNewFolder && (
             <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
               Create your first instance to get started.
@@ -708,7 +708,7 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
           placeholder="Search instances..."
           className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-[#F5F5F5]"
         />
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto sidebar-scrollbar p-2">
           {filteredInstances.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
               {query ? 'No instances found' : 'Start typing to search'}
