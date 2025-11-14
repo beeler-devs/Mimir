@@ -120,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 p-8 space-y-8 overflow-y-auto">
           <div>
             <h2 className="text-2xl font-semibold">General</h2>
-            <p className="text-sm text-muted-foreground">Appearance and accessibility controls for your workspace.</p>
+            <p className="text-sm text-muted-foreground">Appearance and accessibility controls for Mimir.</p>
           </div>
 
           <section className="space-y-4">

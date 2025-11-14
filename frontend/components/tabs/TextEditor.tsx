@@ -68,7 +68,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
           flex-1 w-full p-4 
           rounded-xl border border-input
           bg-background text-foreground
-          font-mono text-base
+          font-mono text-sm
           focus:outline-none
           resize-none
         "

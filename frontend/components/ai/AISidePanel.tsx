@@ -88,17 +88,16 @@ export const AISidePanel: React.FC = () => {
   };
 
   return (
-    <>
-      <div className="flex flex-col h-full">
-        {/* View Mode Toggle */}
-        <div className="flex border-b border-border">
+    <div className="flex flex-col h-full">
+      {/* View Mode Toggle */}
+      <div className="flex items-center border-b border-border px-3">
+        <div className="flex flex-1 border border-border rounded-xl overflow-hidden">
           <button
             onClick={() => setViewMode('chat')}
             className={`
-              flex-1 flex items-center justify-center space-x-2 py-3
-              text-sm font-medium transition-colors
+              flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors
               ${viewMode === 'chat' 
-                ? 'bg-background text-foreground border-b-2 border-primary' 
+                ? 'bg-background text-foreground' 
                 : 'text-muted-foreground hover:text-foreground'}
             `}
           >
@@ -108,10 +107,9 @@ export const AISidePanel: React.FC = () => {
           <button
             onClick={() => setViewMode('tree')}
             className={`
-              flex-1 flex items-center justify-center space-x-2 py-3
-              text-sm font-medium transition-colors
+              flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors
               ${viewMode === 'tree' 
-                ? 'bg-background text-foreground border-b-2 border-primary' 
+                ? 'bg-background text-foreground' 
                 : 'text-muted-foreground hover:text-foreground'}
             `}
           >
@@ -120,31 +118,29 @@ export const AISidePanel: React.FC = () => {
           </button>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden">
-          {viewMode === 'chat' ? (
-            <ChatMessageList messages={activeBranch} />
-          ) : (
-            <ChatTreeView
-              nodes={nodes}
-              activeNodeId={activeNodeId || ''}
-              onNodeClick={handleNodeClick}
-            />
-          )}
-        </div>
+        <VoiceButton size="sm" className="ml-3" />
+      </div>
 
-        {/* Chat Input (only in chat mode) */}
-        {viewMode === 'chat' && (
-          <ChatInput
-            onSend={handleSendMessage}
-            loading={loading}
+      {/* Content Area */}
+      <div className="flex-1 overflow-hidden">
+        {viewMode === 'chat' ? (
+          <ChatMessageList messages={activeBranch} />
+        ) : (
+          <ChatTreeView
+            nodes={nodes}
+            activeNodeId={activeNodeId || ''}
+            onNodeClick={handleNodeClick}
           />
         )}
       </div>
 
-      {/* Voice Button */}
-      <VoiceButton />
-    </>
+      {/* Chat Input (only in chat mode) */}
+      {viewMode === 'chat' && (
+        <ChatInput
+          onSend={handleSendMessage}
+          loading={loading}
+        />
+      )}
+    </div>
   );
 };
-

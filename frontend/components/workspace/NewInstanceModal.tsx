@@ -47,7 +47,7 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
       <div className="p-8 space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Create instance</h2>
-          <p className="text-sm text-muted-foreground">Choose a type and name to spin up a fresh workspace.</p>
+          <p className="text-sm text-muted-foreground">Choose a type and name to spin up a fresh canvas.</p>
         </div>
 
         <div className="space-y-4">

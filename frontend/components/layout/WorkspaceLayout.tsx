@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { PanelsLeftRight } from 'lucide-react';
+import { VoiceButton } from '@/components/ai/VoiceButton';
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -21,50 +22,48 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
         {children}
       </div>
       
-      {/* Expand Bar (shown when sidebar is collapsed) */}
-      {!sidebarOpen && (
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="
-            absolute right-0 top-0 h-full w-1
-            bg-border hover:bg-primary hover:w-1.5
-            transition-all duration-200
-            cursor-pointer z-10
-          "
-          aria-label="Expand sidebar"
-        />
-      )}
-      
       {/* AI Sidepanel */}
       <div
         className={`
           relative border-l border-border bg-card
           transition-all duration-300 ease-in-out
-          ${sidebarOpen ? 'w-96' : 'w-0'}
+          ${sidebarOpen ? 'w-96' : 'w-14'}
           overflow-hidden
         `}
       >
-        {/* Collapse Button (shown when sidebar is open) */}
-        {sidebarOpen && (
+        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96`}>
+          {sidebar}
+        </div>
+
+        {sidebarOpen ? (
           <button
             onClick={() => setSidebarOpen(false)}
             className="
-              absolute left-0 top-4 -translate-x-1/2
-              p-1.5 rounded-full
-              bg-background border border-border
-              hover:bg-muted transition-colors
-              z-10
+              absolute top-3 right-3
+              p-2 rounded-xl border border-border
+              bg-background hover:bg-muted transition-colors
+              text-muted-foreground hover:text-foreground
             "
             aria-label="Collapse sidebar"
           >
-            <ChevronRight className="h-4 w-4" />
+            <PanelsLeftRight className="h-4 w-4" />
           </button>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-between py-5">
+            <VoiceButton size="sm" />
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="
+                p-2 rounded-xl border border-border
+                bg-background hover:bg-muted transition-colors
+                text-muted-foreground hover:text-foreground
+              "
+              aria-label="Expand sidebar"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+          </div>
         )}
-        
-        {/* Sidebar Content */}
-        <div className="h-full w-96">
-          {sidebar}
-        </div>
       </div>
     </div>
   );

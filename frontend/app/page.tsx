@@ -68,7 +68,7 @@ const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center text-center px-8">
     <p className="text-lg font-semibold mb-2">No instance selected</p>
     <p className="text-sm text-muted-foreground mb-6">
-      Create a new workspace instance or select one from the left panel to get started.
+      Create a new instance or select one from the left panel to get started.
     </p>
     <Button onClick={onCreate}>Create instance</Button>
   </div>
