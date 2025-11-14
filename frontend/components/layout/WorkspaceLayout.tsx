@@ -31,7 +31,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
           overflow-hidden
         `}
       >
-        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96`}>
+        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96 pt-12`}>
           {sidebar}
         </div>
 
@@ -39,7 +39,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
           <button
             onClick={() => setSidebarOpen(false)}
             className="
-              absolute top-3 right-3
+              absolute top-3 left-3
               p-2 rounded-xl border border-border
               bg-background hover:bg-muted transition-colors
               text-muted-foreground hover:text-foreground

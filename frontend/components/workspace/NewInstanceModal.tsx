@@ -43,14 +43,14 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="p-8 space-y-6">
+    <Modal open={open} onClose={onClose} className="!max-w-xl">
+      <div className="p-6 space-y-5">
         <div>
-          <h2 className="text-2xl font-semibold">Create instance</h2>
-          <p className="text-sm text-muted-foreground">Choose a type and name to spin up a fresh canvas.</p>
+          <h2 className="text-xl font-semibold">Create instance</h2>
+          <p className="text-sm text-muted-foreground mt-1">Choose a type and name to spin up a fresh canvas.</p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <label className="text-sm font-medium text-muted-foreground">Title</label>
           <Input
             value={title}
@@ -62,7 +62,7 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
 
         <div className="space-y-3">
           <p className="text-sm font-medium text-muted-foreground">Type</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="flex flex-col gap-2">
             {typeOptions.map((option) => {
               const Icon = option.icon;
               const selected = type === option.id;
@@ -72,22 +72,24 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
                   onClick={() => setType(option.id)}
                   type="button"
                   className={`
-                    border rounded-2xl p-4 h-full text-left transition-colors
-                    ${selected ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/60'}
+                    border rounded-xl p-3 text-left transition-colors flex items-center gap-3
+                    ${selected ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/60 hover:bg-muted/40'}
                   `}
                 >
-                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                    <Icon className="h-5 w-5" />
+                  <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0 ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                    <Icon className="h-4 w-4" />
                   </span>
-                  <p className="mt-3 font-medium">{option.label}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{option.description}</p>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{option.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{option.description}</p>
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+        <div className="flex justify-end gap-3 pt-3 border-t border-border">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>

@@ -90,35 +90,43 @@ export const AISidePanel: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* View Mode Toggle */}
-      <div className="flex items-center border-b border-border px-3">
-        <div className="flex flex-1 border border-border rounded-xl overflow-hidden">
-          <button
-            onClick={() => setViewMode('chat')}
-            className={`
-              flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors
-              ${viewMode === 'chat' 
-                ? 'bg-background text-foreground' 
-                : 'text-muted-foreground hover:text-foreground'}
-            `}
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span>Chat</span>
-          </button>
-          <button
-            onClick={() => setViewMode('tree')}
-            className={`
-              flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors
-              ${viewMode === 'tree' 
-                ? 'bg-background text-foreground' 
-                : 'text-muted-foreground hover:text-foreground'}
-            `}
-          >
-            <GitBranch className="h-4 w-4" />
-            <span>Tree</span>
-          </button>
-        </div>
+      <div className="flex items-center border-b border-border px-4 py-3 gap-3">
+        {[
+          { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
+          { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
+        ].map(({ id, label, icon: Icon }) => {
+          const active = viewMode === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setViewMode(id)}
+              className={`
+                flex-1 group rounded-2xl border px-4 py-3 text-left transition-all
+                focus-visible:outline-none focus-visible:ring-2
+                ${active ? 'border-primary/70 bg-primary/5 text-foreground focus-visible:ring-primary/60' : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 focus-visible:ring-primary/30'}
+              `}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`
+                    h-9 w-9 rounded-xl flex items-center justify-center
+                    ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground group-hover:text-foreground'}
+                  `}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {id === 'chat' ? 'Talk with Mimir' : 'Navigate responses'}
+                  </p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
 
-        <VoiceButton size="sm" className="ml-3" />
+        <VoiceButton size="sm" className="shrink-0" />
       </div>
 
       {/* Content Area */}
