@@ -1,0 +1,427 @@
+'use client';
+
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { WorkspaceLayout } from '@/components/layout';
+import { AISidePanel } from '@/components/ai/AISidePanel';
+import { TextEditor, CodeEditor, AnnotateCanvas } from '@/components/tabs';
+import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
+import { Button } from '@/components/common';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import type {
+  WorkspaceInstance,
+  InstanceType,
+  ThemePreference,
+  CodeLanguage,
+  Folder,
+} from '@/lib/types';
+import {
+  loadUserFolders,
+  loadUserInstances,
+  createInstance as createInstanceDB,
+  updateInstance as updateInstanceDB,
+  deleteInstance as deleteInstanceDB,
+  createFolder as createFolderDB,
+  updateFolder as updateFolderDB,
+  deleteFolder as deleteFolderDB,
+} from '@/lib/db/instances';
+
+const STORAGE_KEYS = {
+  active: 'mimir.activeInstance',
+  theme: 'mimir.themePreference',
+};
+
+const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
+  if (type === 'text') {
+    return { content: '' };
+  }
+  if (type === 'code') {
+    return {
+      language: 'python' as CodeLanguage,
+      code: '# Write your code here\n',
+    };
+  }
+  return {};
+};
+
+const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
+  <div className="h-full flex flex-col items-center justify-center text-center px-8">
+    <p className="text-lg font-semibold mb-2">No instance selected</p>
+    <p className="text-sm text-muted-foreground mb-6">
+      Create a new instance or select one from the left panel to get started.
+    </p>
+    <Button onClick={onCreate}>Create instance</Button>
+  </div>
+);
+
+const applyThemePreference = (preference: ThemePreference) => {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (preference === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('dark', prefersDark);
+  } else {
+    root.classList.toggle('dark', preference === 'dark');
+  }
+};
+
+function WorkspaceContent() {
+  const [instances, setInstances] = useState<WorkspaceInstance[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newInstanceOpen, setNewInstanceOpen] = useState(false);
+  const [themePreference, setThemePreference] = useState<ThemePreference>('light');
+  const [loading, setLoading] = useState(true);
+  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Load instances and folders from database on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [loadedInstances, loadedFolders] = await Promise.all([
+          loadUserInstances(),
+          loadUserFolders(),
+        ]);
+
+        setInstances(loadedInstances);
+        setFolders(loadedFolders);
+
+        // Restore active instance from localStorage
+        const storedActive = localStorage.getItem(STORAGE_KEYS.active);
+        const validActive =
+          storedActive && loadedInstances.some((instance) => instance.id === storedActive)
+            ? storedActive
+            : loadedInstances[0]?.id ?? null;
+        setActiveInstanceId(validActive);
+
+        // Restore theme preference
+        const storedTheme = localStorage.getItem(STORAGE_KEYS.theme) as ThemePreference | null;
+        if (storedTheme) {
+          setThemePreference(storedTheme);
+          applyThemePreference(storedTheme);
+        } else {
+          setThemePreference('light');
+          applyThemePreference('light');
+        }
+      } catch (error) {
+        console.error('Failed to load workspace data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Save active instance to localStorage
+  useEffect(() => {
+    if (activeInstanceId) {
+      localStorage.setItem(STORAGE_KEYS.active, activeInstanceId);
+    }
+  }, [activeInstanceId]);
+
+  // Save theme preference
+  useEffect(() => {
+    if (!loading) {
+      localStorage.setItem(STORAGE_KEYS.theme, themePreference);
+      applyThemePreference(themePreference);
+    }
+  }, [themePreference, loading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleMedia = () => {
+      if (themePreference === 'system') {
+        applyThemePreference('system');
+      }
+    };
+    media.addEventListener('change', handleMedia);
+    return () => media.removeEventListener('change', handleMedia);
+  }, [themePreference]);
+
+  const activeInstance = useMemo(
+    () => instances.find((instance) => instance.id === activeInstanceId) ?? null,
+    [instances, activeInstanceId]
+  );
+
+  const handleRename = async (id: string, title: string) => {
+    const nextTitle = title.trim();
+    if (nextTitle.length === 0) return;
+
+    // Optimistically update UI
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === id ? { ...instance, title: nextTitle } : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(id, { title: nextTitle });
+    } catch (error) {
+      console.error('Failed to rename instance:', error);
+      // Could revert UI change here if needed
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    // Optimistically update UI
+    setInstances((prev) => {
+      const filtered = prev.filter((instance) => instance.id !== id);
+      if (activeInstanceId === id) {
+        setActiveInstanceId(filtered[0]?.id ?? null);
+      }
+      return filtered;
+    });
+
+    // Delete from database
+    try {
+      await deleteInstanceDB(id);
+    } catch (error) {
+      console.error('Failed to delete instance:', error);
+      // Could revert UI change here if needed
+    }
+  };
+
+  const handleCreateInstance = async (title: string, type: InstanceType) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    try {
+      const newInstance = await createInstanceDB({
+        title: trimmed,
+        type,
+        folderId: null,
+        data: createInstanceData(type),
+      } as Omit<WorkspaceInstance, 'id'>);
+
+      setInstances((prev) => [...prev, newInstance]);
+      setActiveInstanceId(newInstance.id);
+    } catch (error) {
+      console.error('Failed to create instance:', error);
+    }
+  };
+
+  // Debounced save function
+  const debouncedSave = useCallback(
+    (instanceId: string, data: Record<string, unknown>) => {
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+      }
+
+      const timeout = setTimeout(async () => {
+        try {
+          await updateInstanceDB(instanceId, { data });
+        } catch (error) {
+          console.error('Failed to save instance:', error);
+        }
+      }, 2000); // 2 second debounce
+
+      setSaveTimeout(timeout);
+    },
+    [saveTimeout]
+  );
+
+  const updateTextContent = (value: string) => {
+    if (!activeInstanceId) return;
+    
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'text'
+          ? { ...instance, data: { content: value } }
+          : instance
+      )
+    );
+
+    // Debounced save to database
+    debouncedSave(activeInstanceId, { content: value });
+  };
+
+  const updateCode = (value: string) => {
+    if (!activeInstanceId) return;
+    
+    // Find current instance to preserve language
+    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'code') return;
+
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'code'
+          ? { ...instance, data: { ...instance.data, code: value } }
+          : instance
+      )
+    );
+
+    // Debounced save to database
+    debouncedSave(activeInstanceId, { 
+      language: currentInstance.data.language, 
+      code: value 
+    });
+  };
+
+  const updateLanguage = async (language: CodeLanguage) => {
+    if (!activeInstanceId) return;
+    
+    // Find current instance to preserve code
+    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'code') return;
+
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'code'
+          ? { ...instance, data: { ...instance.data, language } }
+          : instance
+      )
+    );
+
+    // Save immediately (no debounce for language changes)
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: { language, code: currentInstance.data.code },
+      });
+    } catch (error) {
+      console.error('Failed to update language:', error);
+    }
+  };
+
+  const renderActiveContent = () => {
+    if (loading) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center">
+          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-sm text-muted-foreground">Loading workspace...</p>
+        </div>
+      );
+    }
+
+    if (!activeInstance) {
+      return <EmptyState onCreate={() => setNewInstanceOpen(true)} />;
+    }
+    
+    switch (activeInstance.type) {
+      case 'text':
+        return (
+          <TextEditor
+            content={activeInstance.data.content}
+            onChange={updateTextContent}
+          />
+        );
+      case 'code':
+        return (
+          <CodeEditor
+            language={activeInstance.data.language}
+            code={activeInstance.data.code}
+            onCodeChange={updateCode}
+            onLanguageChange={updateLanguage}
+          />
+        );
+      case 'annotate':
+      default:
+        return <AnnotateCanvas key={activeInstance.id} />;
+    }
+  };
+
+  const handleCreateFolder = async (name: string, parentId?: string) => {
+    try {
+      const newFolder = await createFolderDB(name, parentId || null);
+      setFolders((prev) => [...prev, newFolder]);
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+    }
+  };
+
+  const handleRenameFolder = async (id: string, name: string) => {
+    const nextName = name.trim();
+    if (nextName.length === 0) return;
+
+    // Optimistically update UI
+    setFolders((prev) =>
+      prev.map((folder) =>
+        folder.id === id ? { ...folder, name: nextName } : folder
+      )
+    );
+
+    // Save to database
+    try {
+      await updateFolderDB(id, nextName);
+    } catch (error) {
+      console.error('Failed to rename folder:', error);
+    }
+  };
+
+  const handleDeleteFolder = async (id: string) => {
+    // Optimistically update UI
+    setFolders((prev) => prev.filter((folder) => folder.id !== id));
+
+    // Delete from database
+    try {
+      await deleteFolderDB(id);
+    } catch (error) {
+      console.error('Failed to delete folder:', error);
+    }
+  };
+
+  const handleMoveToFolder = async (instanceId: string, folderId: string | null) => {
+    // Optimistically update UI
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === instanceId ? { ...instance, folderId } : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(instanceId, { folderId });
+    } catch (error) {
+      console.error('Failed to move instance:', error);
+    }
+  };
+
+  return (
+    <div className="flex h-screen bg-background">
+      <InstanceSidebar
+        instances={instances}
+        folders={folders}
+        activeInstanceId={activeInstanceId}
+        onSelect={(id) => setActiveInstanceId(id)}
+        onCreateInstance={() => setNewInstanceOpen(true)}
+        onRename={handleRename}
+        onDelete={handleDelete}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onCreateFolder={handleCreateFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
+        onMoveToFolder={handleMoveToFolder}
+      />
+
+      <div className="flex-1 h-full overflow-hidden">
+        <WorkspaceLayout sidebar={<AISidePanel />}>{renderActiveContent()}</WorkspaceLayout>
+      </div>
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={themePreference}
+        onThemeChange={setThemePreference}
+      />
+
+      <NewInstanceModal
+        open={newInstanceOpen}
+        onClose={() => setNewInstanceOpen(false)}
+        onCreate={handleCreateInstance}
+      />
+    </div>
+  );
+}
+
+export default function WorkspacePage() {
+  return (
+    <ProtectedRoute>
+      <WorkspaceContent />
+    </ProtectedRoute>
+  );
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatNode } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
@@ -8,6 +8,15 @@ import { ChatInput } from './ChatInput';
 import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
 import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
+import {
+  loadUserChats,
+  createChat,
+  loadChatMessages,
+  saveChatMessage,
+  updateChatTitle,
+  generateChatTitle,
+  Chat,
+} from '@/lib/db/chats';
 
 type ViewMode = 'chat' | 'tree';
 
@@ -24,33 +33,90 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [loading, setLoading] = useState(false);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [initializing, setInitializing] = useState(true);
 
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
 
-  const handleSendMessage = async (content: string) => {
-    // Add user message
-    const userMessage: Omit<ChatNode, 'id' | 'createdAt'> = {
-      role: 'user',
-      content,
-      parentId: activeNodeId,
+  // Load or create chat on mount
+  useEffect(() => {
+    const initializeChat = async () => {
+      try {
+        // Try to load stored chat ID from localStorage
+        const storedChatId = localStorage.getItem('mimir.activeChatId');
+        
+        if (storedChatId) {
+          // Load messages for the stored chat
+          const messages = await loadChatMessages(storedChatId);
+          setNodes(messages);
+          setChatId(storedChatId);
+          
+          // Set active node to the last message
+          if (messages.length > 0) {
+            setActiveNodeId(messages[messages.length - 1].id);
+          }
+        } else {
+          // Create a new chat
+          const newChat = await createChat();
+          setChatId(newChat.id);
+          localStorage.setItem('mimir.activeChatId', newChat.id);
+        }
+
+        // Load all chats for the user
+        const userChats = await loadUserChats();
+        setChats(userChats);
+      } catch (error) {
+        console.error('Error initializing chat:', error);
+      } finally {
+        setInitializing(false);
+      }
     };
-    
-    const updatedNodes = addMessage(nodes, userMessage);
-    const newUserNode = updatedNodes[updatedNodes.length - 1];
-    setNodes(updatedNodes);
-    setActiveNodeId(newUserNode.id);
+
+    initializeChat();
+  }, []);
+
+  // Save chatId to localStorage when it changes
+  useEffect(() => {
+    if (chatId) {
+      localStorage.setItem('mimir.activeChatId', chatId);
+    }
+  }, [chatId]);
+
+  const handleSendMessage = async (content: string) => {
+    if (!chatId) {
+      console.error('No active chat');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Call FastAPI backend for AI response
-      const branchPath = buildBranchPath(updatedNodes, newUserNode.id);
-      const backendUrl = 'http://localhost:8001'; // FastAPI backend
-      
-      const response = await fetch(`${backendUrl}/chat`, {
+      // Save user message to database
+      const savedUserMessage = await saveChatMessage(chatId, {
+        parentId: activeNodeId,
+        role: 'user',
+        content,
+      });
+
+      // Update local state
+      const updatedNodes = [...nodes, savedUserMessage];
+      setNodes(updatedNodes);
+      setActiveNodeId(savedUserMessage.id);
+
+      // If this is the first user message, generate a title
+      if (nodes.length === 0) {
+        const title = generateChatTitle(content);
+        await updateChatTitle(chatId, title);
+      }
+
+      // Call API to get AI response
+      const branchPath = buildBranchPath(updatedNodes, savedUserMessage.id);
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: getActiveBranch(updatedNodes, newUserNode.id).map(n => ({
+          messages: getActiveBranch(updatedNodes, savedUserMessage.id).map(n => ({
             role: n.role,
             content: n.content,
           })),
@@ -60,30 +126,33 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
 
       const data = await response.json();
       
-      // Add AI response
-      const aiMessage: Omit<ChatNode, 'id' | 'createdAt'> = {
+      // Save AI response to database
+      const savedAIMessage = await saveChatMessage(chatId, {
+        parentId: savedUserMessage.id,
         role: 'assistant',
         content: data.message.content,
-        parentId: newUserNode.id,
         suggestedAnimation: data.suggestedAnimation,
-      };
-      
-      const nodesWithAI = addMessage(updatedNodes, aiMessage);
-      const newAINode = nodesWithAI[nodesWithAI.length - 1];
+      });
+
+      // Update local state
+      const nodesWithAI = [...updatedNodes, savedAIMessage];
       setNodes(nodesWithAI);
-      setActiveNodeId(newAINode.id);
+      setActiveNodeId(savedAIMessage.id);
     } catch (error) {
       console.error('Error sending message:', error);
-      // Add error message
-      const errorMessage: Omit<ChatNode, 'id' | 'createdAt'> = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-        parentId: newUserNode.id,
-      };
-      const nodesWithError = addMessage(updatedNodes, errorMessage);
-      const errorNode = nodesWithError[nodesWithError.length - 1];
-      setNodes(nodesWithError);
-      setActiveNodeId(errorNode.id);
+      
+      // Try to save error message to database
+      try {
+        const errorMessage = await saveChatMessage(chatId, {
+          parentId: activeNodeId,
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please try again.',
+        });
+        setNodes(prev => [...prev, errorMessage]);
+        setActiveNodeId(errorMessage.id);
+      } catch (dbError) {
+        console.error('Failed to save error message:', dbError);
+      }
     } finally {
       setLoading(false);
     }
@@ -93,6 +162,15 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
     setActiveNodeId(nodeId);
     setViewMode('chat');
   };
+
+  if (initializing) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center">
+        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm text-muted-foreground">Loading chat...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -142,7 +220,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
         {viewMode === 'chat' ? (
           <ChatMessageList messages={activeBranch} />
         ) : (
