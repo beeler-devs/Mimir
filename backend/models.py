@@ -26,3 +26,4 @@ class JobResponse(BaseModel):
     video_url: Optional[str] = None
     error: Optional[str] = None
 
+

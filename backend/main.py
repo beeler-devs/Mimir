@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models import HealthResponse, JobRequest, JobResponse
-from manim_service import manim_service
+from manim_worker.manim_service import manim_service
 import logging
 
 """
@@ -117,3 +117,4 @@ if __name__ == "__main__":
     
     logger.info(f"Starting Manim Worker on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
+

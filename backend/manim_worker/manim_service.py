@@ -13,13 +13,12 @@ from concurrent.futures import ThreadPoolExecutor
 from supabase import create_client, Client
 from manim import config, tempconfig
 from models import JobStatus
-from scenes import select_scene
+from manim_worker.scenes import select_scene
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-# Try to load from current directory first
-from pathlib import Path
-env_path = Path(__file__).parent / '.env'
+# Load from backend directory (parent of manim_worker)
+env_path = Path(__file__).parent.parent / '.env'
 
 # Debug: Show what path we're trying to load
 import sys
