@@ -7,15 +7,19 @@ import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
 import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
-import { MessageSquare, GitBranch } from 'lucide-react';
+import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
 
 type ViewMode = 'chat' | 'tree';
+
+interface AISidePanelProps {
+  collapseSidebar?: () => void;
+}
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC = () => {
+export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
@@ -89,8 +93,18 @@ export const AISidePanel: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* View Mode Toggle */}
-      <div className="flex items-center border-b border-border px-4 py-3 gap-3">
+      {/* Header Actions */}
+      <div className="flex items-center border-b border-border px-4 py-3 gap-2">
+        {collapseSidebar && (
+          <button
+            onClick={collapseSidebar}
+            className="h-10 w-10 rounded-xl border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+            aria-label="Collapse AI panel"
+          >
+            <PanelsLeftRight className="h-4 w-4" />
+          </button>
+        )}
+
         {[
           { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
           { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
@@ -101,26 +115,21 @@ export const AISidePanel: React.FC = () => {
               key={id}
               onClick={() => setViewMode(id)}
               className={`
-                flex-1 group rounded-2xl border px-4 py-3 text-left transition-all
+                flex-1 group rounded-2xl border h-10 px-3 text-sm transition-all
                 focus-visible:outline-none focus-visible:ring-2
                 ${active ? 'border-primary/70 bg-primary/5 text-foreground focus-visible:ring-primary/60' : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 focus-visible:ring-primary/30'}
               `}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <span
                   className={`
-                    h-9 w-9 rounded-xl flex items-center justify-center
+                    h-7 w-7 rounded-xl flex items-center justify-center
                     ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground group-hover:text-foreground'}
                   `}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-3.5 w-3.5" />
                 </span>
-                <div>
-                  <p className="font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {id === 'chat' ? 'Talk with Mimir' : 'Navigate responses'}
-                  </p>
-                </div>
+                <span className="font-medium">{label}</span>
               </div>
             </button>
           );

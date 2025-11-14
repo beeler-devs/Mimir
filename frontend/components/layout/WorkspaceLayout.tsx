@@ -4,6 +4,12 @@ import React, { useState } from 'react';
 import { PanelsLeftRight } from 'lucide-react';
 import { VoiceButton } from '@/components/ai/VoiceButton';
 
+interface SidebarControlProps {
+  collapseSidebar?: () => void;
+  sidebarOpen?: boolean;
+  setSidebarOpen?: (open: boolean) => void;
+}
+
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
   sidebar: React.ReactNode;
@@ -14,6 +20,14 @@ interface WorkspaceLayoutProps {
  */
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, sidebar }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const canControlSidebar = React.isValidElement(sidebar);
+  const sidebarContent = canControlSidebar
+    ? React.cloneElement(sidebar as React.ReactElement<SidebarControlProps>, {
+        collapseSidebar: () => setSidebarOpen(false),
+        sidebarOpen,
+        setSidebarOpen,
+      })
+    : sidebar;
   
   return (
     <div className="flex h-full overflow-hidden relative">
@@ -31,26 +45,27 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
           overflow-hidden
         `}
       >
-        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96 pt-12`}>
-          {sidebar}
+        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96`}>
+          {sidebarContent}
         </div>
 
         {sidebarOpen ? (
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="
-              absolute top-3 left-3
-              p-2 rounded-xl border border-border
-              bg-background hover:bg-muted transition-colors
-              text-muted-foreground hover:text-foreground
-            "
-            aria-label="Collapse sidebar"
-          >
-            <PanelsLeftRight className="h-4 w-4" />
-          </button>
+          !canControlSidebar && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="
+                absolute top-3 left-3
+                p-2 rounded-xl border border-border
+                bg-background hover:bg-muted transition-colors
+                text-muted-foreground hover:text-foreground
+              "
+              aria-label="Collapse sidebar"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+          )
         ) : (
-          <div className="h-full flex flex-col items-center justify-between py-5">
-            <VoiceButton size="sm" />
+          <div className="h-full flex flex-col items-center py-4 space-y-4">
             <button
               onClick={() => setSidebarOpen(true)}
               className="
@@ -62,6 +77,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
             >
               <PanelsLeftRight className="h-4 w-4" />
             </button>
+            <VoiceButton size="sm" />
           </div>
         )}
       </div>
