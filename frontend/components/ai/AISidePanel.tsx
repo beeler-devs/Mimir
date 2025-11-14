@@ -59,6 +59,7 @@ export const AISidePanel: React.FC = () => {
         role: 'assistant',
         content: data.message.content,
         parentId: newUserNode.id,
+        suggestedAnimation: data.suggestedAnimation,
       };
       
       const nodesWithAI = addMessage(updatedNodes, aiMessage);

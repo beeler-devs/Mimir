@@ -3,6 +3,7 @@
 import React from 'react';
 import { ChatNode } from '@/lib/types';
 import { Card } from '@/components/common';
+import { AnimationPanel } from './AnimationPanel';
 
 interface ChatMessageListProps {
   messages: ChatNode[];
@@ -26,31 +27,39 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages }) =>
   return (
     <div className="flex flex-col space-y-4 p-4 overflow-y-auto">
       {messages.map((message) => (
-        <div
-          key={message.id}
-          className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-        >
-          <Card
-            padding="sm"
-            className={`max-w-[85%] ${
-              message.role === 'user'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-card'
-            }`}
+        <div key={message.id}>
+          <div
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className="text-sm whitespace-pre-wrap break-words">
-              {message.content}
-            </div>
-            <div
-              className={`text-xs mt-2 ${
+            <Card
+              padding="sm"
+              className={`max-w-[85%] ${
                 message.role === 'user'
-                  ? 'text-primary-foreground/70'
-                  : 'text-muted-foreground'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-card'
               }`}
             >
-              {new Date(message.createdAt).toLocaleTimeString()}
+              <div className="text-sm whitespace-pre-wrap break-words">
+                {message.content}
+              </div>
+              <div
+                className={`text-xs mt-2 ${
+                  message.role === 'user'
+                    ? 'text-primary-foreground/70'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {new Date(message.createdAt).toLocaleTimeString()}
+              </div>
+            </Card>
+          </div>
+          
+          {/* Show animation panel if message has a suggestion */}
+          {message.role === 'assistant' && message.suggestedAnimation && (
+            <div className="mt-2 max-w-[85%]">
+              <AnimationPanel suggestion={message.suggestedAnimation} />
             </div>
-          </Card>
+          )}
         </div>
       ))}
     </div>

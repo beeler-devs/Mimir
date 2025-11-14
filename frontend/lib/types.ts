@@ -2,6 +2,12 @@
  * Core type definitions for Mimir
  */
 
+// Animation types
+export interface AnimationSuggestion {
+  description: string;
+  topic: string;
+}
+
 // Chat types
 export interface ChatNode {
   id: string;
@@ -9,6 +15,7 @@ export interface ChatNode {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  suggestedAnimation?: AnimationSuggestion;
 }
 
 export interface Chat {
@@ -57,6 +64,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   message: ChatMessage;
   nodeId: string;
+  suggestedAnimation?: AnimationSuggestion;
 }
 
 // Code editor types

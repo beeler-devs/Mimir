@@ -48,11 +48,55 @@ serve(async (req) => {
 
     // Stub response for now
     const lastUserMessage = messages[messages.length - 1];
+    const userContent = lastUserMessage.content.toLowerCase();
+    
+    // Check if user is asking for a visualization/animation
+    const animationKeywords = [
+      "visualize",
+      "animate",
+      "show me",
+      "draw",
+      "illustrate",
+      "brownian",
+      "random walk",
+      "plot",
+      "graph",
+      "demonstrate"
+    ];
+    
+    const shouldSuggestAnimation = animationKeywords.some(keyword => 
+      userContent.includes(keyword)
+    );
+    
+    // Determine animation topic and description
+    let suggestedAnimation = null;
+    if (shouldSuggestAnimation) {
+      let description = lastUserMessage.content;
+      let topic = "math"; // default
+      
+      if (userContent.includes("brownian")) {
+        description = "Visualize Brownian motion";
+        topic = "math";
+      } else if (userContent.includes("random walk")) {
+        description = "Visualize random walk";
+        topic = "math";
+      } else if (userContent.includes("matrix") || userContent.includes("transform")) {
+        description = "Visualize matrix transformation";
+        topic = "math";
+      }
+      
+      suggestedAnimation = {
+        description,
+        topic
+      };
+    }
+    
     const stubResponse = {
       message: {
         role: "assistant",
         content: `[Supabase Edge Function Stub]\n\nI received: "${lastUserMessage.content}"\n\nThis will connect to Claude API (${CLAUDE_MODEL}) in production.\nBranch depth: ${branchPath.length}`,
       },
+      suggestedAnimation,
       nodeId: `node-${Date.now()}`,
     };
 

@@ -2,5 +2,9 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 python-multipart==0.0.6
-# manim==0.18.0  # Uncomment when ready to use Manim
+Pillow==10.1.0
+numpy>=1.22,<2.0
+manim==0.18.0
+supabase==2.3.0
+python-dotenv==1.0.0
 
