@@ -110,9 +110,10 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
         await updateChatTitle(chatId, title);
       }
 
-      // Call API to get AI response
+      // Call backend API to get AI response
       const branchPath = buildBranchPath(updatedNodes, savedUserMessage.id);
-      const response = await fetch('/api/chat', {
+      const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
+      const response = await fetch(`${backendUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
