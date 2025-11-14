@@ -7,15 +7,19 @@ import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
 import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
-import { MessageSquare, GitBranch } from 'lucide-react';
+import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
 
 type ViewMode = 'chat' | 'tree';
+
+interface AISidePanelProps {
+  collapseSidebar?: () => void;
+}
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC = () => {
+export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
@@ -89,63 +93,72 @@ export const AISidePanel: React.FC = () => {
   };
 
   return (
-    <>
-      <div className="flex flex-col h-full">
-        {/* View Mode Toggle */}
-        <div className="flex border-b border-border">
+    <div className="flex flex-col h-full">
+      {/* Header Actions */}
+      <div className="flex items-center border-b border-border px-4 py-3 gap-2">
+        {collapseSidebar && (
           <button
-            onClick={() => setViewMode('chat')}
-            className={`
-              flex-1 flex items-center justify-center space-x-2 py-3
-              text-sm font-medium transition-colors
-              ${viewMode === 'chat' 
-                ? 'bg-background text-foreground border-b-2 border-primary' 
-                : 'text-muted-foreground hover:text-foreground'}
-            `}
+            onClick={collapseSidebar}
+            className="h-10 w-10 rounded-xl border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+            aria-label="Collapse AI panel"
           >
-            <MessageSquare className="h-4 w-4" />
-            <span>Chat</span>
+            <PanelsLeftRight className="h-4 w-4" />
           </button>
-          <button
-            onClick={() => setViewMode('tree')}
-            className={`
-              flex-1 flex items-center justify-center space-x-2 py-3
-              text-sm font-medium transition-colors
-              ${viewMode === 'tree' 
-                ? 'bg-background text-foreground border-b-2 border-primary' 
-                : 'text-muted-foreground hover:text-foreground'}
-            `}
-          >
-            <GitBranch className="h-4 w-4" />
-            <span>Tree</span>
-          </button>
-        </div>
+        )}
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden">
-          {viewMode === 'chat' ? (
-            <ChatMessageList messages={activeBranch} />
-          ) : (
-            <ChatTreeView
-              nodes={nodes}
-              activeNodeId={activeNodeId || ''}
-              onNodeClick={handleNodeClick}
-            />
-          )}
-        </div>
+        {[
+          { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
+          { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
+        ].map(({ id, label, icon: Icon }) => {
+          const active = viewMode === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setViewMode(id)}
+              className={`
+                flex-1 group rounded-2xl border h-10 px-3 text-sm transition-all
+                focus-visible:outline-none focus-visible:ring-2
+                ${active ? 'border-primary/70 bg-primary/5 text-foreground focus-visible:ring-primary/60' : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 focus-visible:ring-primary/30'}
+              `}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`
+                    h-7 w-7 rounded-xl flex items-center justify-center
+                    ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground group-hover:text-foreground'}
+                  `}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="font-medium">{label}</span>
+              </div>
+            </button>
+          );
+        })}
 
-        {/* Chat Input (only in chat mode) */}
-        {viewMode === 'chat' && (
-          <ChatInput
-            onSend={handleSendMessage}
-            loading={loading}
+        <VoiceButton size="sm" className="shrink-0" />
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-hidden">
+        {viewMode === 'chat' ? (
+          <ChatMessageList messages={activeBranch} />
+        ) : (
+          <ChatTreeView
+            nodes={nodes}
+            activeNodeId={activeNodeId || ''}
+            onNodeClick={handleNodeClick}
           />
         )}
       </div>
 
-      {/* Voice Button */}
-      <VoiceButton />
-    </>
+      {/* Chat Input (only in chat mode) */}
+      {viewMode === 'chat' && (
+        <ChatInput
+          onSend={handleSendMessage}
+          loading={loading}
+        />
+      )}
+    </div>
   );
 };
-

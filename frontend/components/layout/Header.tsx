@@ -28,12 +28,9 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
     <header className={`border-b border-border bg-background ${className}`}>
       <div className="flex items-center justify-between h-16 px-6">
         {/* Logo */}
-        <Link href="/text" className="flex items-center space-x-2">
-          <div className="text-2xl font-bold text-primary">
+        <Link href="/text" className="flex items-center">
+          <div className="text-2xl font-light uppercase tracking-tight text-primary" style={{ fontFamily: 'Inter, var(--font-geist-sans), sans-serif', fontWeight: 300 }}>
             Mimir
-          </div>
-          <div className="text-sm text-muted-foreground hidden sm:block">
-            AI Professor
           </div>
         </Link>
         
@@ -48,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
                 key={item.id}
                 href={item.href}
                 className={`
-                  flex items-center space-x-2 px-4 py-2 rounded-lg
+                  flex items-center space-x-2 px-4 py-2 rounded-xl
                   text-sm font-medium transition-all duration-200
                   ${
                     active

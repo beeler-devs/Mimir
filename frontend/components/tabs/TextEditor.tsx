@@ -1,15 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, KeyboardEvent } from 'react';
 import { Button } from '@/components/common';
 import { Send } from 'lucide-react';
+
+interface TextEditorProps {
+  content: string;
+  onChange: (value: string) => void;
+}
 
 /**
  * Rich text editor for notes, essays, and problem sets
  * Currently a simple textarea - can be enhanced with a rich text library later
  */
-export const TextEditor: React.FC = () => {
-  const [content, setContent] = useState('');
+export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => {
   const [selectedText, setSelectedText] = useState('');
 
   const handleTextSelection = () => {
@@ -26,28 +30,46 @@ export const TextEditor: React.FC = () => {
     }
   };
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.target as HTMLTextAreaElement;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      
+      // Insert 4 spaces at cursor position
+      const newContent = content.substring(0, start) + '    ' + content.substring(end);
+      onChange(newContent);
+      
+      // Move cursor after the inserted spaces
+      setTimeout(() => {
+        target.selectionStart = target.selectionEnd = start + 4;
+      }, 0);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col p-6 bg-background">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Text Editor</h2>
-        {selectedText && (
+      {selectedText && (
+        <div className="mb-4 flex items-center justify-end">
           <Button onClick={handleAskAI} size="sm">
             <Send className="h-4 w-4 mr-2" />
             Ask AI about selection
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       
       <textarea
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onMouseUp={handleTextSelection}
+        onKeyDown={handleKeyDown}
         className="
           flex-1 w-full p-4 
-          rounded-lg border border-input
+          rounded-xl border border-input
           bg-background text-foreground
-          font-mono text-base
-          focus:outline-none focus:ring-2 focus:ring-ring
+          font-mono text-sm
+          focus:outline-none
           resize-none
         "
         placeholder="Start writing your notes, problem sets, or essays here...&#10;&#10;Select any text and click 'Ask AI' to get explanations or guidance."
@@ -59,4 +81,3 @@ export const TextEditor: React.FC = () => {
     </div>
   );
 };
-

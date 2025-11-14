@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { PanelsLeftRight } from 'lucide-react';
+import { VoiceButton } from '@/components/ai/VoiceButton';
+
+interface SidebarControlProps {
+  collapseSidebar?: () => void;
+  sidebarOpen?: boolean;
+  setSidebarOpen?: (open: boolean) => void;
+}
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -13,11 +20,19 @@ interface WorkspaceLayoutProps {
  */
 export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, sidebar }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const canControlSidebar = React.isValidElement(sidebar);
+  const sidebarContent = canControlSidebar
+    ? React.cloneElement(sidebar as React.ReactElement<SidebarControlProps>, {
+        collapseSidebar: () => setSidebarOpen(false),
+        sidebarOpen,
+        setSidebarOpen,
+      })
+    : sidebar;
   
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden relative">
       {/* Main Content Area */}
-      <div className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'mr-0' : 'mr-0'}`}>
+      <div className="flex-1 overflow-auto transition-all duration-300">
         {children}
       </div>
       
@@ -26,35 +41,46 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
         className={`
           relative border-l border-border bg-card
           transition-all duration-300 ease-in-out
-          ${sidebarOpen ? 'w-96' : 'w-0'}
+          ${sidebarOpen ? 'w-96' : 'w-14'}
           overflow-hidden
         `}
       >
-        {/* Collapse/Expand Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className={`
-            absolute left-0 top-4 -translate-x-1/2
-            p-1.5 rounded-full
-            bg-background border border-border
-            hover:bg-muted transition-colors
-            z-10
-          `}
-          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          {sidebarOpen ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </button>
-        
-        {/* Sidebar Content */}
-        <div className="h-full w-96">
-          {sidebar}
+        <div className={`${sidebarOpen ? 'block' : 'hidden'} h-full w-96`}>
+          {sidebarContent}
         </div>
+
+        {sidebarOpen ? (
+          !canControlSidebar && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="
+                absolute top-3 left-3
+                p-2 rounded-xl border border-border
+                bg-background hover:bg-muted transition-colors
+                text-muted-foreground hover:text-foreground
+              "
+              aria-label="Collapse sidebar"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+          )
+        ) : (
+          <div className="h-full flex flex-col items-center py-4 space-y-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="
+                p-2 rounded-xl border border-border
+                bg-background hover:bg-muted transition-colors
+                text-muted-foreground hover:text-foreground
+              "
+              aria-label="Expand sidebar"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+            <VoiceButton size="sm" />
+          </div>
+        )}
       </div>
     </div>
   );
 };
-
