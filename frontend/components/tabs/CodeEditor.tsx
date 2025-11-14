@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { Button } from '@/components/common';
 import { Play, MessageCircle } from 'lucide-react';
@@ -17,6 +17,27 @@ def hello_world():
 
 hello_world()
 `);
+  const [theme, setTheme] = useState<'vs' | 'vs-dark'>('vs');
+
+  // Detect theme changes
+  useEffect(() => {
+    const updateTheme = () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      setTheme(isDark ? 'vs-dark' : 'vs');
+    };
+
+    // Initial theme
+    updateTheme();
+
+    // Watch for theme changes
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
   
   const languages: { value: CodeLanguage; label: string }[] = [
     { value: 'python', label: 'Python' },
@@ -79,10 +100,11 @@ hello_world()
           language={language}
           value={code}
           onChange={(value) => setCode(value || '')}
-          theme="vs-dark"
+          theme={theme}
           options={{
             minimap: { enabled: false },
             fontSize: 14,
+            fontFamily: "'JetBrains Mono', 'Courier New', monospace",
             lineNumbers: 'on',
             roundedSelection: true,
             scrollBeyondLastLine: false,
