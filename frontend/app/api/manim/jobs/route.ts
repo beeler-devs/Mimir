@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
+    console.log('[API] Manim worker response:', data);
     return NextResponse.json(data);
     
   } catch (error) {

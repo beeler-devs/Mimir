@@ -9,10 +9,10 @@ const MANIM_WORKER_URL = 'http://localhost:8001';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const jobId = params.id;
+    const { id: jobId } = await params;
     
     const response = await fetch(`${MANIM_WORKER_URL}/jobs/${jobId}`, {
       method: 'GET',
