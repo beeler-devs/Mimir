@@ -70,7 +70,7 @@ function WorkspaceContent() {
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newInstanceOpen, setNewInstanceOpen] = useState(false);
-  const [themePreference, setThemePreference] = useState<ThemePreference>('system');
+  const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
 
@@ -100,7 +100,8 @@ function WorkspaceContent() {
           setThemePreference(storedTheme);
           applyThemePreference(storedTheme);
         } else {
-          applyThemePreference('system');
+          setThemePreference('light');
+          applyThemePreference('light');
         }
       } catch (error) {
         console.error('Failed to load workspace data:', error);
@@ -424,4 +425,3 @@ export default function WorkspacePage() {
     </ProtectedRoute>
   );
 }
-
