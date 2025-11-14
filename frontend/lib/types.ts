@@ -75,12 +75,23 @@ export interface CodeEditorState {
   code: string;
 }
 
+// Folder types
+export interface Folder {
+  id: string;
+  userId: string;
+  name: string;
+  parentFolderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Workspace / instance types
 export type InstanceType = 'text' | 'code' | 'annotate';
 
 interface BaseInstance {
   id: string;
   title: string;
+  folderId: string | null;
 }
 
 export interface TextInstance extends BaseInstance {

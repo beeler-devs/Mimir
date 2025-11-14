@@ -2,8 +2,20 @@
 
 import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/common';
-import { FileText, Code2, PenTool, Plus, Settings2, MoreVertical, PanelsLeftRight } from 'lucide-react';
-import type { WorkspaceInstance } from '@/lib/types';
+import { 
+  FileText, 
+  Code2, 
+  PenTool, 
+  Plus, 
+  Settings2, 
+  MoreVertical, 
+  PanelsLeftRight,
+  Folder as FolderIcon,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown
+} from 'lucide-react';
+import type { WorkspaceInstance, Folder } from '@/lib/types';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -13,36 +25,49 @@ const typeMeta = {
 
 interface InstanceSidebarProps {
   instances: WorkspaceInstance[];
+  folders?: Folder[];
   activeInstanceId: string | null;
   onSelect: (id: string) => void;
   onCreateInstance: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onCreateFolder?: (name: string, parentId?: string) => void;
+  onRenameFolder?: (id: string, name: string) => void;
+  onDeleteFolder?: (id: string) => void;
+  onMoveToFolder?: (instanceId: string, folderId: string | null) => void;
 }
 
 /**
- * Left rail that lists workspace instances and handles creation/rename/delete
+ * Left rail that lists workspace instances and folders with tree structure
  */
 export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   instances,
+  folders = [],
   activeInstanceId,
   onSelect,
   onCreateInstance,
   onRename,
   onDelete,
   onOpenSettings,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveToFolder,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingType, setEditingType] = useState<'instance' | 'folder' | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev;
       if (next) {
         setEditingId(null);
+        setEditingType(null);
         setDraftTitle('');
         setMenuOpenId(null);
       }
@@ -50,29 +75,40 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     });
   };
 
-  const editingInstance = useMemo(
-    () => instances.find((instance) => instance.id === editingId),
-    [instances, editingId]
-  );
+  const toggleFolder = (folderId: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
 
-  const startEditing = (instanceId: string, title: string) => {
-    setEditingId(instanceId);
+  const startEditing = (id: string, title: string, type: 'instance' | 'folder') => {
+    setEditingId(id);
+    setEditingType(type);
     setDraftTitle(title);
+    setMenuOpenId(null);
   };
 
   const cancelEditing = () => {
     setEditingId(null);
+    setEditingType(null);
     setDraftTitle('');
   };
 
   const commitEditing = () => {
-    if (!editingId) return;
+    if (!editingId || !editingType) return;
     const trimmed = draftTitle.trim();
     if (trimmed.length > 0) {
-      onRename(editingId, trimmed);
-    } else if (editingInstance) {
-      setDraftTitle(editingInstance.title);
-      onRename(editingId, editingInstance.title);
+      if (editingType === 'instance') {
+        onRename(editingId, trimmed);
+      } else if (editingType === 'folder' && onRenameFolder) {
+        onRenameFolder(editingId, trimmed);
+      }
     }
     cancelEditing();
   };
@@ -84,6 +120,228 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     } else if (event.key === 'Escape') {
       cancelEditing();
     }
+  };
+
+  // Organize instances and folders into tree structure
+  const { rootInstances, rootFolders } = useMemo(() => {
+    const rootInstances = instances.filter(i => !i.folderId);
+    const rootFolders = folders.filter(f => !f.parentFolderId);
+    return { rootInstances, rootFolders };
+  }, [instances, folders]);
+
+  const getFolderInstances = (folderId: string) => {
+    return instances.filter(i => i.folderId === folderId);
+  };
+
+  const getFolderChildren = (folderId: string) => {
+    return folders.filter(f => f.parentFolderId === folderId);
+  };
+
+  const renderInstance = (instance: WorkspaceInstance, depth: number = 0) => {
+    const meta = typeMeta[instance.type];
+    const Icon = meta.icon;
+    const isActive = instance.id === activeInstanceId;
+    const isEditing = editingId === instance.id && editingType === 'instance';
+    const isMenuOpen = menuOpenId === instance.id;
+
+    return (
+      <div
+        key={instance.id}
+        className="group relative"
+        style={{ paddingLeft: `${depth * 12}px` }}
+      >
+        <button
+          onClick={() => onSelect(instance.id)}
+          className={`
+            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
+            ${isActive ? 'bg-muted' : 'hover:bg-muted/60'}
+          `}
+        >
+          <span
+            className={`
+              h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
+              ${isActive ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}
+            `}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+
+          <div className="flex-1 min-w-0 pr-6">
+            {isEditing ? (
+              <input
+                className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onBlur={commitEditing}
+                onKeyDown={handleKeyDown}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <p className="font-medium truncate">{instance.title}</p>
+            )}
+          </div>
+        </button>
+
+        {!isEditing && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpenId(isMenuOpen ? null : instance.id);
+              }}
+              className={`
+                p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/80
+                transition-opacity duration-150
+                ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+              `}
+              aria-label="Options"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+
+            {isMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setMenuOpenId(null)}
+                />
+                <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-lg shadow-lg py-1 z-20">
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startEditing(instance.id, instance.title, 'instance');
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                  >
+                    Rename
+                  </button>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete(instance.id);
+                      setMenuOpenId(null);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFolder = (folder: Folder, depth: number = 0): React.ReactNode => {
+    const isExpanded = expandedFolders.has(folder.id);
+    const isEditing = editingId === folder.id && editingType === 'folder';
+    const isMenuOpen = menuOpenId === folder.id;
+    const folderInstances = getFolderInstances(folder.id);
+    const childFolders = getFolderChildren(folder.id);
+
+    return (
+      <div key={folder.id}>
+        <div
+          className="group relative"
+          style={{ paddingLeft: `${depth * 12}px` }}
+        >
+          <button
+            onClick={() => toggleFolder(folder.id)}
+            className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/60"
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            )}
+            {isExpanded ? (
+              <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            ) : (
+              <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            )}
+
+            <div className="flex-1 min-w-0 pr-6">
+              {isEditing ? (
+                <input
+                  className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
+                  value={draftTitle}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  onBlur={commitEditing}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <p className="font-medium truncate">{folder.name}</p>
+              )}
+            </div>
+          </button>
+
+          {!isEditing && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpenId(isMenuOpen ? null : folder.id);
+                }}
+                className={`
+                  p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/80
+                  transition-opacity duration-150
+                  ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+                `}
+                aria-label="Options"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+
+              {isMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setMenuOpenId(null)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-lg shadow-lg py-1 z-20">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        startEditing(folder.id, folder.name, 'folder');
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (onDeleteFolder) {
+                          onDeleteFolder(folder.id);
+                        }
+                        setMenuOpenId(null);
+                      }}
+                      className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {isExpanded && (
+          <div className="ml-2">
+            {childFolders.map(childFolder => renderFolder(childFolder, depth + 1))}
+            {folderInstances.map(instance => renderInstance(instance, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (collapsed) {
@@ -126,117 +384,38 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         </button>
       </div>
 
-      <div className="px-4 pt-4">
-        <Button className="w-full gap-2" size="sm" variant="secondary" onClick={onCreateInstance}>
+      <div className="px-4 pt-4 flex gap-2">
+        <Button className="flex-1 gap-2" size="sm" variant="secondary" onClick={onCreateInstance}>
           <Plus className="h-4 w-4" />
-          New instance
+          Instance
         </Button>
+        {onCreateFolder && (
+          <Button
+            className="flex-1 gap-2"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const name = prompt('Folder name:');
+              if (name?.trim()) {
+                onCreateFolder(name.trim());
+              }
+            }}
+          >
+            <FolderIcon className="h-4 w-4" />
+            Folder
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
-        {instances.length === 0 && (
+        {instances.length === 0 && folders.length === 0 && (
           <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
             Create your first instance to get started.
           </div>
         )}
-        {instances.map((instance) => {
-          const meta = typeMeta[instance.type];
-          const Icon = meta.icon;
-          const isActive = instance.id === activeInstanceId;
-          const isEditing = editingId === instance.id;
-          const isMenuOpen = menuOpenId === instance.id;
-
-          return (
-            <div
-              key={instance.id}
-              className="group relative"
-            >
-              <button
-                onClick={() => onSelect(instance.id)}
-                className={`
-                  w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
-                  ${isActive ? 'bg-muted' : 'hover:bg-muted/60'}
-                `}
-              >
-                <span
-                  className={`
-                    h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
-                    ${isActive ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}
-                  `}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-
-                <div className="flex-1 min-w-0 pr-6">
-                  {isEditing ? (
-                    <input
-                      className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
-                      value={draftTitle}
-                      onChange={(event) => setDraftTitle(event.target.value)}
-                      onBlur={commitEditing}
-                      onKeyDown={handleKeyDown}
-                      autoFocus
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <p className="font-medium truncate">{instance.title}</p>
-                  )}
-                </div>
-              </button>
-
-              {!isEditing && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setMenuOpenId(isMenuOpen ? null : instance.id);
-                    }}
-                    className={`
-                      p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/80
-                      transition-opacity duration-150
-                      ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
-                    `}
-                    aria-label="Options"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
-
-                  {isMenuOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => setMenuOpenId(null)}
-                      />
-                      <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-lg shadow-lg py-1 z-20">
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            startEditing(instance.id, instance.title);
-                            setMenuOpenId(null);
-                          }}
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                        >
-                          Rename
-                        </button>
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDelete(instance.id);
-                            setMenuOpenId(null);
-                          }}
-                          className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        
+        {rootFolders.map(folder => renderFolder(folder))}
+        {rootInstances.map(instance => renderInstance(instance))}
       </div>
 
       <div className="p-4 border-t border-border">
