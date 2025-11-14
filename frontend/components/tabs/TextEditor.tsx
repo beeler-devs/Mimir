@@ -4,12 +4,16 @@ import React, { useState, KeyboardEvent } from 'react';
 import { Button } from '@/components/common';
 import { Send } from 'lucide-react';
 
+interface TextEditorProps {
+  content: string;
+  onChange: (value: string) => void;
+}
+
 /**
  * Rich text editor for notes, essays, and problem sets
  * Currently a simple textarea - can be enhanced with a rich text library later
  */
-export const TextEditor: React.FC = () => {
-  const [content, setContent] = useState('');
+export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => {
   const [selectedText, setSelectedText] = useState('');
 
   const handleTextSelection = () => {
@@ -35,7 +39,7 @@ export const TextEditor: React.FC = () => {
       
       // Insert 4 spaces at cursor position
       const newContent = content.substring(0, start) + '    ' + content.substring(end);
-      setContent(newContent);
+      onChange(newContent);
       
       // Move cursor after the inserted spaces
       setTimeout(() => {
@@ -57,7 +61,7 @@ export const TextEditor: React.FC = () => {
       
       <textarea
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onMouseUp={handleTextSelection}
         onKeyDown={handleKeyDown}
         className="
@@ -77,4 +81,3 @@ export const TextEditor: React.FC = () => {
     </div>
   );
 };
-

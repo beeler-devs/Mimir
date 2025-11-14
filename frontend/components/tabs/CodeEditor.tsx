@@ -6,17 +6,22 @@ import { Button } from '@/components/common';
 import { Play, MessageCircle } from 'lucide-react';
 import type { CodeLanguage } from '@/lib/types';
 
+interface CodeEditorProps {
+  language: CodeLanguage;
+  code: string;
+  onCodeChange: (value: string) => void;
+  onLanguageChange: (language: CodeLanguage) => void;
+}
+
 /**
  * Code editor with Monaco Editor and language selection
  */
-export const CodeEditor: React.FC = () => {
-  const [language, setLanguage] = useState<CodeLanguage>('python');
-  const [code, setCode] = useState(`# Write your code here
-def hello_world():
-    print("Hello, Mimir!")
-
-hello_world()
-`);
+export const CodeEditor: React.FC<CodeEditorProps> = ({
+  language,
+  code,
+  onCodeChange,
+  onLanguageChange,
+}) => {
   const [theme, setTheme] = useState<'vs' | 'vs-dark'>('vs');
 
   // Detect theme changes
@@ -66,7 +71,7 @@ hello_world()
           <label className="text-sm font-medium">Language:</label>
           <select
             value={language}
-            onChange={(e) => setLanguage(e.target.value as CodeLanguage)}
+            onChange={(e) => onLanguageChange(e.target.value as CodeLanguage)}
             className="
               px-3 py-1.5 rounded-xl border border-input
               bg-background text-foreground text-sm
@@ -99,7 +104,7 @@ hello_world()
           height="100%"
           language={language}
           value={code}
-          onChange={(value) => setCode(value || '')}
+          onChange={(value) => onCodeChange(value || '')}
           theme={theme}
           options={{
             minimap: { enabled: false },
@@ -116,4 +121,3 @@ hello_world()
     </div>
   );
 };
-

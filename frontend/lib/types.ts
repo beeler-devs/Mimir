@@ -67,6 +67,38 @@ export interface CodeEditorState {
   code: string;
 }
 
+// Workspace / instance types
+export type InstanceType = 'text' | 'code' | 'annotate';
+
+interface BaseInstance {
+  id: string;
+  title: string;
+}
+
+export interface TextInstance extends BaseInstance {
+  type: 'text';
+  data: {
+    content: string;
+  };
+}
+
+export interface CodeInstance extends BaseInstance {
+  type: 'code';
+  data: {
+    language: CodeLanguage;
+    code: string;
+  };
+}
+
+export interface AnnotateInstance extends BaseInstance {
+  type: 'annotate';
+  data: Record<string, never>;
+}
+
+export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance;
+
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 // Manim types
 export interface ManimRenderRequest {
   sceneCode: string;
@@ -80,4 +112,3 @@ export interface ManimRenderResponse {
   videoUrl?: string;
   error?: string;
 }
-
