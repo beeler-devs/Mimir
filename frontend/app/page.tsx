@@ -254,7 +254,7 @@ export default function Home() {
       <InstanceSidebar
         instances={instances}
         activeInstanceId={activeInstanceId}
-        onSelect={setActiveInstanceId}
+        onSelect={(id) => setActiveInstanceId(id)}
         onCreateInstance={() => setNewInstanceOpen(true)}
         onRename={handleRename}
         onDelete={handleDelete}

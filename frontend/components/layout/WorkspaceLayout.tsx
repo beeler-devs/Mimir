@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -69,4 +69,3 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
     </div>
   );
 };
-

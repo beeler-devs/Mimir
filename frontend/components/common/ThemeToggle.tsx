@@ -13,15 +13,26 @@ export const ThemeToggle: React.FC = () => {
 
   // Wait until mounted to avoid hydration mismatch
   useEffect(() => {
-    setMounted(true);
+    if (typeof window === 'undefined') return;
+
+    let frame: number | null = null;
+    frame = window.requestAnimationFrame(() => setMounted(true));
     // Check if user has a theme preference stored
     const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (storedTheme) {
-      setTheme(storedTheme);
-      if (storedTheme === 'dark') {
-        document.documentElement.classList.add('dark');
-      }
+      window.setTimeout(() => {
+        setTheme(storedTheme);
+        if (storedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      }, 0);
     }
+
+    return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -59,4 +70,3 @@ export const ThemeToggle: React.FC = () => {
     </button>
   );
 };
-

@@ -37,7 +37,7 @@ export interface Job {
   id: string;
   type: JobType;
   status: JobStatus;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   resultUrl: string | null;
   createdAt: string;
   updatedAt: string;
