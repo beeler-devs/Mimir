@@ -109,6 +109,8 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, onCl
       }
 
       const data: JobResponse = await response.json();
+      console.log('Job creation response:', data);
+      console.log('Job ID:', data.job_id);
       setJobId(data.job_id);
       setStatus(data.status);
       
