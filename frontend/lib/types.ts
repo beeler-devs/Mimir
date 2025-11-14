@@ -1,0 +1,83 @@
+/**
+ * Core type definitions for Mimir
+ */
+
+// Chat types
+export interface ChatNode {
+  id: string;
+  parentId: string | null;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface Chat {
+  id: string;
+  userId: string;
+  rootMessageId: string;
+  createdAt: string;
+}
+
+// Document types
+export type DocumentType = 'text' | 'code' | 'pdf';
+
+export interface Document {
+  id: string;
+  userId: string;
+  type: DocumentType;
+  storagePath: string | null;
+  createdAt: string;
+}
+
+// Job types
+export type JobType = 'manim' | 'pdf_export';
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface Job {
+  id: string;
+  type: JobType;
+  status: JobStatus;
+  payload: Record<string, any>;
+  resultUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// API types
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatRequest {
+  messages: ChatMessage[];
+  branchPath: string[];
+}
+
+export interface ChatResponse {
+  message: ChatMessage;
+  nodeId: string;
+}
+
+// Code editor types
+export type CodeLanguage = 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';
+
+export interface CodeEditorState {
+  language: CodeLanguage;
+  code: string;
+}
+
+// Manim types
+export interface ManimRenderRequest {
+  sceneCode: string;
+  sceneClass: string;
+  quality: 'low' | 'medium' | 'high';
+}
+
+export interface ManimRenderResponse {
+  jobId: string;
+  status: JobStatus;
+  videoUrl?: string;
+  error?: string;
+}
+
