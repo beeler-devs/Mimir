@@ -42,9 +42,11 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
     setLoading(true);
 
     try {
-      // Call API to get AI response
+      // Call FastAPI backend for AI response
       const branchPath = buildBranchPath(updatedNodes, newUserNode.id);
-      const response = await fetch('/api/chat', {
+      const backendUrl = 'http://localhost:8001'; // FastAPI backend
+      
+      const response = await fetch(`${backendUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

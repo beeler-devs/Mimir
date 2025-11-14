@@ -1,8 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models import HealthResponse, JobRequest, JobResponse
+from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
 from manim_worker.manim_service import manim_service
 import logging
+import os
+import re
+from anthropic import Anthropic
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 """
 FastAPI server for Manim rendering worker
@@ -25,9 +32,9 @@ app = FastAPI(
 # CORS middleware to allow requests from frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # Frontend URLs
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3003"],  # Frontend URLs
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -107,6 +114,115 @@ async def get_job_status(job_id: str):
         video_url=job_status.get("video_url"),
         error=job_status.get("error"),
     )
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Chat endpoint with Claude AI integration
+    
+    Args:
+        request: Chat request with messages and branch path
+    
+    Returns:
+        ChatResponse with AI message and optional animation suggestion
+    
+    Example:
+        POST /chat
+        {
+            "messages": [
+                {"role": "user", "content": "What is Brownian motion?"}
+            ],
+            "branchPath": []
+        }
+    """
+    try:
+        # Get Claude API key from environment
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        
+        if not claude_api_key:
+            logger.warning("CLAUDE_API_KEY not set, using fallback response")
+            # Fallback to stub response if no API key
+            last_message = request.messages[-1].content
+            return ChatResponse(
+                message=ChatMessageResponse(
+                    role="assistant",
+                    content=f"I received your message: '{last_message}'\n\nCLAUDE_API_KEY not configured. Please add it to backend/.env"
+                ),
+                suggestedAnimation=None,
+                nodeId=f"node-{int(__import__('time').time() * 1000)}"
+            )
+        
+        # Initialize Anthropic client
+        client = Anthropic(api_key=claude_api_key)
+        
+        # System prompt for Claude
+        system_prompt = """You are an AI tutor for Mimir, an educational platform. Your role is to:
+
+1. Provide clear, engaging explanations of educational concepts
+2. Break down complex topics into understandable parts
+3. Use analogies and examples when helpful
+
+When explaining concepts that would benefit from visualization (mathematical functions, physics simulations, data structures, geometric concepts), append a special marker at the END of your response:
+
+ANIMATION_SUGGESTION: {"description": "brief description of what to animate", "topic": "math"}
+
+Only suggest animations for truly visual concepts like:
+- Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations)
+- Physics simulations (waves, collisions, motion)
+- Geometric visualizations
+
+Do NOT suggest animations for abstract discussions, definitions, or text-based explanations.
+
+Example response with animation:
+"Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
+
+ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math"}"
+"""
+        
+        # Convert messages to Anthropic format
+        anthropic_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in request.messages
+        ]
+        
+        # Call Claude API
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=1024,
+            system=system_prompt,
+            messages=anthropic_messages
+        )
+        
+        # Extract assistant message
+        assistant_message = response.content[0].text
+        
+        # Parse animation suggestion from response
+        suggested_animation = None
+        animation_match = re.search(r'ANIMATION_SUGGESTION:\s*(\{[^}]+\})', assistant_message)
+        
+        if animation_match:
+            try:
+                import json
+                animation_data = json.loads(animation_match.group(1))
+                suggested_animation = AnimationSuggestion(**animation_data)
+            except Exception as e:
+                logger.error(f"Failed to parse animation suggestion: {e}")
+        
+        # Remove the ANIMATION_SUGGESTION marker from the displayed message
+        clean_message = re.sub(r'\n*ANIMATION_SUGGESTION:\s*\{[^}]+\}\s*', '', assistant_message).strip()
+        
+        return ChatResponse(
+            message=ChatMessageResponse(
+                role="assistant",
+                content=clean_message
+            ),
+            suggestedAnimation=suggested_animation,
+            nodeId=f"node-{int(__import__('time').time() * 1000)}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
