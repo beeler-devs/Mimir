@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Modal, Button } from '@/components/common';
 import { ThemePreference } from '@/lib/types';
+import { useAuth } from '@/lib/auth';
 import {
   Settings,
   Bell,
@@ -12,6 +14,7 @@ import {
   UserCog,
   Globe,
   SlidersHorizontal,
+  LogOut,
 } from 'lucide-react';
 
 const menuItems = [
@@ -94,6 +97,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [showAdditionalModels, setShowAdditionalModels] = useState(false);
   const [accent, setAccent] = useState('default');
+  const { signOut } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.push('/login');
+    } catch (error) {
+      console.error('Failed to log out:', error);
+    }
+  };
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -180,8 +194,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </section>
 
-          <div className="flex justify-end">
-            <Button variant="secondary" className="mr-2" onClick={onClose}>
+          <div className="flex justify-between items-center pt-6 border-t border-border">
+            <Button
+              variant="destructive"
+              className="gap-2"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-4 w-4" />
+              Log out
+            </Button>
+            <Button variant="secondary" onClick={onClose}>
               Close
             </Button>
           </div>

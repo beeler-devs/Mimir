@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { Button } from '@/components/common';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, Input, Modal } from '@/components/common';
 import { 
   FileText, 
   Code2, 
@@ -61,6 +61,10 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
+  const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
+  const [rootDragOver, setRootDragOver] = useState(false);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -74,6 +78,24 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       return next;
     });
   };
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpenId(null);
+        cancelEditing();
+      }
+    };
+    const handleClick = () => {
+      setMenuOpenId(null);
+    };
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('click', handleClick);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('click', handleClick);
+    };
+  }, []);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders((prev) => {
@@ -149,12 +171,19 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         key={instance.id}
         className="group relative"
         style={{ paddingLeft: `${depth * 12}px` }}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.setData('application/mimir-instance', instance.id);
+          setDraggingInstanceId(instance.id);
+        }}
+        onDragEnd={() => setDraggingInstanceId(null)}
       >
         <button
           onClick={() => onSelect(instance.id)}
           className={`
             w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
-            ${isActive ? 'bg-muted' : 'hover:bg-muted/60'}
+            ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
           `}
         >
           <span
@@ -201,13 +230,11 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <MoreVertical className="h-4 w-4" />
             </button>
 
-            {isMenuOpen && (
-              <>
+              {isMenuOpen && (
                 <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setMenuOpenId(null)}
-                />
-                <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-lg shadow-lg py-1 z-20">
+                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <button
                     onClick={(event) => {
                       event.stopPropagation();
@@ -220,6 +247,16 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
                   <button
                     onClick={(event) => {
                       event.stopPropagation();
+                      setMoveModalInstance(instance);
+                      setMenuOpenId(null);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                  >
+                    Move
+                  </button>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
                       onDelete(instance.id);
                       setMenuOpenId(null);
                     }}
@@ -228,8 +265,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
                     Delete
                   </button>
                 </div>
-              </>
-            )}
+              )}
           </div>
         )}
       </div>
@@ -244,14 +280,32 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     const childFolders = getFolderChildren(folder.id);
 
     return (
-      <div key={folder.id}>
+      <div
+        key={folder.id}
+        onDragOver={(event) => {
+          if (draggingInstanceId) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={(event) => {
+          if (!onMoveToFolder || !draggingInstanceId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const instanceId =
+            draggingInstanceId || event.dataTransfer.getData('application/mimir-instance');
+          if (instanceId) {
+            onMoveToFolder(instanceId, folder.id);
+          }
+          setDraggingInstanceId(null);
+        }}
+      >
         <div
           className="group relative"
           style={{ paddingLeft: `${depth * 12}px` }}
         >
           <button
             onClick={() => toggleFolder(folder.id)}
-            className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/60"
+            className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
           >
             {isExpanded ? (
               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -300,35 +354,32 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               </button>
 
               {isMenuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setMenuOpenId(null)}
-                  />
-                  <div className="absolute right-0 top-full mt-1 w-40 bg-card border border-border rounded-lg shadow-lg py-1 z-20">
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        startEditing(folder.id, folder.name, 'folder');
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                    >
-                      Rename
-                    </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (onDeleteFolder) {
-                          onDeleteFolder(folder.id);
-                        }
-                        setMenuOpenId(null);
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </>
+                <div
+                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      startEditing(folder.id, folder.name, 'folder');
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                  >
+                    Rename
+                  </button>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (onDeleteFolder) {
+                        onDeleteFolder(folder.id);
+                      }
+                      setMenuOpenId(null);
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
               )}
             </div>
           )}
