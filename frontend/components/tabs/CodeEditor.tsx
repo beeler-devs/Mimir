@@ -47,9 +47,9 @@ hello_world()
             value={language}
             onChange={(e) => setLanguage(e.target.value as CodeLanguage)}
             className="
-              px-3 py-1.5 rounded-lg border border-input
+              px-3 py-1.5 rounded-xl border border-input
               bg-background text-foreground text-sm
-              focus:outline-none focus:ring-2 focus:ring-ring
+              focus:outline-none
             "
           >
             {languages.map((lang) => (

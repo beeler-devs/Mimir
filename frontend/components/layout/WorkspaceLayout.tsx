@@ -15,11 +15,25 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden relative">
       {/* Main Content Area */}
-      <div className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'mr-0' : 'mr-0'}`}>
+      <div className="flex-1 overflow-auto transition-all duration-300">
         {children}
       </div>
+      
+      {/* Expand Bar (shown when sidebar is collapsed) */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="
+            absolute right-0 top-0 h-full w-1
+            bg-border hover:bg-primary hover:w-1.5
+            transition-all duration-200
+            cursor-pointer z-10
+          "
+          aria-label="Expand sidebar"
+        />
+      )}
       
       {/* AI Sidepanel */}
       <div
@@ -30,24 +44,22 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
           overflow-hidden
         `}
       >
-        {/* Collapse/Expand Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className={`
-            absolute left-0 top-4 -translate-x-1/2
-            p-1.5 rounded-full
-            bg-background border border-border
-            hover:bg-muted transition-colors
-            z-10
-          `}
-          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          {sidebarOpen ? (
+        {/* Collapse Button (shown when sidebar is open) */}
+        {sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="
+              absolute left-0 top-4 -translate-x-1/2
+              p-1.5 rounded-full
+              bg-background border border-border
+              hover:bg-muted transition-colors
+              z-10
+            "
+            aria-label="Collapse sidebar"
+          >
             <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </button>
+          </button>
+        )}
         
         {/* Sidebar Content */}
         <div className="h-full w-96">

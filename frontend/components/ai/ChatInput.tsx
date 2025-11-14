@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, KeyboardEvent } from 'react';
-import { Button } from '@/components/common';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Paperclip } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -12,6 +11,7 @@ interface ChatInputProps {
 
 /**
  * Input component for sending chat messages
+ * Redesigned with bottom action bar separated by a line
  */
 export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, loading = false }) => {
   const [message, setMessage] = useState('');
@@ -31,8 +31,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, 
   };
 
   return (
-    <div className="p-4 border-t border-border bg-background">
-      <div className="flex space-x-2">
+    <div className="p-4 bg-background">
+      {/* Main input container with border */}
+      <div className="border border-input rounded-xl overflow-hidden bg-background">
+        {/* Textarea area */}
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -40,30 +42,55 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, 
           placeholder="Ask your AI professor anything..."
           disabled={disabled || loading}
           className="
-            flex-1 px-3 py-2 min-h-[80px] max-h-[200px]
-            rounded-lg border border-input
-            bg-background text-foreground text-sm
-            resize-none
-            focus:outline-none focus:ring-2 focus:ring-ring
+            w-full px-4 py-3 min-h-[80px] max-h-[200px]
+            bg-transparent text-foreground text-sm
+            resize-none border-0
+            focus:outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
           "
         />
-        <Button
-          onClick={handleSend}
-          disabled={disabled || loading || !message.trim()}
-          size="sm"
-          className="self-end"
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
+        
+        {/* Separator line */}
+        <div className="border-t border-border" />
+        
+        {/* Bottom action bar */}
+        <div className="flex items-center justify-between px-3 py-2 bg-background">
+          <div className="flex items-center space-x-2">
+            {/* Upload button placeholder */}
+            <button
+              type="button"
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Attach file"
+            >
+              <Paperclip className="h-4 w-4 text-muted-foreground" />
+            </button>
+            
+            <p className="text-xs text-muted-foreground">
+              Press Enter to send
+            </p>
+          </div>
+          
+          {/* Send button */}
+          <button
+            onClick={handleSend}
+            disabled={disabled || loading || !message.trim()}
+            className="
+              p-2 rounded-lg
+              bg-primary text-primary-foreground
+              hover:bg-primary/90
+              disabled:opacity-50 disabled:cursor-not-allowed
+              transition-colors
+            "
+            aria-label="Send message"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </button>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground mt-2">
-        Press Enter to send, Shift+Enter for new line
-      </p>
     </div>
   );
 };
