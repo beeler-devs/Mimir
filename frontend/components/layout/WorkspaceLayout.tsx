@@ -32,14 +32,14 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
   return (
     <div className="flex h-full overflow-hidden relative">
       {/* Main Content Area */}
-      <div className="flex-1 overflow-auto transition-all duration-300">
+      <div className="flex-1 overflow-auto transition-all duration-300 bg-[var(--main-bg)] dark:bg-background">
         {children}
       </div>
       
       {/* AI Sidepanel */}
       <div
         className={`
-          relative border-l border-border bg-card
+          relative bg-card
           transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'w-96' : 'w-14'}
           overflow-hidden

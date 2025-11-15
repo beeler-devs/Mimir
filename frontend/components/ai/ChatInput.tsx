@@ -192,16 +192,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           placeholder="Ask your AI professor anything... Use @ to mention instances or folders"
           disabled={disabled || loading}
           className="
-            w-full px-4 py-3 min-h-[80px] max-h-[200px]
+            w-full px-4 py-3 min-h-[40px] max-h-[200px]
             bg-transparent text-foreground text-sm
             resize-none border-0
             focus:outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
           "
         />
-        
-        {/* Separator line */}
-        <div className="border-t border-border" />
         
         {/* Bottom action bar */}
         <div className="flex items-center justify-between px-3 py-2 bg-background">
@@ -214,10 +211,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             >
               <Paperclip className="h-4 w-4 text-muted-foreground" />
             </button>
-            
-            <p className="text-xs text-muted-foreground">
-              Press Enter to send
-            </p>
           </div>
           
           {/* Send button */}

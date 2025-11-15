@@ -13,7 +13,8 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Search
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
 
@@ -65,6 +66,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
   const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
   const [rootDragOver, setRootDragOver] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -458,8 +460,8 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-    <aside className="w-64 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
-      <div className="px-4 pt-5 pb-4 border-b border-border flex items-center justify-between">
+    <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+      <div className="px-4 pt-5 pb-4 flex items-center justify-between">
         <div className="text-xl font-semibold tracking-tight">Mimir</div>
         <button
           onClick={toggleCollapsed}
@@ -470,22 +472,30 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         </button>
       </div>
 
-      <div className="px-4 pt-4 flex gap-2">
-        <Button className="flex-1 gap-2" size="sm" variant="secondary" onClick={onCreateInstance}>
+      <div className="px-4 pt-4 space-y-2">
+        <button 
+          className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
+          onClick={onCreateInstance}
+        >
           <Plus className="h-4 w-4" />
-          Instance
-        </Button>
+          <span>Add instance</span>
+        </button>
         {onCreateFolder && (
-          <Button
-            className="flex-1 gap-2 whitespace-nowrap"
-            size="sm"
-            variant="secondary"
+          <button
+            className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
             onClick={() => setFolderModalOpen(true)}
           >
-            <FolderIcon className="h-4 w-4 shrink-0" />
-            <span>New folder</span>
-          </Button>
+            <FolderIcon className="h-4 w-4" />
+            <span>Add folder</span>
+          </button>
         )}
+        <button
+          className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
+          onClick={() => setSearchModalOpen(true)}
+        >
+          <Search className="h-4 w-4" />
+          <span>Search</span>
+        </button>
       </div>
 
       <div
@@ -563,6 +573,15 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       instanceTitle={moveModalInstance?.title ?? ''}
       onClose={() => setMoveModalInstance(null)}
       onMove={handleMoveSubmit}
+    />
+    <SearchInstancesModal
+      open={searchModalOpen}
+      instances={instances}
+      onClose={() => setSearchModalOpen(false)}
+      onSelect={(id) => {
+        onSelect(id);
+        setSearchModalOpen(false);
+      }}
     />
     </>
   );
@@ -692,6 +711,78 @@ const MoveInstanceModal: React.FC<MoveInstanceModalProps> = ({
             Cancel
           </Button>
           <Button onClick={handleSubmit}>Move</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+interface SearchInstancesModalProps {
+  open: boolean;
+  instances: WorkspaceInstance[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+}
+
+const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
+  open,
+  instances,
+  onClose,
+  onSelect,
+}) => {
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => setQuery(''));
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  if (!open) return null;
+
+  const filteredInstances = instances.filter(instance =>
+    instance.title.toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Search instances</h2>
+          <p className="text-sm text-muted-foreground">Find and navigate to your instances.</p>
+        </div>
+        <Input
+          value={query}
+          autoFocus
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by name..."
+        />
+        <div className="max-h-64 overflow-y-auto space-y-1">
+          {filteredInstances.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              {query ? 'No instances found' : 'Start typing to search'}
+            </div>
+          ) : (
+            filteredInstances.map((instance) => {
+              const meta = typeMeta[instance.type];
+              const Icon = meta.icon;
+              return (
+                <button
+                  key={instance.id}
+                  onClick={() => onSelect(instance.id)}
+                  className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm hover:bg-muted transition-colors"
+                >
+                  <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{instance.title}</p>
+                    <p className="text-xs text-muted-foreground">{meta.label}</p>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
     </Modal>

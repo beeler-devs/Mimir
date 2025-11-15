@@ -18,6 +18,11 @@
   --input: #e2e8f0;
   --ring: #8b5cf6;
   --radius: 0.75rem;
+  
+  /* Custom workspace colors */
+  --sidebar-bg: #FBFBFB;
+  --main-bg: #FFFFFF;
+  --sidebar-hover: #F1F1F1;
 }
 
 /* Dark mode */

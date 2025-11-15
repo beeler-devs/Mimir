@@ -333,49 +333,44 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Actions */}
-      <div className="flex items-center border-b border-border px-4 py-3 gap-2">
-        {collapseSidebar && (
-          <button
-            onClick={collapseSidebar}
-            className="h-10 w-10 rounded-xl border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
-            aria-label="Collapse AI panel"
-          >
-            <PanelsLeftRight className="h-4 w-4" />
-          </button>
-        )}
-
-        {[
-          { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
-          { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
-        ].map(({ id, label, icon: Icon }) => {
-          const active = viewMode === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setViewMode(id)}
-              className={`
-                flex-1 group rounded-2xl border h-10 px-3 text-sm transition-all
-                focus-visible:outline-none focus-visible:ring-2
-                ${active ? 'border-primary/70 bg-primary/5 text-foreground focus-visible:ring-primary/60' : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 focus-visible:ring-primary/30'}
-              `}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`
-                    h-7 w-7 rounded-xl flex items-center justify-center
-                    ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground group-hover:text-foreground'}
-                  `}
-                >
+      {/* Header Actions - Single Rounded Card */}
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/40 p-2">
+          {[
+            { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
+            { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
+          ].map(({ id, label, icon: Icon }) => {
+            const active = viewMode === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setViewMode(id)}
+                className={`
+                  flex-1 group rounded-xl h-9 px-3 text-sm transition-all
+                  focus-visible:outline-none focus-visible:ring-2
+                  ${active ? 'bg-primary text-primary-foreground focus-visible:ring-primary/60' : 'text-muted-foreground hover:bg-muted/40 focus-visible:ring-primary/30'}
+                `}
+              >
+                <div className="flex items-center gap-2 justify-center">
                   <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="font-medium">{label}</span>
-              </div>
-            </button>
-          );
-        })}
+                  <span className="font-medium">{label}</span>
+                </div>
+              </button>
+            );
+          })}
 
-        <VoiceButton size="sm" className="shrink-0" />
+          <VoiceButton size="sm" className="shrink-0" />
+
+          {collapseSidebar && (
+            <button
+              onClick={collapseSidebar}
+              className="h-9 w-9 rounded-xl hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+              aria-label="Collapse AI panel"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Content Area */}

@@ -435,7 +435,13 @@ function WorkspaceContent() {
             folders={folders}
             annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
           />
-        }>{renderActiveContent()}</WorkspaceLayout>
+        }>
+          <div className="h-full p-4">
+            <div className="h-full rounded-2xl border border-border bg-background overflow-hidden">
+              {renderActiveContent()}
+            </div>
+          </div>
+        </WorkspaceLayout>
       </div>
 
       <SettingsModal
