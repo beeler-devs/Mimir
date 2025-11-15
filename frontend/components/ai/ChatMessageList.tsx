@@ -1,18 +1,19 @@
 'use client';
 
 import React from 'react';
-import { ChatNode } from '@/lib/types';
+import { ChatNode, WorkspaceContext } from '@/lib/types';
 import { Card } from '@/components/common';
 import { AnimationPanel } from './AnimationPanel';
 
 interface ChatMessageListProps {
   messages: ChatNode[];
+  workspaceContext?: WorkspaceContext;
 }
 
 /**
  * Displays a list of chat messages in the active branch
  */
-export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages }) => {
+export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, workspaceContext }) => {
   if (messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full p-6">
@@ -57,7 +58,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages }) =>
           {/* Show animation panel if message has a suggestion */}
           {message.role === 'assistant' && message.suggestedAnimation && (
             <div className="mt-2 max-w-[85%]">
-              <AnimationPanel suggestion={message.suggestedAnimation} />
+              <AnimationPanel suggestion={message.suggestedAnimation} workspaceContext={workspaceContext} />
             </div>
           )}
         </div>

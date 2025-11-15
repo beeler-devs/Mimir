@@ -371,7 +371,16 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
         {viewMode === 'chat' ? (
-          <ChatMessageList messages={activeBranch} />
+          <ChatMessageList 
+            messages={activeBranch} 
+            workspaceContext={buildWorkspaceContext(
+              activeInstance,
+              instances,
+              folders,
+              [],
+              {}
+            )}
+          />
         ) : (
           <ChatTreeView
             nodes={nodes}

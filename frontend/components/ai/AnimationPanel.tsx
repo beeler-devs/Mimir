@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Loader2, CheckCircle, XCircle, Film } from 'lucide-react';
+import { WorkspaceContext } from '@/lib/types';
 
 interface AnimationSuggestion {
   description: string;
@@ -10,6 +11,7 @@ interface AnimationSuggestion {
 
 interface AnimationPanelProps {
   suggestion: AnimationSuggestion;
+  workspaceContext?: WorkspaceContext;
   onClose?: () => void;
 }
 
@@ -26,7 +28,7 @@ interface JobResponse {
  * AnimationPanel component
  * Handles animation job creation, polling, and video display
  */
-export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, onClose }) => {
+export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, workspaceContext, onClose }) => {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<JobStatus>('idle');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, onCl
         body: JSON.stringify({
           description: suggestion.description,
           topic: suggestion.topic,
+          workspace_context: workspaceContext || null,
         }),
       });
 

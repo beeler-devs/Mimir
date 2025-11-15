@@ -7,13 +7,15 @@ import uuid
 import logging
 import tempfile
 import os
+import importlib.util
 from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from supabase import create_client, Client
 from manim import config, tempconfig
 from models import JobStatus
-from manim_worker.scenes import select_scene
+from manim_worker.scenes import select_scene  # Keep for future use
+from manim_worker.codegen import generate_and_validate_manim_scene
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -65,13 +67,14 @@ class ManimService:
             logger.warning("Supabase credentials not provided, storage upload disabled")
             self.supabase = None
     
-    def create_job(self, description: str, topic: str) -> str:
+    def create_job(self, description: str, topic: str, student_context: str | None = None) -> str:
         """
         Create a new animation job
         
         Args:
             description: Animation description
             topic: Topic category (math, cs, etc.)
+            student_context: Optional context about the student's current work
         
         Returns:
             job_id: Unique identifier for this job
@@ -82,12 +85,13 @@ class ManimService:
             "status": JobStatus.PENDING,
             "description": description,
             "topic": topic,
+            "student_context": student_context,
             "video_url": None,
             "error": None,
         }
         
         # Start rendering in background
-        self.executor.submit(self._render_job, job_id, description, topic)
+        self.executor.submit(self._render_job, job_id, description, topic, student_context)
         
         logger.info(f"Created job {job_id}: {description}")
         return job_id
@@ -107,7 +111,7 @@ class ManimService:
         
         return self.jobs[job_id]
     
-    def _render_job(self, job_id: str, description: str, topic: str):
+    def _render_job(self, job_id: str, description: str, topic: str, student_context: str | None = None):
         """
         Render a Manim animation job (runs in thread pool)
         
@@ -115,6 +119,7 @@ class ManimService:
             job_id: Job identifier
             description: Animation description
             topic: Topic category
+            student_context: Optional context about the student's current work
         """
         try:
             # Update status to running
@@ -125,8 +130,26 @@ class ManimService:
             job_dir = self.output_dir / job_id
             job_dir.mkdir(exist_ok=True)
             
-            # Select scene based on description
-            scene_class = select_scene(description, topic)
+            # Generate and validate Manim code using Claude
+            logger.info(f"Generating Manim code for job {job_id}")
+            validated_code = generate_and_validate_manim_scene(description, student_context)
+            
+            # Write validated code to file
+            scene_path = job_dir / "generated_scene.py"
+            with open(scene_path, 'w', encoding='utf-8') as f:
+                f.write(validated_code)
+            
+            logger.info(f"Code validated and written to {scene_path}")
+            
+            # Dynamically import the GeneratedScene class
+            spec = importlib.util.spec_from_file_location("generated_scene", scene_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            scene_class = module.GeneratedScene
+            
+            # NOTE: Keeping select_scene() code for future use, but currently using codegen path
+            # Old code (commented for reference):
+            # scene_class = select_scene(description, topic)
             
             # Configure Manim
             with tempconfig({

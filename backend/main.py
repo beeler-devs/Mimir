@@ -54,7 +54,7 @@ async def create_job(request: JobRequest):
     Create a new animation rendering job
     
     Args:
-        request: Job request with description and topic
+        request: Job request with description, topic, and optional workspace context
     
     Returns:
         JobResponse with job_id and initial status
@@ -63,13 +63,46 @@ async def create_job(request: JobRequest):
         POST /jobs
         {
             "description": "Visualize Brownian motion",
-            "topic": "math"
+            "topic": "math",
+            "workspace_context": {...}
         }
     """
     try:
+        # Extract student context from workspace context if available
+        student_context = None
+        if request.workspace_context:
+            context_parts = []
+            
+            # Add folder information
+            if request.workspace_context.folders:
+                folder_names = [f.name for f in request.workspace_context.folders]
+                context_parts.append(f"User is working in folder(s): {', '.join(folder_names)}")
+            
+            # Add instance information
+            if request.workspace_context.instances:
+                context_parts.append("\nCurrent workspace context includes:")
+                # First instance is typically the active one
+                for idx, inst in enumerate(request.workspace_context.instances):
+                    is_active = idx == 0  # First instance is the active one
+                    active_marker = " (CURRENTLY OPEN)" if is_active else ""
+                    context_parts.append(f"\n- {inst.title} ({inst.type}){active_marker}:")
+                    
+                    if inst.type == "text" and inst.content:
+                        context_parts.append(f"  Content: {inst.content[:500]}{'...' if len(inst.content) > 500 else ''}")
+                    elif inst.type == "code" and inst.code:
+                        context_parts.append(f"  Language: {inst.language}")
+                        context_parts.append(f"  Code: {inst.code[:500]}{'...' if len(inst.code) > 500 else ''}")
+                    elif inst.type == "annotate":
+                        if inst.id in request.workspace_context.annotationImages:
+                            context_parts.append(f"  [Annotation canvas image included]")
+            
+            if context_parts:
+                student_context = "\n".join(context_parts)
+        
         job_id = manim_service.create_job(
             description=request.description,
-            topic=request.topic
+            topic=request.topic,
+            student_context=student_context
         )
         
         return JobResponse(
