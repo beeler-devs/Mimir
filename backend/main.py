@@ -148,16 +148,55 @@ async def chat_stream(request: ChatRequest):
             # Initialize Anthropic client
             client = Anthropic(api_key=claude_api_key)
             
+            # Build system prompt with workspace context
+            context_description = ""
+            if request.workspaceContext:
+                context_parts = []
+                
+                # Add folder information
+                if request.workspaceContext.folders:
+                    folder_names = [f.name for f in request.workspaceContext.folders]
+                    context_parts.append(f"User is working in folder(s): {', '.join(folder_names)}")
+                
+                # Add instance information
+                if request.workspaceContext.instances:
+                    context_parts.append("\nCurrent workspace context includes:")
+                    # First instance is typically the active one
+                    for idx, inst in enumerate(request.workspaceContext.instances):
+                        is_active = idx == 0  # First instance is the active one
+                        active_marker = " (CURRENTLY OPEN)" if is_active else ""
+                        context_parts.append(f"\n- {inst.title} ({inst.type}){active_marker}:")
+                        
+                        if inst.type == "text" and inst.content:
+                            context_parts.append(f"  Content: {inst.content[:500]}{'...' if len(inst.content) > 500 else ''}")
+                        elif inst.type == "code" and inst.code:
+                            context_parts.append(f"  Language: {inst.language}")
+                            context_parts.append(f"  Code: {inst.code[:500]}{'...' if len(inst.code) > 500 else ''}")
+                        elif inst.type == "annotate":
+                            if inst.id in request.workspaceContext.annotationImages:
+                                context_parts.append(f"  [Annotation canvas image included below]")
+                
+                if context_parts:
+                    context_description = "\n".join(context_parts) + "\n"
+                    
+                    # Log warning if context is very large
+                    context_size = len(context_description)
+                    if context_size > 50000:  # ~50KB
+                        logger.warning(f"Large workspace context detected: {context_size} characters, {len(request.workspaceContext.instances)} instances")
+            
             # System prompt for Claude
-            system_prompt = """You are an AI tutor for Mimir, an educational platform. Your role is to:
+            system_prompt = f"""You are an AI tutor for Mimir, an educational platform. Your role is to:
 
 1. Provide clear, engaging explanations of educational concepts
 2. Break down complex topics into understandable parts
 3. Use analogies and examples when helpful
+4. Reference the user's workspace context when relevant to help them understand their work
+
+{context_description if context_description else ""}
 
 When explaining concepts that would benefit from visualization (mathematical functions, physics simulations, data structures, geometric concepts), append a special marker at the END of your response:
 
-ANIMATION_SUGGESTION: {"description": "brief description of what to animate", "topic": "math"}
+ANIMATION_SUGGESTION: {{"description": "brief description of what to animate", "topic": "math"}}
 
 Only suggest animations for truly visual concepts like:
 - Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations)
@@ -169,14 +208,59 @@ Do NOT suggest animations for abstract discussions, definitions, or text-based e
 Example response with animation:
 "Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
 
-ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math"}"
+ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "math"}}"
 """
             
-            # Convert messages to Anthropic format
-            anthropic_messages = [
-                {"role": msg.role, "content": msg.content}
-                for msg in request.messages
-            ]
+            # Convert messages to Anthropic format, including images if present
+            anthropic_messages = []
+            
+            # Find the last user message index to attach images
+            last_user_msg_idx = -1
+            for i in range(len(request.messages) - 1, -1, -1):
+                if request.messages[i].role == "user":
+                    last_user_msg_idx = i
+                    break
+            
+            for idx, msg in enumerate(request.messages):
+                # Attach images to the last user message (the current one being sent)
+                if (idx == last_user_msg_idx and
+                    request.workspaceContext and 
+                    request.workspaceContext.annotationImages):
+                    
+                    content_parts = [{"type": "text", "text": msg.content}]
+                    
+                    # Add annotation images with descriptions
+                    for inst_id, image_base64 in request.workspaceContext.annotationImages.items():
+                        # Find the instance for description
+                        inst = next((i for i in request.workspaceContext.instances if i.id == inst_id), None)
+                        if inst:
+                            # Add text description before image
+                            content_parts.append({
+                                "type": "text",
+                                "text": f"\n[Annotation canvas from '{inst.title}' instance:]"
+                            })
+                            
+                            # Remove data:image/png;base64, prefix if present
+                            image_data = image_base64.split(',')[1] if ',' in image_base64 else image_base64
+                            
+                            content_parts.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_data
+                                }
+                            })
+                    
+                    anthropic_messages.append({
+                        "role": msg.role,
+                        "content": content_parts
+                    })
+                else:
+                    anthropic_messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
             
             # Stream from Claude API
             full_content = ""

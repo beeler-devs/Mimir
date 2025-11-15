@@ -56,9 +56,47 @@ export interface ChatMessage {
   content: string;
 }
 
+// Mention types
+export interface Mention {
+  type: 'instance' | 'folder';
+  id: string;
+  name: string;
+}
+
+export interface MentionableItem {
+  type: 'instance' | 'folder';
+  id: string;
+  name: string;
+  icon?: string;
+}
+
+// Workspace context types
+export interface WorkspaceContextInstance {
+  id: string;
+  title: string;
+  type: InstanceType;
+  folderId: string | null;
+  content?: string; // For text instances
+  code?: string; // For code instances
+  language?: CodeLanguage; // For code instances
+}
+
+export interface WorkspaceContextFolder {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+}
+
+export interface WorkspaceContext {
+  instances: WorkspaceContextInstance[];
+  folders: WorkspaceContextFolder[];
+  annotationImages: Record<string, string>; // instanceId -> base64 PNG
+}
+
 export interface ChatRequest {
   messages: ChatMessage[];
   branchPath: string[];
+  workspaceContext?: WorkspaceContext;
 }
 
 export interface ChatResponse {
@@ -111,7 +149,13 @@ export interface CodeInstance extends BaseInstance {
 
 export interface AnnotateInstance extends BaseInstance {
   type: 'annotate';
-  data: Record<string, never>;
+  data: {
+    excalidrawState?: {
+      elements: any[];
+      appState: any;
+      files: any;
+    };
+  };
 }
 
 export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance;

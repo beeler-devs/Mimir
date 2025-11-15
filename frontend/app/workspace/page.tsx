@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel } from '@/components/ai/AISidePanel';
 import { TextEditor, CodeEditor, AnnotateCanvas } from '@/components/tabs';
+import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -73,6 +74,7 @@ function WorkspaceContent() {
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
 
   // Load instances and folders from database on mount
   useEffect(() => {
@@ -288,6 +290,26 @@ function WorkspaceContent() {
     }
   };
 
+  const updateAnnotationState = (state: { elements: any[]; appState: any; files: any }) => {
+    if (!activeInstanceId) return;
+    
+    // Find current instance
+    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'annotate') return;
+
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'annotate'
+          ? { ...instance, data: { excalidrawState: state } }
+          : instance
+      )
+    );
+
+    // Debounced save to database
+    debouncedSave(activeInstanceId, { excalidrawState: state });
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -321,7 +343,14 @@ function WorkspaceContent() {
         );
       case 'annotate':
       default:
-        return <AnnotateCanvas key={activeInstance.id} />;
+        return (
+          <AnnotateCanvas
+            key={activeInstance.id}
+            ref={annotationCanvasRef}
+            initialData={activeInstance.data.excalidrawState}
+            onStateChange={updateAnnotationState}
+          />
+        );
     }
   };
 
@@ -399,7 +428,14 @@ function WorkspaceContent() {
       />
 
       <div className="flex-1 h-full overflow-hidden">
-        <WorkspaceLayout sidebar={<AISidePanel />}>{renderActiveContent()}</WorkspaceLayout>
+        <WorkspaceLayout sidebar={
+          <AISidePanel 
+            activeInstance={activeInstance}
+            instances={instances}
+            folders={folders}
+            annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
+          />
+        }>{renderActiveContent()}</WorkspaceLayout>
       </div>
 
       <SettingsModal

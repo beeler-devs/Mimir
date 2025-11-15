@@ -477,13 +477,13 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         </Button>
         {onCreateFolder && (
           <Button
-            className="flex-1 gap-2"
+            className="flex-1 gap-2 whitespace-nowrap"
             size="sm"
             variant="secondary"
             onClick={() => setFolderModalOpen(true)}
           >
-            <FolderIcon className="h-4 w-4" />
-            New folder
+            <FolderIcon className="h-4 w-4 shrink-0" />
+            <span>New folder</span>
           </Button>
         )}
       </div>

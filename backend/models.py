@@ -35,9 +35,34 @@ class AnimationSuggestion(BaseModel):
     description: str
     topic: str
 
+class Mention(BaseModel):
+    type: Literal["instance", "folder"]
+    id: str
+    name: str
+
+class WorkspaceContextInstance(BaseModel):
+    id: str
+    title: str
+    type: Literal["text", "code", "annotate"]
+    folderId: Optional[str] = None
+    content: Optional[str] = None  # For text instances
+    code: Optional[str] = None  # For code instances
+    language: Optional[str] = None  # For code instances
+
+class WorkspaceContextFolder(BaseModel):
+    id: str
+    name: str
+    parentFolderId: Optional[str] = None
+
+class WorkspaceContext(BaseModel):
+    instances: List[WorkspaceContextInstance]
+    folders: List[WorkspaceContextFolder]
+    annotationImages: dict[str, str] = {}  # instanceId -> base64 PNG
+
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     branchPath: List[str]
+    workspaceContext: Optional[WorkspaceContext] = None
 
 class ChatMessageResponse(BaseModel):
     role: Literal["assistant"]

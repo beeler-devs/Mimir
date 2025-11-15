@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { ChatNode, AnimationSuggestion } from '@/lib/types';
+import React, { useState, useEffect, RefObject } from 'react';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -17,18 +17,31 @@ import {
   generateChatTitle,
   Chat,
 } from '@/lib/db/chats';
+import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
+import { buildWorkspaceContext } from '@/lib/workspaceContext';
+import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 
 type ViewMode = 'chat' | 'tree';
 
 interface AISidePanelProps {
   collapseSidebar?: () => void;
+  activeInstance?: WorkspaceInstance | null;
+  instances?: WorkspaceInstance[];
+  folders?: Folder[];
+  annotationCanvasRef?: RefObject<AnnotateCanvasRef>;
 }
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => {
+export const AISidePanel: React.FC<AISidePanelProps> = ({ 
+  collapseSidebar,
+  activeInstance = null,
+  instances = [],
+  folders = [],
+  annotationCanvasRef,
+}) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
@@ -93,11 +106,70 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
     let savedUserMessage: ChatNode | null = null;
 
     try {
-      // Save user message to database
+      // Parse mentions from message
+      const rawMentions = parseMentions(content);
+      const resolvedMentions = resolveMentions(rawMentions, instances, folders);
+      
+      // Export annotation canvas if active instance is annotation type
+      const annotationExports: Record<string, string> = {};
+      if (activeInstance?.type === 'annotate' && annotationCanvasRef?.current) {
+        try {
+          const imageBase64 = await annotationCanvasRef.current.exportCanvasAsImage();
+          annotationExports[activeInstance.id] = imageBase64;
+        } catch (error) {
+          console.error('Failed to export active annotation canvas:', error);
+          // Continue without image - don't block message sending
+        }
+      }
+      
+      // Also export mentioned annotation instances using saved state
+      for (const mention of resolvedMentions) {
+        if (mention.type === 'instance' && mention.id) {
+          const mentionedInstance = instances.find((i) => i.id === mention.id);
+          if (mentionedInstance?.type === 'annotate') {
+            // Skip if already exported as active instance
+            if (mentionedInstance.id === activeInstance?.id) {
+              continue;
+            }
+            
+            // Try to export from saved state
+            if (mentionedInstance.data.excalidrawState) {
+              // Validate state structure before attempting export
+              const state = mentionedInstance.data.excalidrawState;
+              if (!state.elements || !Array.isArray(state.elements)) {
+                console.warn(`Invalid excalidrawState for instance ${mentionedInstance.id}: missing or invalid elements`);
+              } else if (annotationCanvasRef?.current) {
+                try {
+                  const imageBase64 = await annotationCanvasRef.current.exportCanvasFromState(state);
+                  annotationExports[mentionedInstance.id] = imageBase64;
+                } catch (error) {
+                  console.error(`Failed to export annotation canvas for instance ${mentionedInstance.id}:`, error);
+                  // Continue without image - don't block message sending
+                }
+              } else {
+                console.warn(`Cannot export canvas: annotationCanvasRef not available`);
+              }
+            } else {
+              // No saved state - skip silently (this is expected for new/empty canvases)
+            }
+          }
+        }
+      }
+
+      // Build workspace context
+      const workspaceContext = buildWorkspaceContext(
+        activeInstance,
+        instances,
+        folders,
+        resolvedMentions,
+        annotationExports
+      );
+
+      // Save user message to database (keep mentions visible in chat)
       savedUserMessage = await saveChatMessage(chatId, {
         parentId: activeNodeId,
         role: 'user',
-        content,
+        content: content, // Keep original content with mentions
       });
 
       // Update local state
@@ -144,6 +216,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
             content: n.content,
           })),
           branchPath,
+          workspaceContext,
         }),
       });
 
@@ -313,6 +386,8 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
         <ChatInput
           onSend={handleSendMessage}
           loading={loading}
+          instances={instances}
+          folders={folders}
         />
       )}
     </div>
