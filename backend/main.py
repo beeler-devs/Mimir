@@ -225,6 +225,29 @@ async def chat_stream(request: ChatRequest):
 3. Use analogies and examples when helpful
 4. Reference the user's workspace context when relevant to help them understand their work
 
+=== READING IMAGES AND EQUATIONS ===
+
+When the user includes images (especially annotation canvases with handwritten or drawn content), carefully examine them:
+
+1. **Mathematical Equations**: When reading equations from images, pay close attention to:
+   - Numbers vs letters (e.g., "10" not "|D|", "0" not "O", "1" not "l" or "I")
+   - Mathematical symbols (+, -, ×, ÷, =, <, >, ≤, ≥, etc.)
+   - Subscripts and superscripts
+   - Fractions and division signs
+   - Parentheses, brackets, and braces
+
+2. **OCR Accuracy**: Double-check your reading of mathematical content:
+   - Read numbers carefully - distinguish between similar-looking characters
+   - Verify mathematical operators are correct
+   - If uncertain, describe what you see and ask for clarification
+
+3. **Handwritten Content**: For handwritten equations or text:
+   - Take extra care with character recognition
+   - Consider context to help disambiguate ambiguous characters
+   - When solving equations, use the exact equation as written in the image
+
+Example: If you see "5x = 10" in an image, read it as exactly that - not "5x = |D|" or "5x = ID". The number "10" should be recognized as the digits one and zero, not letters or symbols.
+
 {context_description if context_description else ""}
 
 === ANIMATION SUGGESTIONS ===
@@ -354,9 +377,11 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                 validated_messages.append(msg)
             
             # Stream from Claude API
+            # Use Sonnet 4.5 as default, but allow override via environment variable
+            chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
             full_content = ""
             with client.messages.stream(
-                model="claude-3-5-haiku-20241022",
+                model=chat_model,
                 max_tokens=1024,
                 system=system_prompt,
                 messages=validated_messages
@@ -544,6 +569,29 @@ async def chat(request: ChatRequest):
 2. Break down complex topics into understandable parts
 3. Use analogies and examples when helpful
 
+=== READING IMAGES AND EQUATIONS ===
+
+When the user includes images (especially annotation canvases with handwritten or drawn content), carefully examine them:
+
+1. **Mathematical Equations**: When reading equations from images, pay close attention to:
+   - Numbers vs letters (e.g., "10" not "|D|", "0" not "O", "1" not "l" or "I")
+   - Mathematical symbols (+, -, ×, ÷, =, <, >, ≤, ≥, etc.)
+   - Subscripts and superscripts
+   - Fractions and division signs
+   - Parentheses, brackets, and braces
+
+2. **OCR Accuracy**: Double-check your reading of mathematical content:
+   - Read numbers carefully - distinguish between similar-looking characters
+   - Verify mathematical operators are correct
+   - If uncertain, describe what you see and ask for clarification
+
+3. **Handwritten Content**: For handwritten equations or text:
+   - Take extra care with character recognition
+   - Consider context to help disambiguate ambiguous characters
+   - When solving equations, use the exact equation as written in the image
+
+Example: If you see "5x = 10" in an image, read it as exactly that - not "5x = |D|" or "5x = ID". The number "10" should be recognized as the digits one and zero, not letters or symbols.
+
 === ANIMATION SUGGESTIONS ===
 
 CRITICAL INSTRUCTION: If the user's message contains ANY of these keywords or phrases, you MUST include an animation suggestion:
@@ -611,8 +659,10 @@ ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math
             validated_messages.append(msg)
         
         # Call Claude API
+        # Use Sonnet 4.5 as default, but allow override via environment variable
+        chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
         response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model=chat_model,
             max_tokens=1024,
             system=system_prompt,
             messages=validated_messages
