@@ -50,6 +50,7 @@ Your task is to generate a single Manim scene as Python code that effectively ex
 You MUST use exactly this structure:
 ```python
 from manim import *
+import numpy as np
 
 class GeneratedScene(Scene):
     def construct(self):
@@ -57,11 +58,12 @@ class GeneratedScene(Scene):
 ```
 
 === TECHNICAL CONSTRAINTS ===
-1. Import: Only use `from manim import *` - no other imports
+1. Imports: You may use `from manim import *` and `import numpy as np` - no other imports
 2. Class name: Must be exactly `GeneratedScene(Scene)`
 3. No external dependencies: Do not use file I/O, networking, input(), or infinite loops
 4. Render time: Keep total animation under 15 seconds for reasonable render times
 5. Output format: Return ONLY the Python code, no markdown fences, no explanations
+6. NumPy usage: Use numpy for mathematical calculations, random number generation, and array operations
 
 === AVAILABLE MANIM FEATURES ===
 
@@ -137,6 +139,7 @@ Layout methods:
 === EXAMPLE STRUCTURE ===
 ```python
 from manim import *
+import numpy as np
 
 class GeneratedScene(Scene):
     def construct(self):
@@ -152,7 +155,8 @@ class GeneratedScene(Scene):
         self.play(Create(axes), Write(axes_labels))
         self.wait(0.5)
         
-        # Phase 3: Main animation
+        # Phase 3: Main animation (can use numpy for calculations)
+        # Example: np.random, np.linspace, np.sin, np.cos, etc.
         dot = Dot(axes.c2p(0, 0), color=RED)
         self.play(Create(dot))
         # ... main animation logic ...
@@ -186,7 +190,7 @@ Return ONLY the complete Python source code for the scene - no markdown, no expl
     try:
         response = client.messages.create(
             model="claude-3-5-haiku-20241022",
-            max_tokens=2048,
+            max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}]
         )
@@ -231,6 +235,7 @@ Your task is to fix a Manim scene that failed to compile or run, while maintaini
 You MUST use exactly this structure:
 ```python
 from manim import *
+import numpy as np
 
 class GeneratedScene(Scene):
     def construct(self):
@@ -238,11 +243,12 @@ class GeneratedScene(Scene):
 ```
 
 === TECHNICAL CONSTRAINTS ===
-1. Import: Only use `from manim import *` - no other imports
+1. Imports: You may use `from manim import *` and `import numpy as np` - no other imports
 2. Class name: Must be exactly `GeneratedScene(Scene)`
 3. No external dependencies: Do not use file I/O, networking, input(), or infinite loops
 4. Render time: Keep total animation under 15 seconds for reasonable render times
 5. Output format: Return ONLY the corrected Python code, no markdown fences, no explanations
+6. NumPy usage: Use numpy for mathematical calculations, random number generation, and array operations
 
 === AVAILABLE MANIM FEATURES ===
 
@@ -292,7 +298,7 @@ Steps:
 2. Identify the problematic code section
 3. Fix the error using correct Manim syntax and available features
 4. Ensure the corrected code:
-   - Uses only `from manim import *`
+   - Uses only `from manim import *` and optionally `import numpy as np`
    - Has class name `GeneratedScene(Scene)`
    - Follows all technical constraints
    - Maintains the original teaching concept
@@ -302,7 +308,7 @@ Return ONLY the corrected Python source code - no markdown, no explanations, jus
     try:
         response = client.messages.create(
             model="claude-3-5-haiku-20241022",
-            max_tokens=2048,
+            max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}]
         )
