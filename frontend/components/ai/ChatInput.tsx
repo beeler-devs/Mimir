@@ -199,11 +199,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={message}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Ask your AI professor anything... Use @ to mention instances or folders"
+          placeholder="Learning starts now"
           disabled={disabled || loading}
           rows={1}
           className="
-            w-full px-4 py-2 max-h-[200px]
+            w-full px-4 py-1.5 max-h-[200px]
             bg-transparent text-foreground text-sm
             resize-none border-0
             focus:outline-none

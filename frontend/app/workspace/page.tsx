@@ -446,29 +446,31 @@ function WorkspaceContent() {
           />
         }>
           <div className="h-full p-4 flex flex-col gap-4">
-            {activeInstance?.type === 'annotate' && (
+            {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text' || activeInstance?.type === 'code') && (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
-                <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1 bg-background">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={triggerAnnotationUpload}
-                    className="text-sm font-medium"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload PDF
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={triggerAnnotationExport}
-                    className="text-sm font-medium"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
+                {activeInstance?.type === 'annotate' && (
+                  <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1 bg-background">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={triggerAnnotationUpload}
+                      className="text-sm font-medium"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload PDF
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={triggerAnnotationExport}
+                      className="text-sm font-medium"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
