@@ -8,6 +8,7 @@ import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { Upload, Download } from 'lucide-react';
 import type {
   WorkspaceInstance,
   InstanceType,
@@ -310,6 +311,14 @@ function WorkspaceContent() {
     debouncedSave(activeInstanceId, { excalidrawState: state });
   };
 
+  const triggerAnnotationUpload = () => {
+    annotationCanvasRef.current?.openPdfUpload();
+  };
+
+  const triggerAnnotationExport = () => {
+    annotationCanvasRef.current?.exportAnnotatedPdf();
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -436,8 +445,33 @@ function WorkspaceContent() {
             annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
           />
         }>
-          <div className="h-full p-4">
-            <div className="h-full rounded-2xl border border-border bg-background overflow-hidden">
+          <div className="h-full p-4 flex flex-col gap-4">
+            {activeInstance?.type === 'annotate' && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
+                <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1 bg-background">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={triggerAnnotationUpload}
+                    className="text-sm font-medium"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload PDF
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={triggerAnnotationExport}
+                    className="text-sm font-medium"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
               {renderActiveContent()}
             </div>
           </div>

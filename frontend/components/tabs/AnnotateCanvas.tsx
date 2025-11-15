@@ -2,8 +2,6 @@
 
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Button } from '@/components/common';
-import { Upload, Download } from 'lucide-react';
 import '@excalidraw/excalidraw/index.css';
 
 // Dynamically import Excalidraw to avoid SSR issues
@@ -17,6 +15,8 @@ const Excalidraw = dynamic(
 export interface AnnotateCanvasRef {
   exportCanvasAsImage: () => Promise<string>;
   exportCanvasFromState: (state: { elements: any[]; appState: any; files: any }) => Promise<string>;
+  openPdfUpload: () => void;
+  exportAnnotatedPdf: () => void;
 }
 
 interface AnnotateCanvasProps {
@@ -33,7 +33,6 @@ interface AnnotateCanvasProps {
  */
 export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>((props, ref) => {
   const { initialData, onStateChange } = props;
-  const [pdfUploaded, setPdfUploaded] = useState(false);
   const excalidrawRef = useRef<any>(null);
   const [elements, setElements] = useState<any[]>(initialData?.elements || []);
   const [appState, setAppState] = useState<any>(
@@ -57,7 +56,6 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
         console.log('PDF uploaded:', file.name);
-        setPdfUploaded(true);
         // TODO: Process PDF and add as background to Excalidraw
       }
     };
@@ -260,33 +258,12 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   useImperativeHandle(ref, () => ({
     exportCanvasAsImage,
     exportCanvasFromState,
+    openPdfUpload: handleUploadPDF,
+    exportAnnotatedPdf: handleExportPDF,
   }));
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-border">
-        <div>
-          <h2 className="text-lg font-semibold">Annotate</h2>
-          <p className="text-sm text-muted-foreground">
-            {pdfUploaded 
-              ? 'Draw and annotate on your canvas' 
-              : 'Upload a PDF or start drawing'}
-          </p>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Button onClick={handleUploadPDF} size="sm" variant="secondary">
-            <Upload className="h-4 w-4 mr-2" />
-            Upload PDF
-          </Button>
-          <Button onClick={handleExportPDF} size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-        </div>
-      </div>
-      
       {/* Excalidraw Canvas */}
       <div className="flex-1 overflow-hidden">
         <Excalidraw
@@ -345,4 +322,3 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 });
 
 AnnotateCanvas.displayName = 'AnnotateCanvas';
-

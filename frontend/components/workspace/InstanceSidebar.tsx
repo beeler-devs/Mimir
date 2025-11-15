@@ -62,11 +62,12 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
   const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
   const [rootDragOver, setRootDragOver] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [creatingNewFolder, setCreatingNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('Untitled');
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -138,11 +139,33 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     cancelEditing();
   };
 
-  const handleFolderModalSubmit = (name: string) => {
-    if (onCreateFolder) {
-      onCreateFolder(name);
+  const handleStartCreateFolder = () => {
+    setCreatingNewFolder(true);
+    setNewFolderName('Untitled');
+  };
+
+  const handleCancelNewFolder = () => {
+    setCreatingNewFolder(false);
+    setNewFolderName('Untitled');
+  };
+
+  const handleCommitNewFolder = () => {
+    const trimmed = newFolderName.trim();
+    if (trimmed.length > 0 && onCreateFolder) {
+      onCreateFolder(trimmed);
     }
-    setFolderModalOpen(false);
+    setCreatingNewFolder(false);
+    setNewFolderName('Untitled');
+  };
+
+  const handleNewFolderKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleCommitNewFolder();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      handleCancelNewFolder();
+    }
   };
 
   const handleMoveSubmit = (folderId: string | null) => {
@@ -422,7 +445,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           <div className="px-2 pt-5 pb-4 border-b border-border flex items-center justify-center">
             <button
               onClick={toggleCollapsed}
-              className="group h-10 w-10 rounded-xl border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xl font-semibold tracking-tight"
+              className="group h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xl font-semibold tracking-tight"
               aria-label="Expand sidebar"
             >
               <span className="group-hover:hidden">M</span>
@@ -433,7 +456,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           <div className="p-3 border-t border-border flex items-center justify-center">
             <button
               onClick={onOpenSettings}
-              className="h-10 w-10 rounded-xl border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
+              className="h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
               aria-label="Open settings"
             >
               <Settings2 className="h-4 w-4" />
@@ -441,11 +464,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           </div>
         </aside>
 
-        <CreateFolderModal
-          open={folderModalOpen}
-          onClose={() => setFolderModalOpen(false)}
-          onSubmit={handleFolderModalSubmit}
-        />
         <MoveInstanceModal
           open={!!moveModalInstance}
           folders={folders}
@@ -461,11 +479,11 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   return (
     <>
     <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
-      <div className="px-4 pt-5 pb-4 flex items-center justify-between">
-        <div className="text-xl font-semibold tracking-tight">Mimir</div>
+      <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
+        <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
         <button
           onClick={toggleCollapsed}
-          className="p-2 rounded-xl border border-border bg-background hover:bg-muted transition-colors"
+          className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
           aria-label="Collapse sidebar"
         >
           <PanelsLeftRight className="h-4 w-4" />
@@ -483,7 +501,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         {onCreateFolder && (
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-            onClick={() => setFolderModalOpen(true)}
+            onClick={handleStartCreateFolder}
           >
             <FolderIcon className="h-4 w-4" />
             <span>Add folder</span>
@@ -533,12 +551,36 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             Drop here to remove from folders
           </div>
         )}
-        {instances.length === 0 && folders.length === 0 && (
+        {instances.length === 0 && folders.length === 0 && !creatingNewFolder && (
           <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
             Create your first instance to get started.
           </div>
         )}
-        
+
+        {creatingNewFolder && (
+          <div className="group relative">
+            <button
+              className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
+            >
+              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+
+              <div className="flex-1 min-w-0 pr-6">
+                <input
+                  className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none selection:bg-primary selection:text-primary-foreground"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  onBlur={handleCommitNewFolder}
+                  onKeyDown={handleNewFolderKeyDown}
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </button>
+          </div>
+        )}
+
         {rootFolders.map(folder => renderFolder(folder))}
         {rootInstances.map(instance => renderInstance(instance))}
       </div>
@@ -546,10 +588,10 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       <div className="p-4 border-t border-border">
         <button
           onClick={onOpenSettings}
-          className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-muted/40 hover:bg-muted transition"
+          className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-muted/40 hover:bg-muted transition"
         >
           <div className="flex items-center gap-3">
-            <span className="h-9 w-9 rounded-xl bg-background flex items-center justify-center border border-border">
+            <span className="h-9 w-9 rounded-lg bg-background flex items-center justify-center border border-border">
               <Settings2 className="h-4 w-4" />
             </span>
             <div className="text-left">
@@ -561,11 +603,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       </div>
     </aside>
 
-    <CreateFolderModal
-      open={folderModalOpen}
-      onClose={() => setFolderModalOpen(false)}
-      onSubmit={handleFolderModalSubmit}
-    />
     <MoveInstanceModal
       open={!!moveModalInstance}
       folders={folders}
@@ -584,56 +621,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       }}
     />
     </>
-  );
-};
-
-interface CreateFolderModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (name: string) => void;
-}
-
-const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ open, onClose, onSubmit }) => {
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => setName(''));
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
-
-  const handleSubmit = () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    onSubmit(trimmed);
-    onClose();
-  };
-
-  if (!open) return null;
-
-  return (
-    <Modal open={open} onClose={onClose}>
-      <div className="p-6 space-y-5">
-        <div>
-          <h2 className="text-lg font-semibold">New folder</h2>
-          <p className="text-sm text-muted-foreground">Organize your instances into folders.</p>
-        </div>
-        <Input
-          value={name}
-          autoFocus
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Folder name"
-        />
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={!name.trim()}>
-            Create
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 };
 
@@ -745,19 +732,16 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
   );
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Search instances</h2>
-          <p className="text-sm text-muted-foreground">Find and navigate to your instances.</p>
-        </div>
+    <Modal open={open} onClose={onClose} className="max-w-2xl">
+      <div className="flex flex-col max-h-[70vh]">
         <Input
           value={query}
           autoFocus
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by name..."
+          placeholder="Search instances..."
+          className="rounded-none border-0 border-b border-border px-5 py-4 text-base"
         />
-        <div className="max-h-64 overflow-y-auto space-y-1">
+        <div className="flex-1 overflow-y-auto p-2">
           {filteredInstances.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
               {query ? 'No instances found' : 'Start typing to search'}
@@ -770,7 +754,7 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
                 <button
                   key={instance.id}
                   onClick={() => onSelect(instance.id)}
-                  className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm hover:bg-muted transition-colors"
+                  className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)]"
                 >
                   <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                     <Icon className="h-3.5 w-3.5" />

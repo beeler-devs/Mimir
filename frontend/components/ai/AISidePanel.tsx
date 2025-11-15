@@ -346,7 +346,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
                 key={id}
                 onClick={() => setViewMode(id)}
                 className={`
-                  flex-1 group rounded-xl h-9 px-3 text-sm transition-all
+                  flex-1 group rounded-lg h-9 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
                   ${active ? 'bg-primary text-primary-foreground focus-visible:ring-primary/60' : 'text-muted-foreground hover:bg-muted/40 focus-visible:ring-primary/30'}
                 `}
@@ -364,7 +364,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
-              className="h-9 w-9 rounded-xl hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+              className="h-9 w-9 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
               aria-label="Collapse AI panel"
             >
               <PanelsLeftRight className="h-4 w-4" />

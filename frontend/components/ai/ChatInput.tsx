@@ -33,6 +33,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<HTMLDivElement>(null);
+  const adjustTextareaHeight = () => {
+    if (!textareaRef.current) return;
+    const textarea = textareaRef.current;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(200, textarea.scrollHeight)}px`;
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [message]);
 
   // Update autocomplete when query changes
   useEffect(() => {
@@ -182,7 +192,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       )}
 
       {/* Main input container with border */}
-      <div className="border border-input rounded-xl overflow-hidden bg-background">
+      <div className="border border-input rounded-lg overflow-hidden bg-background">
         {/* Textarea area */}
         <textarea
           ref={textareaRef}
@@ -191,8 +201,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleKeyDown}
           placeholder="Ask your AI professor anything... Use @ to mention instances or folders"
           disabled={disabled || loading}
+          rows={1}
           className="
-            w-full px-4 py-3 min-h-[40px] max-h-[200px]
+            w-full px-4 py-2 max-h-[200px]
             bg-transparent text-foreground text-sm
             resize-none border-0
             focus:outline-none
@@ -237,4 +248,3 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     </div>
   );
 };
-

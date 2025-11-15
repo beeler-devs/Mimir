@@ -45,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
                 key={item.id}
                 href={item.href}
                 className={`
-                  flex items-center space-x-2 px-4 py-2 rounded-xl
+                  flex items-center space-x-2 px-4 py-2 rounded-lg
                   text-sm font-medium transition-all duration-200
                   ${
                     active
@@ -69,4 +69,3 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
     </header>
   );
 };
-

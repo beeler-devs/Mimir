@@ -55,7 +55,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
               onClick={() => setSidebarOpen(false)}
               className="
                 absolute top-3 left-3
-                p-2 rounded-xl border border-border
+                p-2 rounded-lg border border-border
                 bg-background hover:bg-muted transition-colors
                 text-muted-foreground hover:text-foreground
               "
@@ -69,7 +69,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
             <button
               onClick={() => setSidebarOpen(true)}
               className="
-                p-2 rounded-xl border border-border
+                p-2 rounded-lg border border-border
                 bg-background hover:bg-muted transition-colors
                 text-muted-foreground hover:text-foreground
               "
