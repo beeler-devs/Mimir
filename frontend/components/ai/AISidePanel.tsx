@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChatNode } from '@/lib/types';
+import { ChatNode, AnimationSuggestion } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -90,10 +90,11 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
     }
 
     setLoading(true);
+    let savedUserMessage: ChatNode | null = null;
 
     try {
       // Save user message to database
-      const savedUserMessage = await saveChatMessage(chatId, {
+      savedUserMessage = await saveChatMessage(chatId, {
         parentId: activeNodeId,
         role: 'user',
         content,
@@ -110,10 +111,31 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
         await updateChatTitle(chatId, title);
       }
 
-      // Call backend API to get AI response
+      // Call backend API to get streaming AI response
+      if (!savedUserMessage) {
+        throw new Error('Failed to save user message');
+      }
+      
       const branchPath = buildBranchPath(updatedNodes, savedUserMessage.id);
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
-      const response = await fetch(`${backendUrl}/chat`, {
+      
+      // Create a temporary streaming message node
+      const streamingMessageId = `streaming-${Date.now()}`;
+      const streamingMessage: ChatNode = {
+        id: streamingMessageId,
+        parentId: savedUserMessage.id,
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Add streaming message to state
+      const nodesWithStreaming = [...updatedNodes, streamingMessage];
+      setNodes(nodesWithStreaming);
+      setActiveNodeId(streamingMessageId);
+      
+      // Stream the response
+      const response = await fetch(`${backendUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,27 +147,80 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({ collapseSidebar }) => 
         }),
       });
 
-      const data = await response.json();
-      
-      // Save AI response to database
-      const savedAIMessage = await saveChatMessage(chatId, {
-        parentId: savedUserMessage.id,
-        role: 'assistant',
-        content: data.message.content,
-        suggestedAnimation: data.suggestedAnimation,
-      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-      // Update local state
-      const nodesWithAI = [...updatedNodes, savedAIMessage];
-      setNodes(nodesWithAI);
-      setActiveNodeId(savedAIMessage.id);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      let suggestedAnimation: AnimationSuggestion | undefined = undefined;
+
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'chunk') {
+                // Update streaming message with new chunk
+                fullContent += data.content;
+                setNodes(prev => prev.map(node => 
+                  node.id === streamingMessageId
+                    ? { ...node, content: fullContent }
+                    : node
+                ));
+              } else if (data.type === 'done') {
+                // Streaming complete, save final message
+                fullContent = data.content;
+                suggestedAnimation = data.suggestedAnimation;
+                
+                // Save AI response to database
+                const savedAIMessage = await saveChatMessage(chatId, {
+                  parentId: savedUserMessage.id,
+                  role: 'assistant',
+                  content: fullContent,
+                  suggestedAnimation,
+                });
+
+                // Replace streaming message with saved message
+                setNodes(prev => prev.map(node => 
+                  node.id === streamingMessageId
+                    ? savedAIMessage
+                    : node
+                ));
+                setActiveNodeId(savedAIMessage.id);
+              } else if (data.type === 'error') {
+                throw new Error(data.content);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Remove streaming message if it exists
+      setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
       
       // Try to save error message to database
       try {
         const errorMessage = await saveChatMessage(chatId, {
-          parentId: activeNodeId,
+          parentId: savedUserMessage?.id || activeNodeId,
           role: 'assistant',
           content: 'Sorry, I encountered an error. Please try again.',
         });
