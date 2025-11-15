@@ -141,11 +141,41 @@ class ManimService:
             
             logger.info(f"Code validated and written to {scene_path}")
             
+            # Verify the code contains GeneratedScene class before importing
+            with open(scene_path, 'r', encoding='utf-8') as f:
+                code_content = f.read()
+                if 'class GeneratedScene' not in code_content:
+                    raise ValueError(
+                        f"Generated code does not contain 'class GeneratedScene'. "
+                        f"Code preview: {code_content[:500]}..."
+                    )
+            
             # Dynamically import the GeneratedScene class
-            spec = importlib.util.spec_from_file_location("generated_scene", scene_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            scene_class = module.GeneratedScene
+            try:
+                spec = importlib.util.spec_from_file_location("generated_scene", scene_path)
+                if spec is None or spec.loader is None:
+                    raise ValueError(f"Failed to create module spec from {scene_path}")
+                
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                
+                # Verify the class exists
+                if not hasattr(module, 'GeneratedScene'):
+                    # Log what's actually in the module
+                    available_attrs = [attr for attr in dir(module) if not attr.startswith('_')]
+                    raise AttributeError(
+                        f"Module 'generated_scene' does not have 'GeneratedScene' attribute. "
+                        f"Available attributes: {available_attrs}. "
+                        f"Code preview: {code_content[:500]}..."
+                    )
+                
+                scene_class = module.GeneratedScene
+                logger.info(f"Successfully imported GeneratedScene class from {scene_path}")
+                
+            except Exception as e:
+                logger.error(f"Failed to import GeneratedScene: {e}")
+                logger.error(f"Generated code content:\n{code_content}")
+                raise
             
             # NOTE: Keeping select_scene() code for future use, but currently using codegen path
             # Old code (commented for reference):

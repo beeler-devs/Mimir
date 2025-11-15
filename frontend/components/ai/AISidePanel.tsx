@@ -207,14 +207,24 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
       setActiveNodeId(streamingMessageId);
       
       // Stream the response
+      // Filter out empty messages before sending to backend
+      const branchMessages = getActiveBranch(updatedNodes, savedUserMessage.id)
+        .map(n => ({
+          role: n.role,
+          content: n.content || '',
+        }))
+        .filter((msg, idx, arr) => {
+          // Allow empty content only for the final assistant message
+          const isFinalAssistant = idx === arr.length - 1 && msg.role === 'assistant';
+          const hasContent = msg.content && msg.content.trim().length > 0;
+          return hasContent || isFinalAssistant;
+        });
+
       const response = await fetch(`${backendUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: getActiveBranch(updatedNodes, savedUserMessage.id).map(n => ({
-            role: n.role,
-            content: n.content,
-          })),
+          messages: branchMessages,
           branchPath,
           workspaceContext,
         }),

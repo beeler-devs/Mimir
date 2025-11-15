@@ -7,6 +7,7 @@ import re
 import subprocess
 import logging
 import tempfile
+import importlib.util
 from pathlib import Path
 from uuid import uuid4
 from anthropic import Anthropic
@@ -25,6 +26,189 @@ MAX_REPAIR_ATTEMPTS = 3
 MANIM_TEST_TIMEOUT = 30
 
 
+def _detect_concept_type(concept: str) -> str:
+    """
+    Detect the type of concept based on keywords
+    
+    Args:
+        concept: The concept description
+    
+    Returns:
+        Concept type string
+    """
+    concept_lower = concept.lower()
+    
+    if any(word in concept_lower for word in ["function", "graph", "plot", "curve", "derivative", "integral", "sin", "cos", "exp", "log"]):
+        return "mathematical_function"
+    elif any(word in concept_lower for word in ["random", "walk", "brownian", "stochastic", "probability", "distribution", "sampling"]):
+        return "statistics_probability"
+    elif any(word in concept_lower for word in ["matrix", "transform", "vector", "linear", "rotation", "translation"]):
+        return "geometry_transform"
+    elif any(word in concept_lower for word in ["motion", "velocity", "acceleration", "force", "wave", "physics", "trajectory"]):
+        return "physics_motion"
+    elif any(word in concept_lower for word in ["algorithm", "sort", "search", "tree", "graph", "data structure"]):
+        return "algorithm_cs"
+    elif any(word in concept_lower for word in ["circle", "square", "triangle", "polygon", "angle", "geometry", "proof"]):
+        return "geometry_shapes"
+    else:
+        return "general"
+
+
+def assess_animation_complexity(concept: str, student_context: str | None = None) -> dict:
+    """
+    Assess the complexity of an animation concept to determine which model to use
+    
+    Args:
+        concept: The concept to visualize
+        student_context: Optional context about the student's current work
+    
+    Returns:
+        Dictionary with model selection, complexity score, reasoning, and factors
+    """
+    score = 0.0
+    factors = {}
+    
+    concept_lower = concept.lower()
+    
+    # Keyword-based complexity (0.0-0.4 points)
+    simple_keywords = ["plot", "graph", "show", "display", "visualize"]
+    medium_keywords = ["function", "curve", "transform", "motion", "random walk"]
+    complex_keywords = ["algorithm", "multi-step", "interaction", "system", "network", 
+                       "recursive", "sorting", "searching", "tree", "graph structure"]
+    
+    if any(kw in concept_lower for kw in complex_keywords):
+        score += 0.4
+        factors["keywords"] = "complex"
+    elif any(kw in concept_lower for kw in medium_keywords):
+        score += 0.2
+        factors["keywords"] = "medium"
+    elif any(kw in concept_lower for kw in simple_keywords):
+        score += 0.1
+        factors["keywords"] = "simple"
+    else:
+        factors["keywords"] = "none"
+    
+    # Description length (0.0-0.2 points)
+    word_count = len(concept.split())
+    if word_count > 20:
+        score += 0.2
+        factors["length"] = "long"
+    elif word_count > 10:
+        score += 0.1
+        factors["length"] = "medium"
+    else:
+        factors["length"] = "short"
+    
+    # Student context (0.0-0.2 points)
+    if student_context:
+        context_lower = student_context.lower()
+        if any(word in context_lower for word in ["advanced", "graduate", "research"]):
+            score += 0.2
+            factors["context"] = "advanced"
+        elif any(word in context_lower for word in ["multiple", "several", "complex"]):
+            score += 0.1
+            factors["context"] = "mentions_complexity"
+        else:
+            factors["context"] = "standard"
+    else:
+        factors["context"] = "none"
+    
+    # Concept type detection (0.0-0.2 points)
+    concept_type = _detect_concept_type(concept)
+    factors["concept_type"] = concept_type
+    
+    if concept_type == "algorithm_cs":
+        score += 0.2
+    elif concept_type in ["physics_motion", "statistics_probability"]:
+        score += 0.1
+    elif concept_type == "geometry_transform":
+        score += 0.1
+    
+    # Get threshold and force model from environment
+    threshold = float(os.getenv("MANIM_MODEL_THRESHOLD", "0.5"))
+    force_model = os.getenv("MANIM_FORCE_MODEL", "").lower()
+    default_model = os.getenv("MANIM_DEFAULT_MODEL", "haiku").lower()
+    
+    # Model selection
+    if force_model == "haiku":
+        model = "claude-3-5-haiku-20241022"
+        reasoning = f"Force override to Haiku (score: {score:.2f})"
+    elif force_model == "sonnet":
+        # Note: Sonnet models may not be available, will fall back to Haiku if needed
+        model = "claude-3-5-haiku-20241022"  # Using Haiku since Sonnet models return 404
+        reasoning = f"Force override to Sonnet requested, but using Haiku (Sonnet unavailable) (score: {score:.2f})"
+    elif score >= threshold:
+        # Note: Sonnet models may not be available, using Haiku instead
+        model = "claude-3-5-haiku-20241022"  # Using Haiku since Sonnet models return 404
+        reasoning = f"Complex animation (score: {score:.2f} >= {threshold}) - using Haiku (Sonnet unavailable)"
+    else:
+        model = "claude-3-5-haiku-20241022"
+        reasoning = f"Simple animation (score: {score:.2f} < {threshold}) - using Haiku"
+    
+    return {
+        "model": model,
+        "complexity_score": score,
+        "reasoning": reasoning,
+        "factors": factors
+    }
+
+
+def _get_concept_specific_guidance(concept_type: str) -> str:
+    """
+    Get concept-specific guidance for the user prompt
+    
+    Args:
+        concept_type: Type of concept (mathematical_function, statistics_probability, etc.)
+    
+    Returns:
+        Guidance string for the concept type
+    """
+    guidance_map = {
+        "mathematical_function": """- Use Axes to plot the function
+- Create smooth curves using VMobject.set_points_as_corners()
+- Show key features: intercepts, extrema, asymptotes
+- Use different colors for different functions if comparing
+- Consider showing transformations (shifts, stretches) if relevant""",
+        
+        "statistics_probability": """- Use random number generation (np.random) for stochastic processes
+- For random walks, generate path points and animate with MoveAlongPath
+- Use NumberLine for 1D processes, Axes for 2D
+- Show multiple samples or iterations to demonstrate randomness
+- Consider using dots or particles to represent data points""",
+        
+        "geometry_transform": """- Use NumberPlane for coordinate transformations
+- Show before/after states clearly
+- Use Transform or ApplyMethod for smooth transitions
+- Display transformation matrices with MathTex
+- Use arrows to show vector transformations""",
+        
+        "physics_motion": """- Animate trajectories with MoveAlongPath
+- Use Arrow objects for vectors (velocity, force, acceleration)
+- NumberLine for 1D motion, Axes for 2D/3D
+- Show multiple particles for systems
+- Use color coding: different colors for different physical quantities""",
+        
+        "algorithm_cs": """- Break down into clear sequential steps
+- Use Transform to show state changes
+- Highlight current step with color changes
+- Use VGroups to represent data structures
+- Show comparisons side-by-side if relevant""",
+        
+        "geometry_shapes": """- Use NumberPlane for coordinate geometry
+- Transform shapes smoothly (Circle → Square, etc.)
+- Show geometric relationships with lines and angles
+- Use VGroup to combine related shapes
+- Highlight important elements (angles, lengths) with colors""",
+        
+        "general": """- Choose the most appropriate visualization approach
+- Consider if this is a function, process, transformation, or static concept
+- Use progressive reveals to build understanding
+- Keep it clear and focused on the main idea"""
+    }
+    
+    return guidance_map.get(concept_type, guidance_map["general"])
+
+
 def call_claude_for_manim_code(concept: str, student_context: str | None = None) -> str:
     """
     Call Claude to generate initial Manim code for a concept
@@ -41,6 +225,20 @@ def call_claude_for_manim_code(concept: str, student_context: str | None = None)
         raise RuntimeError("CLAUDE_API_KEY not set in environment")
     
     client = Anthropic(api_key=claude_api_key)
+    
+    # Assess complexity and select appropriate model
+    assessment = assess_animation_complexity(concept, student_context)
+    selected_model = assessment["model"]
+    complexity_score = assessment["complexity_score"]
+    reasoning = assessment["reasoning"]
+    
+    # Log model selection decision
+    logger.info(
+        f"Model selection - concept: \"{concept[:50]}...\", "
+        f"score: {complexity_score:.2f}, "
+        f"model: {selected_model.split('-')[1]}, "
+        f"reasoning: {reasoning}"
+    )
     
     system_prompt = """You are an expert Manim animator and math teacher specializing in creating clear, educational visualizations.
 
@@ -83,17 +281,229 @@ Layout methods:
 - to_edge(UP/DOWN/LEFT/RIGHT), next_to(), move_to(), arrange()
 - Positioning: ORIGIN, UP, DOWN, LEFT, RIGHT, UL, UR, DL, DR
 
+=== CONCEPT-SPECIFIC GUIDANCE ===
+
+**Mathematical Functions:**
+- Use Axes for plotting functions
+- Create parametric curves with numpy: `points = [axes.c2p(x, func(x)) for x in np.linspace(-5, 5, 100)]`
+- Use VMobject.set_points_as_corners() for smooth curves
+- Show derivatives/integrals with tangent lines or shaded areas
+- Animate function transformations (shifts, stretches, reflections)
+
+**Geometry & Shapes:**
+- Use NumberPlane for coordinate geometry
+- Transform shapes: Circle → Square, scaling, rotation
+- Show geometric proofs step-by-step
+- Use VGroup to combine related shapes
+- Highlight angles, lengths, or relationships
+
+**Physics & Motion:**
+- Animate trajectories with MoveAlongPath
+- Show vectors with Arrow objects
+- Use NumberLine for 1D motion
+- Create particle systems with multiple dots
+- Show forces, velocities, accelerations as arrows
+
+**Statistics & Probability:**
+- Use random number generation: np.random.uniform(), np.random.choice()
+- Create histograms or distributions
+- Animate sampling processes
+- Show random walks or stochastic processes
+- Use dots or bars to represent data
+
+**Algorithms & CS:**
+- Step-by-step processes with clear transitions
+- Use Transform to show state changes
+- Highlight current step with color changes
+- Show data structures with VGroups
+- Animate sorting, searching, or transformations
+
+=== ADVANCED TECHNIQUES ===
+
+**Path Generation:**
+```python
+# Generate smooth path from points
+path_points = [(x, y) for x, y in zip(np.linspace(-5, 5, 100), func_values)]
+path = VMobject()
+path.set_points_as_corners([axes.c2p(x, y) for x, y in path_points])
+path.set_color(YELLOW)
+```
+
+**Random Processes:**
+```python
+np.random.seed(42)  # For reproducibility
+for _ in range(n_steps):
+    angle = np.random.uniform(0, 2 * np.pi)
+    dx = step_size * np.cos(angle)
+    dy = step_size * np.sin(angle)
+```
+
+**Tracing Paths:**
+```python
+# Animate object while creating path
+self.play(
+    MoveAlongPath(dot, path, rate_func=linear),
+    Create(path),  # Create path simultaneously
+    run_time=5
+)
+```
+
+**Multi-step Processes:**
+```python
+# Show steps sequentially
+for step in steps:
+    self.play(Create(step), run_time=0.5)
+    self.wait(0.3)
+```
+
+**Emphasis & Highlighting:**
+```python
+# Highlight important elements
+highlight = Circle(radius=0.5, color=YELLOW, stroke_width=3)
+highlight.move_to(important_point)
+self.play(Create(highlight))
+self.wait(0.5)
+self.play(FadeOut(highlight))
+```
+
+=== COMMON VISUALIZATION PATTERNS ===
+
+**Pattern 1: Random Walk (2D)**
+```python
+# Generate random walk path
+path_points = [(0, 0)]
+for _ in range(n_steps):
+    angle = np.random.uniform(0, 2 * np.pi)
+    dx = step_size * np.cos(angle)
+    dy = step_size * np.sin(angle)
+    new_x = np.clip(prev_x + dx, -4.5, 4.5)
+    new_y = np.clip(prev_y + dy, -4.5, 4.5)
+    path_points.append((new_x, new_y))
+
+# Create and animate path
+path = VMobject()
+path.set_points_as_corners([axes.c2p(x, y) for x, y in path_points])
+self.play(MoveAlongPath(dot, path), Create(path), run_time=8)
+```
+
+**Pattern 2: Function Plotting**
+```python
+# Create function curve
+x_values = np.linspace(-5, 5, 100)
+y_values = [func(x) for x in x_values]
+points = [axes.c2p(x, y) for x, y in zip(x_values, y_values)]
+curve = VMobject()
+curve.set_points_as_corners(points)
+self.play(Create(curve), run_time=3)
+```
+
+**Pattern 3: Step-by-step Process**
+```python
+# Show process steps
+for i, step in enumerate(steps):
+    step_obj = Create(step)
+    label = Text(f"Step {i+1}", font_size=24).next_to(step, UP)
+    self.play(step_obj, Write(label))
+    self.wait(0.5)
+    self.play(FadeOut(label))
+```
+
+**Pattern 4: Transformations**
+```python
+# Show before/after transformation
+original = Circle(radius=1, color=BLUE)
+transformed = Square(side_length=2, color=RED)
+self.play(Create(original))
+self.wait(1)
+self.play(Transform(original, transformed), run_time=2)
+```
+
+=== REAL EXAMPLES FROM WORKING SCENES ===
+
+**Example 1: Brownian Motion (Random Walk 2D)**
+```python
+# Title
+title = Text("Brownian Motion", font_size=48)
+self.play(Write(title))
+self.wait(0.5)
+self.play(FadeOut(title))
+
+# Setup axes
+axes = Axes(x_range=[-5, 5, 1], y_range=[-5, 5, 1], x_length=10, y_length=7)
+axes_labels = axes.get_axis_labels(x_label="x", y_label="y")
+self.play(Create(axes), Write(axes_labels))
+
+# Create particle
+dot = Dot(axes.c2p(0, 0), color=RED, radius=0.1)
+self.play(Create(dot))
+
+# Generate and animate path
+np.random.seed(42)
+path_points = [(0, 0)]
+for _ in range(100):
+    angle = np.random.uniform(0, 2 * np.pi)
+    dx = 0.3 * np.cos(angle)
+    dy = 0.3 * np.sin(angle)
+    new_x = np.clip(path_points[-1][0] + dx, -4.5, 4.5)
+    new_y = np.clip(path_points[-1][1] + dy, -4.5, 4.5)
+    path_points.append((new_x, new_y))
+
+path = VMobject()
+path.set_points_as_corners([axes.c2p(x, y) for x, y in path_points])
+path.set_color(YELLOW)
+self.play(MoveAlongPath(dot, path), Create(path), run_time=8)
+```
+
+**Example 2: 1D Random Walk**
+```python
+# Number line setup
+number_line = NumberLine(x_range=[-10, 10, 1], length=12, include_numbers=True)
+self.play(Create(number_line))
+
+# Animate step-by-step movement
+position = 0
+dot = Dot(number_line.n2p(position), color=RED)
+self.play(Create(dot))
+
+np.random.seed(42)
+for _ in range(20):
+    step = np.random.choice([-1, 1])
+    position = np.clip(position + step, -9, 9)
+    self.play(dot.animate.move_to(number_line.n2p(position)), run_time=0.3)
+```
+
+**Example 3: Matrix Transformation**
+```python
+# Grid setup
+grid = NumberPlane(x_range=[-5, 5, 1], y_range=[-5, 5, 1])
+self.play(Create(grid))
+
+# Vector
+vector = Arrow(ORIGIN, [2, 1, 0], buff=0, color=YELLOW)
+vector_label = MathTex("\\vec{v}").next_to(vector.get_end(), RIGHT)
+self.play(Create(vector), Write(vector_label))
+
+# Show transformation
+matrix = MathTex("\\begin{bmatrix} 1 & 1 \\\\ 0 & 1 \\end{bmatrix}").to_corner(UL)
+self.play(Write(matrix))
+self.play(
+    ApplyMethod(grid.apply_matrix, [[1, 1], [0, 1]]),
+    ApplyMethod(vector.put_start_and_end_on, ORIGIN, [3, 1, 0]),
+    run_time=2
+)
+```
+
 === ANIMATION BEST PRACTICES ===
 
 1. STRUCTURE YOUR SCENE IN PHASES:
    Phase 1: Title/Introduction (1-2 seconds)
    - Show a clear title that identifies the concept
-   - Fade in or write the title, then move it to top edge
+   - Fade in or write the title, then move it to top edge or fade out
    
    Phase 2: Setup (2-3 seconds)
    - Create axes, labels, or initial objects
    - Use Create() for axes, Write() for labels
-   - Establish the visual context
+   - Establish the visual context clearly
    
    Phase 3: Main Animation (5-10 seconds)
    - This is the core explanation
@@ -108,12 +518,12 @@ Layout methods:
 
 2. PACE APPROPRIATELY:
    - Use self.wait() between major steps (0.5-1 second)
-   - Longer animations (run_time=3-5) for complex movements
-   - Shorter animations (run_time=0.5-1) for quick reveals
+   - Longer animations (run_time=3-8) for complex movements
+   - Shorter animations (run_time=0.3-1) for quick reveals
    - Don't rush - give viewers time to understand
 
 3. USE VISUAL HIERARCHY:
-   - Titles at top (to_edge(UP))
+   - Titles at top (to_edge(UP)) or fade out after introduction
    - Main content centered (move_to(ORIGIN))
    - Labels/insights at bottom (to_edge(DOWN))
    - Use size differences: titles larger (font_size=48), labels smaller (font_size=24-36)
@@ -121,7 +531,7 @@ Layout methods:
 4. COLOR MEANINGFULLY:
    - RED: Important points, errors, or emphasis
    - BLUE: Axes, background elements, standard objects
-   - YELLOW/GREEN: Highlights, positive indicators
+   - YELLOW/GREEN: Highlights, positive indicators, paths
    - Use consistent colors throughout the scene
 
 5. PROGRESSIVE REVEALS:
@@ -136,60 +546,81 @@ Layout methods:
    - Match animation complexity to concept complexity
    - Simple concepts = simpler animations
 
-=== EXAMPLE STRUCTURE ===
-```python
-from manim import *
-import numpy as np
-
-class GeneratedScene(Scene):
-    def construct(self):
-        # Phase 1: Title
-        title = Text("Concept Name", font_size=48)
-        self.play(Write(title))
-        self.wait(0.5)
-        self.play(title.animate.to_edge(UP).scale(0.7))
-        
-        # Phase 2: Setup
-        axes = Axes(x_range=[-5, 5], y_range=[-5, 5], x_length=10, y_length=7)
-        axes_labels = axes.get_axis_labels(x_label="x", y_label="y")
-        self.play(Create(axes), Write(axes_labels))
-        self.wait(0.5)
-        
-        # Phase 3: Main animation (can use numpy for calculations)
-        # Example: np.random, np.linspace, np.sin, np.cos, etc.
-        dot = Dot(axes.c2p(0, 0), color=RED)
-        self.play(Create(dot))
-        # ... main animation logic ...
-        
-        # Phase 4: Conclusion
-        insight = Text("Key Insight", font_size=36).to_edge(DOWN)
-        self.play(Write(insight))
-        self.wait(2)
-```
-
-Remember: Your goal is to create an animation that a student can watch and understand the concept clearly. Prioritize clarity, pacing, and educational value."""
+Remember: Your goal is to create an animation that a student can watch and understand the concept clearly. Prioritize clarity, pacing, and educational value. Use the examples and patterns above as inspiration, but adapt them to fit the specific concept you're visualizing."""
+    
+    # Analyze concept to provide better guidance
+    concept_type = _detect_concept_type(concept)
+    complexity_hint = "intermediate"
+    
+    # Adjust complexity based on student context
+    if student_context:
+        if any(word in student_context.lower() for word in ["beginner", "intro", "basic", "first", "learning"]):
+            complexity_hint = "beginner"
+        elif any(word in student_context.lower() for word in ["advanced", "graduate", "research", "thesis"]):
+            complexity_hint = "advanced"
     
     user_prompt = f"""=== CONCEPT TO VISUALIZE ===
 {concept}
 
+=== DETECTED CONCEPT TYPE ===
+Based on the concept description, this appears to be: {concept_type}
+Use the relevant guidance from the system prompt for this concept type.
+
 === STUDENT CONTEXT ===
 {student_context if student_context else "No specific student context provided."}
+
+=== COMPLEXITY LEVEL ===
+Target complexity: {complexity_hint}
+- Beginner: Simple, clear, step-by-step with extra explanations
+- Intermediate: Standard educational animation with good pacing
+- Advanced: Can assume prior knowledge, more sophisticated visualizations
 
 === YOUR TASK ===
 Design a clear, intuitive animation that explains this concept to a student.
 
-Consider:
-- What is the core idea that needs to be visualized?
-- What visual elements will best convey this concept?
-- How can you build understanding progressively?
-- What pacing will help the student follow along?
+**Key Questions to Consider:**
+1. What is the core idea that needs to be visualized?
+   - Identify the main mathematical/scientific principle
+   - What makes this concept important or interesting?
 
-Follow all the system constraints and best practices.
+2. What visual elements will best convey this concept?
+   - Should you use axes, number lines, shapes, or combinations?
+   - What colors and sizes will create clear visual hierarchy?
+   - Are there standard visualizations for this concept type?
+
+3. How can you build understanding progressively?
+   - What should the student see first? (setup/context)
+   - What's the main demonstration? (core animation)
+   - What's the key takeaway? (conclusion/insight)
+
+4. What pacing will help the student follow along?
+   - Are there multiple steps that need separate reveals?
+   - Should the animation be slow and deliberate or faster?
+   - Where should you pause (self.wait()) for comprehension?
+
+5. How can student context inform your approach?
+   - If student context mentions specific work, reference it visually if relevant
+   - Adjust complexity: simpler for beginners, more sophisticated for advanced
+   - Consider what they might already know based on context
+
+**Specific Guidance for {concept_type}:**
+{_get_concept_specific_guidance(concept_type)}
+
+**Implementation Checklist:**
+- [ ] Title/introduction phase (1-2 seconds)
+- [ ] Setup phase with axes/labels/initial objects (2-3 seconds)
+- [ ] Main animation that demonstrates the concept (5-10 seconds)
+- [ ] Conclusion with key insight or summary (1-2 seconds)
+- [ ] Appropriate use of colors, pacing, and visual hierarchy
+- [ ] Proper use of numpy if calculations are needed
+- [ ] Code follows all technical constraints
+
+Follow all the system constraints, best practices, and use the examples/patterns as inspiration.
 Return ONLY the complete Python source code for the scene - no markdown, no explanations, just the code."""
     
     try:
         response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model=selected_model,
             max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}]
@@ -214,6 +645,8 @@ def call_claude_to_fix_manim_code(previous_code: str, error_output: str) -> str:
     """
     Call Claude to fix Manim code that failed to compile or run
     
+    Always uses Sonnet for repairs as it's more reliable at error fixing.
+    
     Args:
         previous_code: The code that failed
         error_output: The error message from compilation or execution
@@ -226,6 +659,10 @@ def call_claude_to_fix_manim_code(previous_code: str, error_output: str) -> str:
         raise RuntimeError("CLAUDE_API_KEY not set in environment")
     
     client = Anthropic(api_key=claude_api_key)
+    
+    # Try to use Sonnet for repairs (better at error fixing), but fall back to Haiku if Sonnet isn't available
+    repair_model = os.getenv("MANIM_REPAIR_MODEL", "claude-3-5-haiku-20241022")
+    fallback_model = "claude-3-5-haiku-20241022"  # Known working model
     
     system_prompt = """You are an expert Manim animator and math teacher specializing in debugging and fixing Manim code.
 
@@ -305,27 +742,46 @@ Steps:
 
 Return ONLY the corrected Python source code - no markdown, no explanations, just the fixed code."""
     
-    try:
-        response = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}]
-        )
-        
-        code = response.content[0].text
-        
-        # Strip markdown code fences if present
-        code = re.sub(r'^```python\s*\n', '', code, flags=re.MULTILINE)
-        code = re.sub(r'^```\s*\n', '', code, flags=re.MULTILINE)
-        code = re.sub(r'\n```\s*$', '', code, flags=re.MULTILINE)
-        code = code.strip()
-        
-        return code
-        
-    except Exception as e:
-        logger.error(f"Error calling Claude for code repair: {e}", exc_info=True)
-        raise RuntimeError(f"Failed to repair Manim code: {e}")
+    # Try the primary repair model, fall back to Haiku if it fails
+    models_to_try = [repair_model]
+    if repair_model != fallback_model:
+        models_to_try.append(fallback_model)
+    
+    last_error = None
+    for model in models_to_try:
+        try:
+            logger.info(f"Attempting code repair with {model}")
+            response = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            
+            code = response.content[0].text
+            
+            # Strip markdown code fences if present
+            code = re.sub(r'^```python\s*\n', '', code, flags=re.MULTILINE)
+            code = re.sub(r'^```\s*\n', '', code, flags=re.MULTILINE)
+            code = re.sub(r'\n```\s*$', '', code, flags=re.MULTILINE)
+            code = code.strip()
+            
+            logger.info(f"Successfully repaired code using {model}")
+            return code
+            
+        except Exception as e:
+            last_error = e
+            if "not_found_error" in str(e) or "404" in str(e):
+                logger.warning(f"Model {model} not found, trying fallback...")
+                continue
+            else:
+                # For other errors, log and try next model
+                logger.warning(f"Error with model {model}: {e}, trying fallback...")
+                continue
+    
+    # If all models failed, raise the last error
+    logger.error(f"All repair models failed. Last error: {last_error}", exc_info=True)
+    raise RuntimeError(f"Failed to repair Manim code with any available model: {last_error}")
 
 
 def write_code_to_file(code: str, path: Path) -> None:
@@ -462,6 +918,24 @@ def generate_and_validate_manim_scene(
             code = call_claude_to_fix_manim_code(code, last_error)
             continue
         
+        # Verify GeneratedScene class exists in code
+        if 'class GeneratedScene' not in code:
+            last_error = "Generated code does not contain 'class GeneratedScene' definition"
+            logger.warning(f"Attempt {attempt}: {last_error}")
+            
+            if attempt > MAX_REPAIR_ATTEMPTS:
+                # Clean up temp file
+                try:
+                    tmp_path.unlink()
+                except:
+                    pass
+                break
+            
+            # Ask Claude to fix it
+            logger.info(f"Requesting code repair (attempt {attempt})...")
+            code = call_claude_to_fix_manim_code(code, last_error)
+            continue
+        
         # Check Manim execution
         ok_manim, manim_err = check_manim_runs(tmp_path, scene_class="GeneratedScene")
         if not ok_manim:
@@ -477,6 +951,41 @@ def generate_and_validate_manim_scene(
                 break
             
             # Ask Claude to fix it
+            logger.info(f"Requesting code repair (attempt {attempt})...")
+            code = call_claude_to_fix_manim_code(code, last_error)
+            continue
+        
+        # Additional validation: Try to import and verify class exists
+        try:
+            spec = importlib.util.spec_from_file_location("temp_scene", tmp_path)
+            if spec and spec.loader:
+                temp_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(temp_module)
+                if not hasattr(temp_module, 'GeneratedScene'):
+                    last_error = "GeneratedScene class not found after import (class may be defined incorrectly)"
+                    logger.warning(f"Attempt {attempt}: {last_error}")
+                    
+                    if attempt > MAX_REPAIR_ATTEMPTS:
+                        try:
+                            tmp_path.unlink()
+                        except:
+                            pass
+                        break
+                    
+                    logger.info(f"Requesting code repair (attempt {attempt})...")
+                    code = call_claude_to_fix_manim_code(code, last_error)
+                    continue
+        except Exception as import_err:
+            last_error = f"Import validation error: {import_err}"
+            logger.warning(f"Attempt {attempt}: {last_error}")
+            
+            if attempt > MAX_REPAIR_ATTEMPTS:
+                try:
+                    tmp_path.unlink()
+                except:
+                    pass
+                break
+            
             logger.info(f"Requesting code repair (attempt {attempt})...")
             code = call_claude_to_fix_manim_code(code, last_error)
             continue

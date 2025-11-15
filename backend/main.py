@@ -227,16 +227,28 @@ async def chat_stream(request: ChatRequest):
 
 {context_description if context_description else ""}
 
-When explaining concepts that would benefit from visualization (mathematical functions, physics simulations, data structures, geometric concepts), append a special marker at the END of your response:
+=== ANIMATION SUGGESTIONS ===
+
+CRITICAL INSTRUCTION: If the user's message contains ANY of these keywords or phrases, you MUST include an animation suggestion:
+- "visualize", "visualization", "show me", "show", "animate", "animation", "draw", "illustrate", "demonstrate", "create an animation", "make an animation", "generate an animation"
+- Any request to "see" something visually
+- Any request for a "graph", "plot", "diagram", or visual representation
+
+When the user explicitly requests a visualization (using any of the above keywords), you MUST append this exact marker at the END of your response:
 
 ANIMATION_SUGGESTION: {{"description": "brief description of what to animate", "topic": "math"}}
 
-Only suggest animations for truly visual concepts like:
-- Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations)
+DO NOT skip this marker if the user asks for visualization. Even if you're unsure how to visualize it, create a reasonable description and include the marker.
+
+Animation suggestions are appropriate for:
+- Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations, conditional PDFs, joint PDFs)
 - Physics simulations (waves, collisions, motion)
 - Geometric visualizations
+- Data structures and algorithms
+- Statistical concepts (distributions, probability, conditional probability)
+- Any concept the user explicitly asks to visualize or animate
 
-Do NOT suggest animations for abstract discussions, definitions, or text-based explanations.
+When the user explicitly requests a visualization, ALWAYS provide an animation suggestion. Do not skip it.
 
 Example response with animation:
 "Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
@@ -255,12 +267,29 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                     break
             
             for idx, msg in enumerate(request.messages):
+                # Skip messages with empty content (except final assistant message)
+                is_final_assistant = (idx == len(request.messages) - 1 and msg.role == "assistant")
+                
+                # Check if content is empty - handle None, empty string, and whitespace-only strings
+                content = msg.content if msg.content is not None else ""
+                if isinstance(content, str):
+                    content = content.strip()
+                content_empty = not content
+                
+                # Skip empty messages unless it's the final assistant message
+                if content_empty and not is_final_assistant:
+                    logger.warning(f"Skipping empty message at index {idx} (role: {msg.role}, content type: {type(msg.content)})")
+                    continue
+                
                 # Attach images to the last user message (the current one being sent)
                 if (idx == last_user_msg_idx and
                     request.workspaceContext and 
                     request.workspaceContext.annotationImages):
                     
-                    content_parts = [{"type": "text", "text": msg.content}]
+                    # Only add text part if content is not empty
+                    content_parts = []
+                    if content and content.strip():
+                        content_parts.append({"type": "text", "text": content})
                     
                     # Add annotation images with descriptions
                     for inst_id, image_base64 in request.workspaceContext.annotationImages.items():
@@ -285,15 +314,44 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                                 }
                             })
                     
-                    anthropic_messages.append({
-                        "role": msg.role,
-                        "content": content_parts
-                    })
+                    # Only add message if content_parts is not empty
+                    if content_parts:
+                        anthropic_messages.append({
+                            "role": msg.role,
+                            "content": content_parts
+                        })
                 else:
-                    anthropic_messages.append({
-                        "role": msg.role,
-                        "content": msg.content
-                    })
+                    # For regular messages, only add if content is not empty (or it's final assistant)
+                    if not content_empty or is_final_assistant:
+                        anthropic_messages.append({
+                            "role": msg.role,
+                            "content": content if not content_empty else ""
+                        })
+            
+            # Final validation: ensure no empty messages (except final assistant)
+            validated_messages = []
+            for idx, msg in enumerate(anthropic_messages):
+                is_final = (idx == len(anthropic_messages) - 1)
+                is_assistant = msg.get("role") == "assistant"
+                
+                # Check content
+                msg_content = msg.get("content", "")
+                if isinstance(msg_content, list):
+                    # For multi-part content (with images), check if any part has content
+                    has_content = any(
+                        part.get("type") == "text" and part.get("text", "").strip() 
+                        or part.get("type") == "image"
+                        for part in msg_content
+                    )
+                else:
+                    has_content = msg_content and (isinstance(msg_content, str) and msg_content.strip())
+                
+                # Skip empty messages unless it's the final assistant message
+                if not has_content and not (is_final and is_assistant):
+                    logger.warning(f"Filtering out empty message at index {idx} after validation (role: {msg.get('role')})")
+                    continue
+                
+                validated_messages.append(msg)
             
             # Stream from Claude API
             full_content = ""
@@ -301,7 +359,7 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                 model="claude-3-5-haiku-20241022",
                 max_tokens=1024,
                 system=system_prompt,
-                messages=anthropic_messages
+                messages=validated_messages
             ) as stream:
                 for text_block in stream.text_stream:
                     full_content += text_block
@@ -314,19 +372,113 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
             
             # Parse animation suggestion from full response
             suggested_animation = None
-            animation_match = re.search(r'ANIMATION_SUGGESTION:\s*(\{[^}]+\})', full_content)
-            
-            if animation_match:
-                try:
-                    animation_data = json.loads(animation_match.group(1))
-                    suggested_animation = AnimationSuggestion(**animation_data)
-                except Exception as e:
-                    logger.error(f"Failed to parse animation suggestion: {e}")
+            # Find the ANIMATION_SUGGESTION marker
+            marker_pos = full_content.find('ANIMATION_SUGGESTION:')
+            logger.info(f"Looking for ANIMATION_SUGGESTION marker in response (length: {len(full_content)} chars)")
+            if marker_pos != -1:
+                logger.info(f"Found ANIMATION_SUGGESTION marker at position {marker_pos}")
+                # Find the opening brace after the marker
+                json_start = full_content.find('{', marker_pos)
+                if json_start != -1:
+                    # Try to extract JSON by finding matching closing brace
+                    brace_count = 0
+                    json_end = json_start
+                    for i in range(json_start, len(full_content)):
+                        if full_content[i] == '{':
+                            brace_count += 1
+                        elif full_content[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+                    
+                    if brace_count == 0:
+                        try:
+                            json_str = full_content[json_start:json_end]
+                            logger.info(f"Extracted JSON string: {json_str}")
+                            animation_data = json.loads(json_str)
+                            suggested_animation = AnimationSuggestion(**animation_data)
+                            logger.info(f"Successfully parsed animation suggestion: {suggested_animation}")
+                        except Exception as e:
+                            logger.error(f"Failed to parse animation suggestion: {e}")
+                            logger.error(f"JSON string that failed: {full_content[json_start:json_end]}")
+            else:
+                # Check if user asked for visualization but no marker was found
+                last_user_msg = None
+                last_user_msg_original = None
+                for msg in reversed(request.messages):
+                    if msg.role == "user":
+                        last_user_msg = msg.content.lower() if msg.content else ""
+                        last_user_msg_original = msg.content if msg.content else ""
+                        break
+                
+                visualization_keywords = ["visualize", "visualization", "show me", "show", "animate", "animation", "draw", "illustrate", "demonstrate", "graph", "plot", "diagram"]
+                if last_user_msg and any(keyword in last_user_msg for keyword in visualization_keywords):
+                    logger.warning(f"User asked for visualization but Claude did not include ANIMATION_SUGGESTION marker. Creating fallback suggestion. User message: {last_user_msg[:100]}")
+                    
+                    # Create a fallback animation suggestion based on the user's request
+                    # Extract the concept from the user's message
+                    description = last_user_msg_original or "mathematical concept"
+                    # Remove common visualization request phrases to get the core concept
+                    for keyword in visualization_keywords:
+                        # Use case-insensitive replacement
+                        description = re.sub(re.escape(keyword), "", description, flags=re.IGNORECASE).strip()
+                    # Clean up common phrases
+                    description = re.sub(r"\b(how to|how|the|a|an)\b", "", description, flags=re.IGNORECASE).strip()
+                    # If description is too short or generic, use the full message or a default
+                    if not description or len(description) < 3 or description.lower() in ["me", "it", "this", "that"]:
+                        # Try to extract from the full message context or use a sensible default
+                        if len(last_user_msg_original) > 10:
+                            description = last_user_msg_original[:200]
+                        else:
+                            description = "mathematical concept visualization"
+                    
+                    # Determine topic based on keywords in the message
+                    topic = "math"  # default
+                    if any(word in last_user_msg for word in ["pdf", "probability", "distribution", "statistic", "random", "conditional"]):
+                        topic = "math"
+                    elif any(word in last_user_msg for word in ["function", "graph", "plot", "curve", "derivative", "integral"]):
+                        topic = "math"
+                    elif any(word in last_user_msg for word in ["physics", "wave", "motion", "force", "velocity"]):
+                        topic = "physics"
+                    elif any(word in last_user_msg for word in ["algorithm", "sort", "search", "tree", "data structure"]):
+                        topic = "cs"
+                    
+                    # Create the animation suggestion
+                    suggested_animation = AnimationSuggestion(
+                        description=description[:200],  # Limit length
+                        topic=topic
+                    )
+                    logger.info(f"Created fallback animation suggestion: {suggested_animation}")
             
             # Remove the ANIMATION_SUGGESTION marker from the displayed message
-            clean_message = re.sub(r'\n*ANIMATION_SUGGESTION:\s*\{[^}]+\}\s*', '', full_content).strip()
+            if marker_pos != -1:
+                # Remove from marker to end of JSON object
+                json_start = full_content.find('{', marker_pos)
+                if json_start != -1:
+                    brace_count = 0
+                    json_end = json_start
+                    for i in range(json_start, len(full_content)):
+                        if full_content[i] == '{':
+                            brace_count += 1
+                        elif full_content[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+                    if brace_count == 0:
+                        clean_message = (full_content[:marker_pos] + full_content[json_end:]).strip()
+                    else:
+                        clean_message = full_content[:marker_pos].strip()
+                else:
+                    clean_message = full_content[:marker_pos].strip()
+            else:
+                clean_message = full_content.strip()
             
             # Send final message with animation suggestion
+            logger.info(f"Sending final response with suggestedAnimation: {suggested_animation is not None}")
+            if suggested_animation:
+                logger.info(f"Animation suggestion details: {suggested_animation.model_dump()}")
             final_response = {
                 "type": "done",
                 "content": clean_message,
@@ -392,16 +544,28 @@ async def chat(request: ChatRequest):
 2. Break down complex topics into understandable parts
 3. Use analogies and examples when helpful
 
-When explaining concepts that would benefit from visualization (mathematical functions, physics simulations, data structures, geometric concepts), append a special marker at the END of your response:
+=== ANIMATION SUGGESTIONS ===
+
+CRITICAL INSTRUCTION: If the user's message contains ANY of these keywords or phrases, you MUST include an animation suggestion:
+- "visualize", "visualization", "show me", "show", "animate", "animation", "draw", "illustrate", "demonstrate", "create an animation", "make an animation", "generate an animation"
+- Any request to "see" something visually
+- Any request for a "graph", "plot", "diagram", or visual representation
+
+When the user explicitly requests a visualization (using any of the above keywords), you MUST append this exact marker at the END of your response:
 
 ANIMATION_SUGGESTION: {"description": "brief description of what to animate", "topic": "math"}
 
-Only suggest animations for truly visual concepts like:
-- Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations)
+DO NOT skip this marker if the user asks for visualization. Even if you're unsure how to visualize it, create a reasonable description and include the marker.
+
+Animation suggestions are appropriate for:
+- Mathematical functions, graphs, transformations (Brownian motion, random walks, matrix transformations, conditional PDFs, joint PDFs)
 - Physics simulations (waves, collisions, motion)
 - Geometric visualizations
+- Data structures and algorithms
+- Statistical concepts (distributions, probability, conditional probability)
+- Any concept the user explicitly asks to visualize or animate
 
-Do NOT suggest animations for abstract discussions, definitions, or text-based explanations.
+When the user explicitly requests a visualization, ALWAYS provide an animation suggestion. Do not skip it.
 
 Example response with animation:
 "Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
@@ -409,18 +573,49 @@ Example response with animation:
 ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math"}"
 """
         
-        # Convert messages to Anthropic format
-        anthropic_messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.messages
-        ]
+        # Convert messages to Anthropic format, filtering out empty messages
+        anthropic_messages = []
+        for idx, msg in enumerate(request.messages):
+            # Skip messages with empty content (except final assistant message)
+            is_final_assistant = (idx == len(request.messages) - 1 and msg.role == "assistant")
+            
+            # Check if content is empty - handle None, empty string, and whitespace-only strings
+            content = msg.content if msg.content is not None else ""
+            if isinstance(content, str):
+                content = content.strip()
+            content_empty = not content
+            
+            # Skip empty messages unless it's the final assistant message
+            if content_empty and not is_final_assistant:
+                logger.warning(f"Skipping empty message at index {idx} (role: {msg.role}, content type: {type(msg.content)})")
+                continue
+            
+            anthropic_messages.append({
+                "role": msg.role,
+                "content": content if not content_empty else ""
+            })
+        
+        # Final validation: ensure no empty messages (except final assistant)
+        validated_messages = []
+        for idx, msg in enumerate(anthropic_messages):
+            is_final = (idx == len(anthropic_messages) - 1)
+            is_assistant = msg.get("role") == "assistant"
+            msg_content = msg.get("content", "")
+            has_content = msg_content and (isinstance(msg_content, str) and msg_content.strip())
+            
+            # Skip empty messages unless it's the final assistant message
+            if not has_content and not (is_final and is_assistant):
+                logger.warning(f"Filtering out empty message at index {idx} after validation (role: {msg.get('role')})")
+                continue
+            
+            validated_messages.append(msg)
         
         # Call Claude API
         response = client.messages.create(
             model="claude-3-5-haiku-20241022",
             max_tokens=1024,
             system=system_prompt,
-            messages=anthropic_messages
+            messages=validated_messages
         )
         
         # Extract assistant message
@@ -428,18 +623,109 @@ ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math
         
         # Parse animation suggestion from response
         suggested_animation = None
-        animation_match = re.search(r'ANIMATION_SUGGESTION:\s*(\{[^}]+\})', assistant_message)
+        # Find the ANIMATION_SUGGESTION marker
+        marker_pos = assistant_message.find('ANIMATION_SUGGESTION:')
+        logger.info(f"Looking for ANIMATION_SUGGESTION marker in response (length: {len(assistant_message)} chars)")
+        if marker_pos != -1:
+            logger.info(f"Found ANIMATION_SUGGESTION marker at position {marker_pos}")
+            # Find the opening brace after the marker
+            json_start = assistant_message.find('{', marker_pos)
+            if json_start != -1:
+                # Try to extract JSON by finding matching closing brace
+                brace_count = 0
+                json_end = json_start
+                for i in range(json_start, len(assistant_message)):
+                    if assistant_message[i] == '{':
+                        brace_count += 1
+                    elif assistant_message[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                
+                if brace_count == 0:
+                    try:
+                        import json
+                        json_str = assistant_message[json_start:json_end]
+                        logger.info(f"Extracted JSON string: {json_str}")
+                        animation_data = json.loads(json_str)
+                        suggested_animation = AnimationSuggestion(**animation_data)
+                        logger.info(f"Successfully parsed animation suggestion: {suggested_animation}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse animation suggestion: {e}")
+                        logger.error(f"JSON string that failed: {assistant_message[json_start:json_end]}")
         
-        if animation_match:
-            try:
-                import json
-                animation_data = json.loads(animation_match.group(1))
-                suggested_animation = AnimationSuggestion(**animation_data)
-            except Exception as e:
-                logger.error(f"Failed to parse animation suggestion: {e}")
+        # Fallback: If user asked for visualization but Claude didn't provide marker, create one
+        if suggested_animation is None:
+            last_user_msg = None
+            last_user_msg_original = None
+            for msg in reversed(request.messages):
+                if msg.role == "user":
+                    last_user_msg = msg.content.lower() if msg.content else ""
+                    last_user_msg_original = msg.content if msg.content else ""
+                    break
+            
+            visualization_keywords = ["visualize", "visualization", "show me", "show", "animate", "animation", "draw", "illustrate", "demonstrate", "graph", "plot", "diagram"]
+            if last_user_msg and any(keyword in last_user_msg for keyword in visualization_keywords):
+                logger.warning(f"User asked for visualization but Claude did not include ANIMATION_SUGGESTION marker. Creating fallback suggestion. User message: {last_user_msg[:100]}")
+                
+                # Create a fallback animation suggestion based on the user's request
+                description = last_user_msg_original or "mathematical concept"
+                # Remove common visualization request phrases to get the core concept
+                for keyword in visualization_keywords:
+                    # Use case-insensitive replacement
+                    description = re.sub(re.escape(keyword), "", description, flags=re.IGNORECASE).strip()
+                # Clean up common phrases
+                description = re.sub(r"\b(how to|how|the|a|an)\b", "", description, flags=re.IGNORECASE).strip()
+                # If description is too short or generic, use the full message or a default
+                if not description or len(description) < 3 or description.lower() in ["me", "it", "this", "that"]:
+                    # Try to extract from the full message context or use a sensible default
+                    if len(last_user_msg_original) > 10:
+                        description = last_user_msg_original[:200]
+                    else:
+                        description = "mathematical concept visualization"
+                
+                # Determine topic based on keywords in the message
+                topic = "math"  # default
+                if any(word in last_user_msg for word in ["pdf", "probability", "distribution", "statistic", "random", "conditional"]):
+                    topic = "math"
+                elif any(word in last_user_msg for word in ["function", "graph", "plot", "curve", "derivative", "integral"]):
+                    topic = "math"
+                elif any(word in last_user_msg for word in ["physics", "wave", "motion", "force", "velocity"]):
+                    topic = "physics"
+                elif any(word in last_user_msg for word in ["algorithm", "sort", "search", "tree", "data structure"]):
+                    topic = "cs"
+                
+                # Create the animation suggestion
+                suggested_animation = AnimationSuggestion(
+                    description=description[:200],  # Limit length
+                    topic=topic
+                )
+                logger.info(f"Created fallback animation suggestion: {suggested_animation}")
         
         # Remove the ANIMATION_SUGGESTION marker from the displayed message
-        clean_message = re.sub(r'\n*ANIMATION_SUGGESTION:\s*\{[^}]+\}\s*', '', assistant_message).strip()
+        if marker_pos != -1:
+            # Remove from marker to end of JSON object
+            json_start = assistant_message.find('{', marker_pos)
+            if json_start != -1:
+                brace_count = 0
+                json_end = json_start
+                for i in range(json_start, len(assistant_message)):
+                    if assistant_message[i] == '{':
+                        brace_count += 1
+                    elif assistant_message[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                if brace_count == 0:
+                    clean_message = (assistant_message[:marker_pos] + assistant_message[json_end:]).strip()
+                else:
+                    clean_message = assistant_message[:marker_pos].strip()
+            else:
+                clean_message = assistant_message[:marker_pos].strip()
+        else:
+            clean_message = assistant_message.strip()
         
         return ChatResponse(
             message=ChatMessageResponse(
