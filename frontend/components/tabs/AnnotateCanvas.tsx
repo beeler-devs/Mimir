@@ -140,10 +140,16 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       }
       
       if (!state.elements || state.elements.length === 0) {
-        // Return empty canvas if no elements
+        // Return empty canvas if no elements (with padding)
+        const padding = 40;
         const canvas = document.createElement('canvas');
-        canvas.width = 800;
-        canvas.height = 600;
+        canvas.width = 800 + (padding * 2);
+        canvas.height = 600 + (padding * 2);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
         return canvas.toDataURL('image/png');
       }
       
@@ -157,10 +163,16 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       }
       
       if (visibleElements.length === 0) {
-        // Return empty canvas if all elements are deleted
+        // Return empty canvas if all elements are deleted (with padding)
+        const padding = 40;
         const canvas = document.createElement('canvas');
-        canvas.width = 800;
-        canvas.height = 600;
+        canvas.width = 800 + (padding * 2);
+        canvas.height = 600 + (padding * 2);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
         return canvas.toDataURL('image/png');
       }
       
@@ -176,9 +188,27 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         }),
       });
 
-      // Convert canvas to base64 PNG
+      // Add padding around the canvas
+      const padding = 40; // pixels on each side
+      const paddedCanvas = document.createElement('canvas');
+      paddedCanvas.width = canvas.width + (padding * 2);
+      paddedCanvas.height = canvas.height + (padding * 2);
+      
+      const ctx = paddedCanvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Failed to get canvas context');
+      }
+      
+      // Fill with white background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
+      
+      // Draw the original canvas with padding offset
+      ctx.drawImage(canvas, padding, padding);
+
+      // Convert padded canvas to base64 PNG
       return new Promise((resolve, reject) => {
-        canvas.toBlob(
+        paddedCanvas.toBlob(
           (blob: Blob | null) => {
             if (!blob) {
               reject(new Error('Failed to export canvas'));
@@ -192,7 +222,9 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
               console.log('📸 Exported Canvas Image:', {
                 size: base64.length,
                 sizeKB: Math.round(base64.length / 1024),
-                dimensions: `${canvas.width}x${canvas.height}`,
+                originalDimensions: `${canvas.width}x${canvas.height}`,
+                paddedDimensions: `${paddedCanvas.width}x${paddedCanvas.height}`,
+                padding: padding,
                 scale: scale,
               });
               
