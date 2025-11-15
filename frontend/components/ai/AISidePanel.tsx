@@ -348,8 +348,19 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
                 className={`
                   flex-1 group rounded-lg h-9 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
-                  ${active ? 'bg-primary text-primary-foreground focus-visible:ring-primary/60' : 'text-muted-foreground hover:bg-muted/40 focus-visible:ring-primary/30'}
+                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
                 `}
+                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = '#F5F5F5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = '';
+                  }
+                }}
               >
                 <div className="flex items-center gap-2 justify-center">
                   <Icon className="h-3.5 w-3.5" />

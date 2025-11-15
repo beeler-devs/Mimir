@@ -49,7 +49,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
   };
 
   return (
-    <div className="h-full flex flex-col p-6 bg-background">
+    <div className="h-full flex flex-col bg-background">
       {selectedText && (
         <div className="mb-4 flex items-center justify-end">
           <Button onClick={handleAskAI} size="sm">
@@ -65,8 +65,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
         onMouseUp={handleTextSelection}
         onKeyDown={handleKeyDown}
         className="
-          flex-1 w-full p-4 
-          rounded-xl border border-input
+          flex-1 w-full p-4
+          rounded-lg border border-input
           bg-background text-foreground
           font-mono text-sm
           focus:outline-none

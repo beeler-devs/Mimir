@@ -39,7 +39,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
       {/* AI Sidepanel */}
       <div
         className={`
-          relative bg-card
+          relative bg-transparent
           transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'w-96' : 'w-14'}
           overflow-hidden

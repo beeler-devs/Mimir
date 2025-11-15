@@ -25,7 +25,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   }
 
   return (
-    <div className="flex flex-col space-y-4 p-4 overflow-y-auto">
+    <div className="flex flex-col space-y-4 p-4 overflow-y-auto bg-transparent">
       {messages.map((message) => (
         <div key={message.id}>
           <div
@@ -34,14 +34,15 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
             <div
               className={`max-w-[85%] whitespace-pre-wrap break-words text-sm leading-relaxed ${
                 message.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-lg px-4 py-2'
+                  ? 'rounded-lg px-4 py-2 text-white'
                   : 'text-foreground py-1.5'
               }`}
+              style={message.role === 'user' ? { backgroundColor: '#C5ADFC' } : undefined}
             >
               {message.content}
             </div>
           </div>
-          
+
           {/* Show animation panel if message has a suggestion */}
           {message.role === 'assistant' && message.suggestedAnimation && (
             <div className="mt-2 max-w-[85%]">

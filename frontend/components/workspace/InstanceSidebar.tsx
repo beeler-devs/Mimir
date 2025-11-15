@@ -229,7 +229,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           <span
             className={`
               h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
-              ${isActive ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}
+              ${isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
             `}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -442,7 +442,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     return (
       <>
         <aside className="w-16 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
-          <div className="px-2 pt-5 pb-4 border-b border-border flex items-center justify-center">
+          <div className="px-2 pt-5 pb-4 flex items-center justify-center">
             <button
               onClick={toggleCollapsed}
               className="group h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xl font-semibold tracking-tight"
@@ -732,14 +732,14 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
   );
 
   return (
-    <Modal open={open} onClose={onClose} className="max-w-2xl">
-      <div className="flex flex-col max-h-[70vh]">
+    <Modal open={open} onClose={onClose} className="max-w-xl">
+      <div className="flex flex-col max-h-[70vh] bg-[#F5F5F5]">
         <Input
           value={query}
           autoFocus
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search instances..."
-          className="rounded-none border-0 border-b border-border px-5 py-4 text-base"
+          className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-[#F5F5F5]"
         />
         <div className="flex-1 overflow-y-auto p-2">
           {filteredInstances.length === 0 ? (
@@ -754,7 +754,7 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
                 <button
                   key={instance.id}
                   onClick={() => onSelect(instance.id)}
-                  className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)]"
+                  className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[#FAFAFA]"
                 >
                   <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                     <Icon className="h-3.5 w-3.5" />
