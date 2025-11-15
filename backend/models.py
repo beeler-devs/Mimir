@@ -18,17 +18,6 @@ class HealthResponse(BaseModel):
     status: str
     version: str = "0.1.0"
 
-class JobRequest(BaseModel):
-    description: str
-    topic: str = "math"
-    workspace_context: Optional[WorkspaceContext] = None
-
-class JobResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    video_url: Optional[str] = None
-    error: Optional[str] = None
-
 # Chat models
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
@@ -61,6 +50,17 @@ class WorkspaceContext(BaseModel):
     instances: List[WorkspaceContextInstance]
     folders: List[WorkspaceContextFolder]
     annotationImages: dict[str, str] = {}  # instanceId -> base64 PNG
+
+class JobRequest(BaseModel):
+    description: str
+    topic: str = "math"
+    workspace_context: Optional[WorkspaceContext] = None
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    video_url: Optional[str] = None
+    error: Optional[str] = None
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
