@@ -147,12 +147,33 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         return canvas.toDataURL('image/png');
       }
       
-      // Export to canvas
+      // Filter out deleted elements before exporting
+      // Excalidraw marks deleted elements with isDeleted: true
+      const visibleElements = state.elements.filter((element: any) => !element.isDeleted);
+      const deletedCount = state.elements.length - visibleElements.length;
+      
+      if (deletedCount > 0) {
+        console.log(`🗑️ Filtered out ${deletedCount} deleted element(s) before export`);
+      }
+      
+      if (visibleElements.length === 0) {
+        // Return empty canvas if all elements are deleted
+        const canvas = document.createElement('canvas');
+        canvas.width = 800;
+        canvas.height = 600;
+        return canvas.toDataURL('image/png');
+      }
+      
+      // Export to canvas at native resolution
+      const scale = 1;
       const canvas = await exportToCanvas({
-        elements: state.elements,
+        elements: visibleElements,
         appState: state.appState || {},
         files: state.files || {},
-        getDimensions: (width: number, height: number) => ({ width, height }),
+        getDimensions: (width: number, height: number) => ({ 
+          width: width * scale, 
+          height: height * scale 
+        }),
       });
 
       // Convert canvas to base64 PNG
@@ -166,6 +187,24 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64 = reader.result as string;
+              
+              // Debug: Log image info
+              console.log('📸 Exported Canvas Image:', {
+                size: base64.length,
+                sizeKB: Math.round(base64.length / 1024),
+                dimensions: `${canvas.width}x${canvas.height}`,
+                scale: scale,
+              });
+              
+              // Debug: Store full image in global variable for easy access
+              (window as any).__lastExportedCanvasImage = base64;
+              
+              // Debug: Log image data URL for viewing
+              console.log('🔗 Image Data URL preview:', base64.substring(0, 100) + '...');
+              console.log('💡 To view the image, run in console:');
+              console.log('   const img = document.createElement("img"); img.src = window.__lastExportedCanvasImage; img.style.maxWidth = "100%"; document.body.appendChild(img);');
+              console.log('   Or copy window.__lastExportedCanvasImage and paste in browser address bar');
+              
               resolve(base64);
             };
             reader.onerror = reject;
