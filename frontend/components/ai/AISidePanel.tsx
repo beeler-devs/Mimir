@@ -6,6 +6,7 @@ import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
+import { ChatTabBar } from './ChatTabBar';
 import { PanelsLeftRight, MessageSquare, Code, Zap } from 'lucide-react';
 import {
   loadUserChats,
@@ -14,6 +15,7 @@ import {
   saveChatMessage,
   updateChatTitle,
   generateChatTitle,
+  generateAIChatTitle,
   Chat,
 } from '@/lib/db/chats';
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
@@ -59,9 +61,57 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
   const [activeLearningMode] = useActiveLearningMode();
+  
+  // Chat tab management state
+  const [openChatTabs, setOpenChatTabs] = useState<{ id: string; title: string }[]>([]);
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
+  
+  // Load and persist open tabs
+  useEffect(() => {
+    const storedTabs = localStorage.getItem('mimir.openChatTabs');
+    if (storedTabs) {
+      try {
+        const parsed = JSON.parse(storedTabs);
+        setOpenChatTabs(parsed);
+      } catch (error) {
+        console.error('Failed to parse stored chat tabs:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (openChatTabs.length > 0) {
+      localStorage.setItem('mimir.openChatTabs', JSON.stringify(openChatTabs));
+    }
+  }, [openChatTabs]);
+
+  // Keep open tabs synced with current chat and chats list
+  useEffect(() => {
+    if (chatId && chats.length > 0) {
+      const currentChat = chats.find(c => c.id === chatId);
+      if (currentChat) {
+        setOpenChatTabs(prev => {
+          const tabExists = prev.some(tab => tab.id === chatId);
+          if (!tabExists) {
+            // Add current chat to tabs
+            return [...prev, {
+              id: currentChat.id,
+              title: currentChat.title || 'New Chat'
+            }];
+          } else {
+            // Update title if it changed
+            return prev.map(tab =>
+              tab.id === chatId
+                ? { ...tab, title: currentChat.title || 'New Chat' }
+                : tab
+            );
+          }
+        });
+      }
+    }
+  }, [chatId, chats]); // Removed openChatTabs from deps to prevent infinite loop
 
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
@@ -71,20 +121,104 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       }
     },
     createNewChat: async () => {
-      try {
-        const newChat = await createChat();
-        setNodes([]);
-        setActiveNodeId(null);
-        setChatId(newChat.id);
-        localStorage.setItem('mimir.activeChatId', newChat.id);
-        setStudyMode('chat');
-        const userChats = await loadUserChats();
-        setChats(userChats);
-      } catch (error) {
-        console.error('Failed to create new chat:', error);
-      }
+      await handleNewChat();
     },
   }));
+
+  // Handler for creating a new chat
+  const handleNewChat = async () => {
+    try {
+      const newChat = await createChat();
+      setNodes([]);
+      setActiveNodeId(null);
+      setChatId(newChat.id);
+      localStorage.setItem('mimir.activeChatId', newChat.id);
+      setStudyMode('chat');
+      
+      // Add new chat to tabs
+      setOpenChatTabs(prev => [...prev, {
+        id: newChat.id,
+        title: 'New Chat'
+      }]);
+      
+      // Reload chats list
+      const userChats = await loadUserChats();
+      setChats(userChats);
+    } catch (error) {
+      console.error('Failed to create new chat:', error);
+    }
+  };
+
+  // Handler for switching to a different chat tab
+  const handleSelectTab = async (selectedChatId: string) => {
+    try {
+      // Load messages for the selected chat
+      const messages = await loadChatMessages(selectedChatId);
+      setNodes(messages);
+      setChatId(selectedChatId);
+      localStorage.setItem('mimir.activeChatId', selectedChatId);
+      
+      // Set active node to last message
+      if (messages.length > 0) {
+        setActiveNodeId(messages[messages.length - 1].id);
+      } else {
+        setActiveNodeId(null);
+      }
+      
+      // Ensure tab is in open tabs
+      const selectedChat = chats.find(c => c.id === selectedChatId);
+      if (selectedChat) {
+        const tabExists = openChatTabs.some(tab => tab.id === selectedChatId);
+        if (!tabExists) {
+          setOpenChatTabs(prev => [...prev, {
+            id: selectedChat.id,
+            title: selectedChat.title || 'New Chat'
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to switch chat:', error);
+    }
+  };
+
+  // Handler for closing a chat tab
+  const handleCloseTab = (closedChatId: string) => {
+    setOpenChatTabs(prev => {
+      const newTabs = prev.filter(tab => tab.id !== closedChatId);
+      
+      // If closing the active chat, switch to another tab
+      if (closedChatId === chatId) {
+        if (newTabs.length > 0) {
+          // Switch to the last remaining tab
+          const nextTab = newTabs[newTabs.length - 1];
+          handleSelectTab(nextTab.id);
+        } else {
+          // No tabs left, create a new chat
+          handleNewChat();
+        }
+      }
+      
+      return newTabs;
+    });
+  };
+
+  // Handler for renaming a chat tab
+  const handleRenameTab = async (renamedChatId: string, newTitle: string) => {
+    try {
+      await updateChatTitle(renamedChatId, newTitle);
+      
+      // Update local state
+      setOpenChatTabs(prev => prev.map(tab =>
+        tab.id === renamedChatId ? { ...tab, title: newTitle } : tab
+      ));
+      
+      // Reload chats list
+      const userChats = await loadUserChats();
+      setChats(userChats);
+    } catch (error) {
+      console.error('Failed to rename chat:', error);
+    }
+  };
 
   useEffect(() => {
     const initializeChat = async () => {
@@ -194,9 +328,16 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       setNodes(updatedNodes);
       setActiveNodeId(savedUserMessage.id);
 
+      // Generate AI title after first exchange
       if (nodes.length === 0) {
-        const title = generateChatTitle(content);
-        await updateChatTitle(chatId, title);
+        // Use simple title initially
+        const simpleTitle = generateChatTitle(content);
+        await updateChatTitle(chatId, simpleTitle);
+        
+        // Update tab title immediately
+        setOpenChatTabs(prev => prev.map(tab =>
+          tab.id === chatId ? { ...tab, title: simpleTitle } : tab
+        ));
       }
 
       if (!savedUserMessage) {
@@ -292,6 +433,31 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                     : node
                 ));
                 setActiveNodeId(savedAIMessage.id);
+                
+                // Generate AI title after first assistant response
+                if (updatedNodes.length <= 1) {
+                  // Get the conversation messages for title generation
+                  const titleMessages = [
+                    { role: 'user', content: savedUserMessage.content || '' },
+                    { role: 'assistant', content: fullContent }
+                  ];
+                  
+                  // Generate AI title asynchronously (don't block UI)
+                  generateAIChatTitle(titleMessages).then(async (aiTitle) => {
+                    await updateChatTitle(chatId, aiTitle);
+                    
+                    // Update tab title
+                    setOpenChatTabs(prev => prev.map(tab =>
+                      tab.id === chatId ? { ...tab, title: aiTitle } : tab
+                    ));
+                    
+                    // Reload chats list
+                    const userChats = await loadUserChats();
+                    setChats(userChats);
+                  }).catch(error => {
+                    console.error('Failed to generate AI title:', error);
+                  });
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.content);
               }
@@ -303,6 +469,12 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       
       setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
       
@@ -316,6 +488,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         setActiveNodeId(errorMessage.id);
       } catch (dbError) {
         console.error('Failed to save error message:', dbError);
+        console.error('Database error details:', JSON.stringify(dbError, null, 2));
       }
     } finally {
       setLoading(false);
@@ -391,6 +564,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Mode Tabs */}
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto">
           {[ 
@@ -441,6 +615,20 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           )}
         </div>
       </div>
+      
+      {/* Chat Tab Bar (only visible in chat mode) */}
+      {studyMode === 'chat' && openChatTabs.length > 0 && (
+        <ChatTabBar
+          openTabs={openChatTabs}
+          activeTabId={chatId}
+          allChats={chats}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onNewChat={handleNewChat}
+          onRenameTab={handleRenameTab}
+        />
+      )}
+      
       {renderContent()}
     </div>
   );

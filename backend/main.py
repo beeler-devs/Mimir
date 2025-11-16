@@ -516,7 +516,7 @@ Focus on clarity, visual hierarchy, and step-by-step understanding."""
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: Request):
     """
     Streaming chat endpoint with Claude AI integration
     Streams responses as they are generated using Server-Sent Events
@@ -527,6 +527,61 @@ async def chat_stream(request: ChatRequest):
     Returns:
         StreamingResponse with SSE format
     """
+    # Parse request body manually to get better error logging
+    try:
+        body = await request.json()
+        logger.info("=" * 80)
+        logger.info("CHAT STREAM REQUEST RECEIVED")
+        logger.info(f"Request keys: {list(body.keys())}")
+        logger.info(f"Messages count: {len(body.get('messages', []))}")
+        logger.info(f"Has workspaceContext: {bool(body.get('workspaceContext'))}")
+        logger.info(f"Has learningMode: {bool(body.get('learningMode'))}")
+        
+        # Log detailed structure of workspaceContext if present
+        if body.get('workspaceContext'):
+            ws_ctx = body['workspaceContext']
+            logger.info(f"WorkspaceContext keys: {list(ws_ctx.keys())}")
+            logger.info(f"  - instances: {len(ws_ctx.get('instances', []))}")
+            logger.info(f"  - folders: {len(ws_ctx.get('folders', []))}")
+            logger.info(f"  - annotationImages: {len(ws_ctx.get('annotationImages', {}))}")
+            logger.info(f"  - pdfAttachments: {len(ws_ctx.get('pdfAttachments', []))}")
+            logger.info(f"  - attachments: {ws_ctx.get('attachments', 'NOT_PRESENT')}")
+            logger.info(f"  - pdfContext: {bool(ws_ctx.get('pdfContext'))}")
+            logger.info(f"  - currentPageImage: {bool(ws_ctx.get('currentPageImage'))}")
+        
+        # Log message structure
+        if body.get('messages'):
+            logger.info("Messages structure:")
+            for idx, msg in enumerate(body['messages']):
+                logger.info(f"  Message {idx}: role={msg.get('role')}, content_length={len(msg.get('content', ''))}")
+        
+        # Try to parse with Pydantic
+        try:
+            chat_request = ChatRequest(**body)
+            logger.info("✓ Pydantic validation successful")
+            logger.info("=" * 80)
+        except Exception as validation_error:
+            logger.error("=" * 80)
+            logger.error("❌ PYDANTIC VALIDATION ERROR")
+            logger.error(f"Error type: {type(validation_error).__name__}")
+            logger.error(f"Error message: {str(validation_error)}")
+            
+            # Try to extract detailed field errors from Pydantic ValidationError
+            if hasattr(validation_error, 'errors'):
+                logger.error("Detailed validation errors:")
+                for err in validation_error.errors():
+                    logger.error(f"  Field: {err.get('loc')}")
+                    logger.error(f"  Error: {err.get('msg')}")
+                    logger.error(f"  Type: {err.get('type')}")
+                    logger.error(f"  Input: {err.get('input')}")
+            
+            logger.error(f"Full request body:\n{json.dumps(body, indent=2, default=str)}")
+            logger.error("=" * 80)
+            raise HTTPException(status_code=422, detail=str(validation_error))
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
     def generate():
         try:
             # Get Claude API key from environment
@@ -535,7 +590,7 @@ async def chat_stream(request: ChatRequest):
             if not claude_api_key:
                 logger.warning("CLAUDE_API_KEY not set, using fallback response")
                 # Fallback to stub response if no API key
-                last_message = request.messages[-1].content
+                last_message = chat_request.messages[-1].content
                 error_response = {
                     "type": "error",
                     "content": f"I received your message: '{last_message}'\n\nCLAUDE_API_KEY not configured. Please add it to backend/.env"
@@ -548,19 +603,19 @@ async def chat_stream(request: ChatRequest):
             
             # Build system prompt with workspace context
             context_description = ""
-            if request.workspaceContext:
+            if chat_request.workspaceContext:
                 context_parts = []
                 
                 # Add folder information
-                if request.workspaceContext.folders:
-                    folder_names = [f.name for f in request.workspaceContext.folders]
+                if chat_request.workspaceContext.folders:
+                    folder_names = [f.name for f in chat_request.workspaceContext.folders]
                     context_parts.append(f"User is working in folder(s): {', '.join(folder_names)}")
                 
                 # Add instance information
-                if request.workspaceContext.instances:
+                if chat_request.workspaceContext.instances:
                     context_parts.append("\nCurrent workspace context includes:")
                     # First instance is typically the active one
-                    for idx, inst in enumerate(request.workspaceContext.instances):
+                    for idx, inst in enumerate(chat_request.workspaceContext.instances):
                         is_active = idx == 0  # First instance is the active one
                         active_marker = " (CURRENTLY OPEN)" if is_active else ""
                         context_parts.append(f"\n- {inst.title} ({inst.type}){active_marker}:")
@@ -571,13 +626,20 @@ async def chat_stream(request: ChatRequest):
                             context_parts.append(f"  Language: {inst.language}")
                             context_parts.append(f"  Code: {inst.code[:500]}{'...' if len(inst.code) > 500 else ''}")
                         elif inst.type == "annotate":
-                            if inst.id in request.workspaceContext.annotationImages:
+                            if inst.id in chat_request.workspaceContext.annotationImages:
                                 context_parts.append(f"  [Annotation canvas image included below]")
                 
-                # Add PDF attachments
-                if request.workspaceContext.pdfAttachments:
+                # Add PDF attachments (support both old and new formats)
+                pdf_attachments = []
+                if chat_request.workspaceContext.pdfAttachments:
+                    pdf_attachments = chat_request.workspaceContext.pdfAttachments
+                elif chat_request.workspaceContext.attachments:
+                    # Filter for PDF attachments from unified attachments
+                    pdf_attachments = [att for att in chat_request.workspaceContext.attachments if att.type == "pdf"]
+                
+                if pdf_attachments:
                     context_parts.append("\nAttached PDF documents:")
-                    for pdf in request.workspaceContext.pdfAttachments:
+                    for pdf in pdf_attachments:
                         if pdf.status == "ready" and pdf.extractedText:
                             # Truncate very long PDF text to avoid token limits
                             max_pdf_length = 10000  # ~10KB per PDF
@@ -593,7 +655,7 @@ async def chat_stream(request: ChatRequest):
                     # Log warning if context is very large
                     context_size = len(context_description)
                     if context_size > 50000:  # ~50KB
-                        logger.warning(f"Large workspace context detected: {context_size} characters, {len(request.workspaceContext.instances)} instances")
+                        logger.warning(f"Large workspace context detected: {context_size} characters, {len(chat_request.workspaceContext.instances)} instances")
             
             # System prompt for Claude
             system_prompt = f"""You are an AI tutor for Mimir, an educational platform. Your role is to:
@@ -662,14 +724,14 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
             
             # Find the last user message index to attach images
             last_user_msg_idx = -1
-            for i in range(len(request.messages) - 1, -1, -1):
-                if request.messages[i].role == "user":
+            for i in range(len(chat_request.messages) - 1, -1, -1):
+                if chat_request.messages[i].role == "user":
                     last_user_msg_idx = i
                     break
             
-            for idx, msg in enumerate(request.messages):
+            for idx, msg in enumerate(chat_request.messages):
                 # Skip messages with empty content (except final assistant message)
-                is_final_assistant = (idx == len(request.messages) - 1 and msg.role == "assistant")
+                is_final_assistant = (idx == len(chat_request.messages) - 1 and msg.role == "assistant")
                 
                 # Check if content is empty - handle None, empty string, and whitespace-only strings
                 content = msg.content if msg.content is not None else ""
@@ -684,8 +746,8 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                 
                 # Attach images to the last user message (the current one being sent)
                 if (idx == last_user_msg_idx and
-                    request.workspaceContext and 
-                    request.workspaceContext.annotationImages):
+                    chat_request.workspaceContext and 
+                    chat_request.workspaceContext.annotationImages):
                     
                     # Only add text part if content is not empty
                     content_parts = []
@@ -693,9 +755,9 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                         content_parts.append({"type": "text", "text": content})
                     
                     # Add annotation images with descriptions
-                    for inst_id, image_base64 in request.workspaceContext.annotationImages.items():
+                    for inst_id, image_base64 in chat_request.workspaceContext.annotationImages.items():
                         # Find the instance for description
-                        inst = next((i for i in request.workspaceContext.instances if i.id == inst_id), None)
+                        inst = next((i for i in chat_request.workspaceContext.instances if i.id == inst_id), None)
                         if inst:
                             # Add text description before image
                             content_parts.append({
@@ -809,7 +871,7 @@ ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "mat
                 # Check if user asked for visualization but no marker was found
                 last_user_msg = None
                 last_user_msg_original = None
-                for msg in reversed(request.messages):
+                for msg in reversed(chat_request.messages):
                     if msg.role == "user":
                         last_user_msg = msg.content.lower() if msg.content else ""
                         last_user_msg_original = msg.content if msg.content else ""
@@ -1436,6 +1498,90 @@ Create a structured summary with main topics and key concepts."""
 
     except Exception as e:
         logger.error(f"Error generating summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/generate-title")
+async def generate_chat_title(request: dict):
+    """
+    Generate a concise chat title from conversation messages using Claude AI
+
+    Args:
+        request: dict with 'messages' array containing the first few messages
+
+    Returns:
+        JSON with generated title
+    """
+    try:
+        messages = request.get('messages', [])
+        if not messages:
+            raise HTTPException(status_code=400, detail="Messages are required")
+
+        # Get Claude API key from environment
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        if not claude_api_key:
+            raise HTTPException(status_code=500, detail="CLAUDE_API_KEY not configured")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=claude_api_key)
+
+        # Build conversation context from messages (limit to first 2-3 exchanges)
+        conversation_context = ""
+        for msg in messages[:6]:  # Max 3 exchanges (user + assistant pairs)
+            role_label = "User" if msg.get('role') == 'user' else "Assistant"
+            content = msg.get('content', '')[:500]  # Limit each message to 500 chars
+            conversation_context += f"{role_label}: {content}\n\n"
+
+        # System prompt for title generation
+        system_prompt = """You are an expert at creating concise, descriptive titles for conversations.
+
+Your task: Generate a short, clear title (3-8 words) that captures the main topic or question of the conversation.
+
+Guidelines:
+1. Keep it brief (3-8 words maximum)
+2. Use title case
+3. Focus on the core topic or question
+4. Be specific but concise
+5. No quotation marks or punctuation at the end
+6. Make it immediately understandable
+
+Examples:
+- "Understanding Brownian Motion"
+- "Solving Quadratic Equations"
+- "Python List Comprehensions"
+- "Derivative of Exponential Functions"
+- "Explaining Neural Networks"
+
+Output: Just the title text, nothing else."""
+
+        user_prompt = f"""Generate a concise title for this conversation:
+
+{conversation_context}
+
+Return only the title text (3-8 words), nothing else."""
+
+        # Call Claude API with a smaller, faster model
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",  # Use Haiku for fast title generation
+            max_tokens=50,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+
+        # Extract and clean title
+        title = response.content[0].text.strip()
+        
+        # Remove any quotation marks that might have been added
+        title = title.strip('"').strip("'")
+        
+        # Limit to reasonable length just in case
+        if len(title) > 100:
+            title = title[:100]
+
+        logger.info(f"Generated chat title: {title}")
+        return {"title": title}
+
+    except Exception as e:
+        logger.error(f"Error generating chat title: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

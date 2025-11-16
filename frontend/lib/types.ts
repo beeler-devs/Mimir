@@ -16,6 +16,8 @@ export interface ChatNode {
   content: string;
   createdAt: string;
   suggestedAnimation?: AnimationSuggestion;
+  attachments?: Attachment[];
+  // Backwards compatibility - computed from attachments
   pdfAttachments?: PdfAttachment[];
 }
 
@@ -81,13 +83,28 @@ export interface MentionableItem {
   icon?: string;
 }
 
-// PDF Attachment types
+// Attachment types - unified for PDFs, images, and future types
 export interface PdfAttachment {
+  type: 'pdf';
   id: string;
   filename: string;
-  extractedText: string;
+  url?: string;
+  extractedText?: string;
+  pageCount?: number;
   status: 'uploading' | 'ready' | 'error';
 }
+
+export interface ImageAttachment {
+  type: 'image';
+  id: string;
+  filename: string;
+  url: string;
+  width?: number;
+  height?: number;
+  mimeType: string;
+}
+
+export type Attachment = PdfAttachment | ImageAttachment;
 
 // Workspace context types
 export interface WorkspaceContextInstance {
@@ -110,7 +127,8 @@ export interface WorkspaceContext {
   instances: WorkspaceContextInstance[];
   folders: WorkspaceContextFolder[];
   annotationImages: Record<string, string>; // instanceId -> base64 PNG
-  pdfAttachments?: PdfAttachment[]; // PDF files attached to chat
+  pdfAttachments?: PdfAttachment[]; // PDF files attached to chat (backwards compatibility)
+  attachments?: Attachment[]; // Unified attachments array
   pdfContext?: string; // Full text of PDF for context
   currentPageImage?: string; // Base64 image of current PDF page
 }

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import { ChatNode, AnimationSuggestion, PdfAttachment } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, PdfAttachment, Attachment } from '@/lib/types';
 
 /**
  * Chat database operations
@@ -21,7 +21,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   suggested_animation: AnimationSuggestion | null;
-  pdf_attachments: PdfAttachment[] | null;
+  attachments: Attachment[] | null;
   created_at: string;
 }
 
@@ -115,15 +115,21 @@ export async function loadChatMessages(chatId: string): Promise<ChatNode[]> {
   }
 
   // Convert database format to ChatNode format
-  return (data || []).map((msg) => ({
-    id: msg.id,
-    parentId: msg.parent_id,
-    role: msg.role as 'user' | 'assistant',
-    content: msg.content,
-    createdAt: msg.created_at,
-    suggestedAnimation: msg.suggested_animation,
-    pdfAttachments: msg.pdf_attachments || undefined,
-  }));
+  return (data || []).map((msg) => {
+    const attachments = msg.attachments || [];
+    const pdfAttachments = attachments.filter((att): att is PdfAttachment => att.type === 'pdf');
+    
+    return {
+      id: msg.id,
+      parentId: msg.parent_id,
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+      createdAt: msg.created_at,
+      suggestedAnimation: msg.suggested_animation,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      pdfAttachments: pdfAttachments.length > 0 ? pdfAttachments : undefined,
+    };
+  });
 }
 
 /**
@@ -136,9 +142,23 @@ export async function saveChatMessage(
     role: 'user' | 'assistant';
     content: string;
     suggestedAnimation?: AnimationSuggestion;
-    pdfAttachments?: PdfAttachment[];
+    pdfAttachments?: PdfAttachment[]; // Backwards compatibility
+    attachments?: Attachment[]; // New unified format
   }
 ): Promise<ChatNode> {
+  // Convert pdfAttachments to unified attachments format if provided
+  let finalAttachments: Attachment[] | null = null;
+  
+  if (message.attachments && message.attachments.length > 0) {
+    finalAttachments = message.attachments;
+  } else if (message.pdfAttachments && message.pdfAttachments.length > 0) {
+    // Convert old format to new format
+    finalAttachments = message.pdfAttachments.map(pdf => ({
+      ...pdf,
+      type: 'pdf' as const,
+    }));
+  }
+
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -147,17 +167,22 @@ export async function saveChatMessage(
       role: message.role,
       content: message.content,
       suggested_animation: message.suggestedAnimation || null,
-      pdf_attachments: message.pdfAttachments || null,
+      attachments: finalAttachments,
     })
     .select()
     .single();
 
   if (error) {
     console.error('Error saving chat message:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    console.error('Message payload:', { chatId, message });
     throw error;
   }
 
   // Convert database format to ChatNode format
+  const attachments = data.attachments || [];
+  const pdfAttachments = attachments.filter((att: Attachment): att is PdfAttachment => att.type === 'pdf');
+  
   return {
     id: data.id,
     parentId: data.parent_id,
@@ -165,17 +190,47 @@ export async function saveChatMessage(
     content: data.content,
     createdAt: data.created_at,
     suggestedAnimation: data.suggested_animation,
-    pdfAttachments: data.pdf_attachments || undefined,
+    attachments: attachments.length > 0 ? attachments : undefined,
+    pdfAttachments: pdfAttachments.length > 0 ? pdfAttachments : undefined,
   };
 }
 
 /**
- * Generate a title from the first user message
+ * Generate a title from the first user message (simple fallback)
  */
 export function generateChatTitle(firstMessage: string): string {
   // Take first 50 characters and add ellipsis if needed
   const maxLength = 50;
   const title = firstMessage.trim();
   return title.length > maxLength ? title.substring(0, maxLength) + '...' : title;
+}
+
+/**
+ * Generate an AI-powered chat title from conversation messages
+ */
+export async function generateAIChatTitle(messages: { role: string; content: string }[]): Promise<string> {
+  try {
+    // Call the API route to generate title
+    const response = await fetch('/api/chat/generate-title', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ messages }),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to generate AI title, using fallback');
+      // Fallback to simple title generation
+      return generateChatTitle(messages[0]?.content || 'New Chat');
+    }
+
+    const data = await response.json();
+    return data.title || generateChatTitle(messages[0]?.content || 'New Chat');
+  } catch (error) {
+    console.error('Error generating AI chat title:', error);
+    // Fallback to simple title generation
+    return generateChatTitle(messages[0]?.content || 'New Chat');
+  }
 }
 

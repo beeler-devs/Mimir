@@ -6,6 +6,7 @@ import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
+import { ChatTabBar } from './ChatTabBar';
 import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast } from 'lucide-react';
 import {
   loadUserChats,
@@ -14,6 +15,7 @@ import {
   saveChatMessage,
   updateChatTitle,
   generateChatTitle,
+  generateAIChatTitle,
   Chat,
 } from '@/lib/db/chats';
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
@@ -57,6 +59,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
 
+  // Chat tab management state
+  const [openChatTabs, setOpenChatTabs] = useState<{ id: string; title: string }[]>([]);
+
   // Study tools state
   const [flashcards, setFlashcards] = useState<{ front: string; back: string }[]>([]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
@@ -74,6 +79,51 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
 
+  // Load and persist open tabs
+  useEffect(() => {
+    const storedTabs = localStorage.getItem('mimir.openChatTabs.pdf');
+    if (storedTabs) {
+      try {
+        const parsed = JSON.parse(storedTabs);
+        setOpenChatTabs(parsed);
+      } catch (error) {
+        console.error('Failed to parse stored chat tabs:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (openChatTabs.length > 0) {
+      localStorage.setItem('mimir.openChatTabs.pdf', JSON.stringify(openChatTabs));
+    }
+  }, [openChatTabs]);
+
+  // Keep open tabs synced with current chat and chats list
+  useEffect(() => {
+    if (chatId && chats.length > 0) {
+      const currentChat = chats.find(c => c.id === chatId);
+      if (currentChat) {
+        setOpenChatTabs(prev => {
+          const tabExists = prev.some(tab => tab.id === chatId);
+          if (!tabExists) {
+            // Add current chat to tabs
+            return [...prev, {
+              id: currentChat.id,
+              title: currentChat.title || 'New Chat'
+            }];
+          } else {
+            // Update title if it changed
+            return prev.map(tab =>
+              tab.id === chatId
+                ? { ...tab, title: currentChat.title || 'New Chat' }
+                : tab
+            );
+          }
+        });
+      }
+    }
+  }, [chatId, chats]); // Removed openChatTabs from deps to prevent infinite loop
+
   // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
@@ -83,25 +133,96 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       }
     },
     createNewChat: async () => {
-      try {
-        // Create a new chat
-        const newChat = await createChat();
-
-        // Clear current messages and switch to new chat
-        setNodes([]);
-        setActiveNodeId(null);
-        setChatId(newChat.id);
-        localStorage.setItem('mimir.activeChatId', newChat.id);
-        setStudyMode('chat'); // Switch to chat view
-
-        // Reload chats list to include the new chat
-        const userChats = await loadUserChats();
-        setChats(userChats);
-      } catch (error) {
-        console.error('Failed to create new chat:', error);
-      }
+      await handleNewChat();
     },
   }));
+
+  // Handler for creating a new chat
+  const handleNewChat = async () => {
+    try {
+      const newChat = await createChat();
+      setNodes([]);
+      setActiveNodeId(null);
+      setChatId(newChat.id);
+      localStorage.setItem('mimir.activeChatId', newChat.id);
+      setStudyMode('chat');
+      
+      // Add new chat to tabs
+      setOpenChatTabs(prev => [...prev, {
+        id: newChat.id,
+        title: 'New Chat'
+      }]);
+      
+      // Reload chats list
+      const userChats = await loadUserChats();
+      setChats(userChats);
+    } catch (error) {
+      console.error('Failed to create new chat:', error);
+    }
+  };
+
+  // Handler for switching to a different chat tab
+  const handleSelectTab = async (selectedChatId: string) => {
+    try {
+      const messages = await loadChatMessages(selectedChatId);
+      setNodes(messages);
+      setChatId(selectedChatId);
+      localStorage.setItem('mimir.activeChatId', selectedChatId);
+      
+      if (messages.length > 0) {
+        setActiveNodeId(messages[messages.length - 1].id);
+      } else {
+        setActiveNodeId(null);
+      }
+      
+      const selectedChat = chats.find(c => c.id === selectedChatId);
+      if (selectedChat) {
+        const tabExists = openChatTabs.some(tab => tab.id === selectedChatId);
+        if (!tabExists) {
+          setOpenChatTabs(prev => [...prev, {
+            id: selectedChat.id,
+            title: selectedChat.title || 'New Chat'
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to switch chat:', error);
+    }
+  };
+
+  // Handler for closing a chat tab
+  const handleCloseTab = (closedChatId: string) => {
+    setOpenChatTabs(prev => {
+      const newTabs = prev.filter(tab => tab.id !== closedChatId);
+      
+      if (closedChatId === chatId) {
+        if (newTabs.length > 0) {
+          const nextTab = newTabs[newTabs.length - 1];
+          handleSelectTab(nextTab.id);
+        } else {
+          handleNewChat();
+        }
+      }
+      
+      return newTabs;
+    });
+  };
+
+  // Handler for renaming a chat tab
+  const handleRenameTab = async (renamedChatId: string, newTitle: string) => {
+    try {
+      await updateChatTitle(renamedChatId, newTitle);
+      
+      setOpenChatTabs(prev => prev.map(tab =>
+        tab.id === renamedChatId ? { ...tab, title: newTitle } : tab
+      ));
+      
+      const userChats = await loadUserChats();
+      setChats(userChats);
+    } catch (error) {
+      console.error('Failed to rename chat:', error);
+    }
+  };
 
   // Load or create chat on mount
   useEffect(() => {
@@ -209,10 +330,14 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setNodes(updatedNodes);
       setActiveNodeId(savedUserMessage.id);
 
-      // If this is the first user message, generate a title
+      // Generate AI title after first exchange
       if (nodes.length === 0) {
-        const title = generateChatTitle(content);
-        await updateChatTitle(chatId, title);
+        const simpleTitle = generateChatTitle(content);
+        await updateChatTitle(chatId, simpleTitle);
+        
+        setOpenChatTabs(prev => prev.map(tab =>
+          tab.id === chatId ? { ...tab, title: simpleTitle } : tab
+        ));
       }
 
       // Call backend API to get streaming AI response
@@ -250,15 +375,36 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           return hasContent || isFinalAssistant;
         });
 
+      // Log request payload for debugging
+      const requestPayload = {
+        messages: branchMessages,
+        branchPath,
+        workspaceContext,
+        learningMode,
+      };
+      console.log('='.repeat(80));
+      console.log('📤 SENDING CHAT REQUEST');
+      console.log('Request keys:', Object.keys(requestPayload));
+      console.log('Messages count:', requestPayload.messages.length);
+      console.log('Branch path:', requestPayload.branchPath);
+      console.log('Learning mode:', requestPayload.learningMode);
+      if (requestPayload.workspaceContext) {
+        console.log('WorkspaceContext keys:', Object.keys(requestPayload.workspaceContext));
+        console.log('  - instances:', requestPayload.workspaceContext.instances?.length || 0);
+        console.log('  - folders:', requestPayload.workspaceContext.folders?.length || 0);
+        console.log('  - annotationImages:', Object.keys(requestPayload.workspaceContext.annotationImages || {}).length);
+        console.log('  - pdfAttachments:', requestPayload.workspaceContext.pdfAttachments?.length || 0);
+        console.log('  - attachments:', requestPayload.workspaceContext.attachments || 'NOT_PRESENT');
+        console.log('  - pdfContext:', requestPayload.workspaceContext.pdfContext ? 'PRESENT' : 'NOT_PRESENT');
+        console.log('  - currentPageImage:', requestPayload.workspaceContext.currentPageImage ? 'PRESENT' : 'NOT_PRESENT');
+      }
+      console.log('Full payload:', JSON.stringify(requestPayload, null, 2));
+      console.log('='.repeat(80));
+
       const response = await fetch(`${backendUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: branchMessages,
-          branchPath,
-          workspaceContext,
-          learningMode,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) {
@@ -314,6 +460,27 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                     : node
                 ));
                 setActiveNodeId(savedAIMessage.id);
+                
+                // Generate AI title after first assistant response
+                if (updatedNodes.length <= 1) {
+                  const titleMessages = [
+                    { role: 'user', content: savedUserMessage.content || '' },
+                    { role: 'assistant', content: fullContent }
+                  ];
+                  
+                  generateAIChatTitle(titleMessages).then(async (aiTitle) => {
+                    await updateChatTitle(chatId, aiTitle);
+                    
+                    setOpenChatTabs(prev => prev.map(tab =>
+                      tab.id === chatId ? { ...tab, title: aiTitle } : tab
+                    ));
+                    
+                    const userChats = await loadUserChats();
+                    setChats(userChats);
+                  }).catch(error => {
+                    console.error('Failed to generate AI title:', error);
+                  });
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.content);
               }
@@ -325,6 +492,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
 
       // Remove streaming message if it exists
       setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
@@ -340,6 +513,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         setActiveNodeId(errorMessage.id);
       } catch (dbError) {
         console.error('Failed to save error message:', dbError);
+        console.error('Database error details:', JSON.stringify(dbError, null, 2));
       }
     } finally {
       setLoading(false);
@@ -894,6 +1068,19 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           )}
         </div>
       </div>
+
+      {/* Chat Tab Bar (only visible in chat mode) */}
+      {studyMode === 'chat' && openChatTabs.length > 0 && (
+        <ChatTabBar
+          openTabs={openChatTabs}
+          activeTabId={chatId}
+          allChats={chats}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onNewChat={handleNewChat}
+          onRenameTab={handleRenameTab}
+        />
+      )}
 
       {/* Content Area */}
       {renderContent()}
