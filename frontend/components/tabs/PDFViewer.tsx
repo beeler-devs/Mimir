@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '@/components/common';
 import { supabase } from '@/lib/supabaseClient';
@@ -24,6 +24,21 @@ import {
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  
+  // Suppress AbortException warnings from text layer cancellation
+  // This is expected behavior when navigating/unmounting
+  const originalConsoleWarn = console.warn;
+  console.warn = (...args) => {
+    // Filter out the specific TextLayer cancellation warning
+    if (
+      typeof args[0] === 'string' && 
+      (args[0].includes('TextLayer task cancelled') || 
+       args[0].includes('AbortException'))
+    ) {
+      return;
+    }
+    originalConsoleWarn.apply(console, args);
+  };
 }
 
 interface PDFMetadata {
@@ -96,6 +111,16 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   // Metadata panel
   const [showMetadata, setShowMetadata] = useState(false);
 
+  // Memoize PDF.js options to prevent unnecessary reloads
+  const pdfOptions = useMemo(
+    () => ({
+      cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+    }),
+    [] // Empty deps - these values never change
+  );
+
   // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
     getCurrentPageImage: async () => {
@@ -125,7 +150,18 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
     getCurrentPage: () => currentPage,
   }));
 
+  // Track if component is mounted to prevent state updates after unmount
+  const isMountedRef = useRef(true);
+  
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
+    if (!isMountedRef.current) return;
     setNumPages(pages);
     setCurrentPage(1); // Reset to page 1 on new document load
     // Initialize pageRefs array
@@ -646,7 +682,15 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
           <Document
             file={pdfUrl}
             onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={(error) => {
+              // Silently handle abort errors
+              if (error?.message?.includes('AbortException') || error?.message?.includes('cancelled')) {
+                return;
+              }
+              console.error('PDF load error:', error);
+            }}
             className="pdf-document"
+            options={pdfOptions}
           >
             {Array.from({ length: numPages }, (_, index) => index + 1).map((pageNumber) => (
               <div
@@ -662,6 +706,13 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
                   scale={scale}
                   renderTextLayer={true}
                   renderAnnotationLayer={true}
+                  onRenderError={(error) => {
+                    // Silently handle abort errors during rendering
+                    if (error?.message?.includes('AbortException') || error?.message?.includes('cancelled')) {
+                      return;
+                    }
+                    console.error('Page render error:', error);
+                  }}
                 />
                 {/* Page number overlay */}
                 <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
