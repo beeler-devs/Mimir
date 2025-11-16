@@ -141,6 +141,12 @@ export async function loadUserInstances(): Promise<WorkspaceInstance[]> {
           type: 'annotate' as const,
           data: instance.data,
         };
+      case 'pdf':
+        return {
+          ...baseInstance,
+          type: 'pdf' as const,
+          data: instance.data,
+        };
       default:
         throw new Error(`Unknown instance type: ${instance.type}`);
     }
@@ -153,28 +159,51 @@ export async function loadUserInstances(): Promise<WorkspaceInstance[]> {
 export async function createInstance(
   instance: Omit<WorkspaceInstance, 'id'>
 ): Promise<WorkspaceInstance> {
+  console.log('[createInstance] Starting instance creation...');
+  console.log('[createInstance] Instance type:', instance.type);
+  console.log('[createInstance] Instance title:', instance.title);
+  console.log('[createInstance] Instance folderId:', instance.folderId);
+  console.log('[createInstance] Instance data:', JSON.stringify(instance.data, null, 2));
+
   const { data: { user } } = await supabase.auth.getUser();
   
   if (!user) {
+    console.error('[createInstance] User not authenticated');
     throw new Error('User not authenticated');
   }
 
+  console.log('[createInstance] User authenticated:', user.id);
+
+  const insertPayload = {
+    user_id: user.id,
+    folder_id: instance.folderId || null,
+    title: instance.title,
+    type: instance.type,
+    data: instance.data,
+  };
+
+  console.log('[createInstance] Insert payload:', JSON.stringify(insertPayload, null, 2));
+
   const { data, error } = await supabase
     .from('instances')
-    .insert({
-      user_id: user.id,
-      folder_id: instance.folderId || null,
-      title: instance.title,
-      type: instance.type,
-      data: instance.data,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
   if (error) {
-    console.error('Error creating instance:', error);
+    console.error('[createInstance] ❌ ERROR creating instance');
+    console.error('[createInstance] Error object:', error);
+    console.error('[createInstance] Error message:', error.message);
+    console.error('[createInstance] Error code:', error.code);
+    console.error('[createInstance] Error details:', error.details);
+    console.error('[createInstance] Error hint:', error.hint);
+    console.error('[createInstance] Full error JSON:', JSON.stringify(error, null, 2));
     throw error;
   }
+
+  console.log('[createInstance] ✅ Instance created successfully');
+  console.log('[createInstance] Created instance ID:', data.id);
+  console.log('[createInstance] Created instance type:', data.type);
 
   // Convert back to WorkspaceInstance format
   const baseInstance = {
@@ -190,6 +219,8 @@ export async function createInstance(
       return { ...baseInstance, type: 'code' as const, data: data.data };
     case 'annotate':
       return { ...baseInstance, type: 'annotate' as const, data: data.data };
+    case 'pdf':
+      return { ...baseInstance, type: 'pdf' as const, data: data.data };
     default:
       throw new Error(`Unknown instance type: ${data.type}`);
   }
@@ -243,4 +274,3 @@ export async function deleteInstance(instanceId: string): Promise<void> {
     throw error;
   }
 }
-
