@@ -122,31 +122,55 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
     return (
       <>
-        <div className="flex-1 flex flex-col items-center justify-center p-8 gap-8">
+        <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
           {/* Header */}
           <div className="text-center">
             <h2 className="text-2xl font-semibold mb-2">Study Your PDF</h2>
           </div>
 
-          {/* Study Mode Grid - moved higher with bigger buttons */}
-          <div className="flex flex-wrap gap-2.5 justify-center max-w-2xl">
-            {studyModes.map(({ id, label, icon: Icon, action, disabled }) => (
-              <button
-                key={id}
-                onClick={action}
-                disabled={disabled}
-                className={`
-                  flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
-                  ${disabled
-                    ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
-                    : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
-                  }
-                `}
-              >
-                <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
-                <span>{label}</span>
-              </button>
-            ))}
+          {/* Study Mode Grid - 3-2 layout */}
+          <div className="flex flex-col gap-2.5 items-center">
+            {/* Top row - 3 buttons */}
+            <div className="flex gap-2.5">
+              {studyModes.slice(0, 3).map(({ id, label, icon: Icon, action, disabled }) => (
+                <button
+                  key={id}
+                  onClick={action}
+                  disabled={disabled}
+                  className={`
+                    flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
+                    ${disabled
+                      ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
+                      : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
+                    }
+                  `}
+                >
+                  <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Bottom row - 2 buttons */}
+            <div className="flex gap-2.5">
+              {studyModes.slice(3).map(({ id, label, icon: Icon, action, disabled }) => (
+                <button
+                  key={id}
+                  onClick={action}
+                  disabled={disabled}
+                  className={`
+                    flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
+                    ${disabled
+                      ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
+                      : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
+                    }
+                  `}
+                >
+                  <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

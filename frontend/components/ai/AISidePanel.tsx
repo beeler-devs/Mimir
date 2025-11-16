@@ -67,7 +67,75 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
-  
+
+  // Empty state view component
+  const EmptyStateView = () => {
+    const studyModes = [
+      {
+        id: 'chat' as StudyMode,
+        label: 'Chat',
+        icon: MessageSquare,
+        action: () => handleNewChat()
+      },
+      {
+        id: 'code' as StudyMode,
+        label: 'Code',
+        icon: Code,
+        action: () => setStudyMode('code'),
+        disabled: true
+      },
+      {
+        id: 'flappy-bird' as StudyMode,
+        label: 'Flappy Bird',
+        icon: Zap,
+        action: () => setStudyMode('flappy-bird'),
+        disabled: true
+      },
+    ];
+
+    return (
+      <>
+        <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold mb-2">Start Working</h2>
+          </div>
+
+          {/* Study Mode Buttons - horizontal layout */}
+          <div className="flex gap-2.5 items-center">
+            {studyModes.map(({ id, label, icon: Icon, action, disabled }) => (
+              <button
+                key={id}
+                onClick={action}
+                disabled={disabled}
+                className={`
+                  flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
+                  ${disabled
+                    ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
+                    : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
+                  }
+                `}
+              >
+                <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ChatInput
+          ref={chatInputRef}
+          onSend={handleSendMessage}
+          loading={loading}
+          instances={instances}
+          folders={folders}
+          pendingText={pendingChatText}
+          onTextAdded={onChatTextAdded}
+          learningMode={activeLearningMode}
+        />
+      </>
+    );
+  };
+
   // Load and persist open tabs
   useEffect(() => {
     const storedTabs = localStorage.getItem('mimir.openChatTabs');
@@ -84,6 +152,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   useEffect(() => {
     if (openChatTabs.length > 0) {
       localStorage.setItem('mimir.openChatTabs', JSON.stringify(openChatTabs));
+    } else {
+      localStorage.removeItem('mimir.openChatTabs');
     }
   }, [openChatTabs]);
 
@@ -185,7 +255,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   const handleCloseTab = (closedChatId: string) => {
     setOpenChatTabs(prev => {
       const newTabs = prev.filter(tab => tab.id !== closedChatId);
-      
+
       // If closing the active chat, switch to another tab
       if (closedChatId === chatId) {
         if (newTabs.length > 0) {
@@ -193,11 +263,14 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           const nextTab = newTabs[newTabs.length - 1];
           handleSelectTab(nextTab.id);
         } else {
-          // No tabs left, create a new chat
-          handleNewChat();
+          // No tabs left, clear state instead of creating new chat
+          setNodes([]);
+          setActiveNodeId(null);
+          setChatId(null);
+          localStorage.removeItem('mimir.activeChatId');
         }
       }
-      
+
       return newTabs;
     });
   };
@@ -507,6 +580,10 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   const renderContent = () => {
     switch (studyMode) {
       case 'chat':
+        // Show empty state when no tabs are open
+        if (openChatTabs.length === 0) {
+          return <EmptyStateView />;
+        }
         return (
           <>
             <div className="flex-1 overflow-y-auto">
@@ -566,52 +643,60 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     <div className="flex flex-col h-full">
       {/* Mode Tabs */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto">
-          {[ 
-            { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
-            { id: 'code' as StudyMode, label: 'Code', icon: Code },
-            { id: 'flappy-bird' as StudyMode, label: 'Flappy Bird', icon: Zap },
-          ].map(({ id, label, icon: Icon }) => {
-            const active = studyMode === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setStudyMode(id)}
-                className={`
-                  flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
-                  focus-visible:outline-none focus-visible:ring-2
-                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
-                `}
-                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '#F5F5F5';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '';
-                  }
-                }}
-              >
-                <div className="flex items-center gap-2 justify-center">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="font-medium whitespace-nowrap">{label}</span>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center rounded-lg border border-border bg-background px-2 py-1">
+          {/* Scrollable Tabs Section */}
+          <div className="flex items-center gap-2 flex-1 overflow-x-auto scrollbar-hide-show">
+            {[
+              { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
+              { id: 'code' as StudyMode, label: 'Code', icon: Code },
+              { id: 'flappy-bird' as StudyMode, label: 'Flappy Bird', icon: Zap },
+            ].map(({ id, label, icon: Icon }) => {
+              const active = studyMode === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setStudyMode(id)}
+                  className={`
+                    flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
+                    focus-visible:outline-none focus-visible:ring-2
+                    ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
+                  `}
+                  style={active ? { backgroundColor: '#F5F5F5' } : undefined}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.backgroundColor = '#F5F5F5';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.backgroundColor = '';
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-2 justify-center">
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="font-medium whitespace-nowrap">{label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-          {studyMode === 'chat' && <VoiceButton size="sm" className="shrink-0 ml-auto" />}
+          {/* Fixed Action Buttons Section */}
+          {(studyMode === 'chat' || collapseSidebar) && (
+            <div className="flex items-center gap-1 flex-shrink-0 pl-2 border-l border-border">
+              {studyMode === 'chat' && <VoiceButton size="sm" />}
 
-          {collapseSidebar && (
-            <button
-              onClick={collapseSidebar}
-              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 ml-auto"
-              aria-label="Collapse panel"
-            >
-              <PanelsLeftRight className="h-4 w-4" />
-            </button>
+              {collapseSidebar && (
+                <button
+                  onClick={collapseSidebar}
+                  className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+                  aria-label="Collapse panel"
+                >
+                  <PanelsLeftRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
