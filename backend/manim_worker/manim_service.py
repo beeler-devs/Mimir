@@ -60,9 +60,18 @@ class ManimService:
         self.jobs: Dict[str, Dict[str, Any]] = {}
         self.output_dir = Path(tempfile.gettempdir()) / "manim_jobs"
         self.output_dir.mkdir(exist_ok=True)
-        
-        # Thread pool for rendering
-        self.executor = ThreadPoolExecutor(max_workers=2)
+
+        # Thread pool for rendering (optimized: increased from 2 to 4 workers)
+        # This allows parallel processing of multiple animation requests
+        max_workers = int(os.getenv("MANIM_MAX_WORKERS", "4"))
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        logger.info(f"Initialized ThreadPoolExecutor with {max_workers} workers")
+
+        # Simple in-memory cache for similar animations (concept -> video_url)
+        # This helps avoid re-rendering identical or very similar concepts
+        self.animation_cache: Dict[str, str] = {}
+        self.cache_enabled = os.getenv("MANIM_CACHE_ENABLED", "true").lower() == "true"
+        logger.info(f"Animation caching: {'enabled' if self.cache_enabled else 'disabled'}")
         
         # Supabase client
         # Check for SUPABASE_URL first, then fall back to NEXT_PUBLIC_SUPABASE_URL
@@ -132,20 +141,57 @@ class ManimService:
             logger.warning("   Videos will use local paths instead of Supabase URLs")
             self.supabase = None
     
+    def _get_cache_key(self, description: str, student_context: str | None = None) -> str:
+        """
+        Generate a cache key for an animation request
+
+        Args:
+            description: Animation description
+            student_context: Optional student context
+
+        Returns:
+            Cache key string
+        """
+        # Normalize the description for caching (lowercase, strip whitespace)
+        normalized = description.lower().strip()
+        if student_context:
+            normalized += "|" + student_context.lower().strip()
+        return normalized
+
     def create_job(self, description: str, topic: str, student_context: str | None = None) -> str:
         """
         Create a new animation job
-        
+
         Args:
             description: Animation description
             topic: Topic category (math, cs, etc.)
             student_context: Optional context about the student's current work
-        
+
         Returns:
             job_id: Unique identifier for this job
         """
         job_id = str(uuid.uuid4())
-        
+
+        # Check cache first if enabled
+        cached_video_url = None
+        if self.cache_enabled:
+            cache_key = self._get_cache_key(description, student_context)
+            cached_video_url = self.animation_cache.get(cache_key)
+            if cached_video_url:
+                logger.info(f"Cache HIT for job {job_id}: {description[:50]}...")
+                # Return cached result immediately
+                self.jobs[job_id] = {
+                    "status": JobStatus.DONE,
+                    "description": description,
+                    "topic": topic,
+                    "student_context": student_context,
+                    "video_url": cached_video_url,
+                    "error": None,
+                }
+                return job_id
+            else:
+                logger.info(f"Cache MISS for job {job_id}: {description[:50]}...")
+
         self.jobs[job_id] = {
             "status": JobStatus.PENDING,
             "description": description,
@@ -154,10 +200,10 @@ class ManimService:
             "video_url": None,
             "error": None,
         }
-        
+
         # Start rendering in background
         self.executor.submit(self._render_job, job_id, description, topic, student_context)
-        
+
         logger.info(f"Created job {job_id}: {description}")
         return job_id
     
@@ -238,9 +284,12 @@ class ManimService:
             
             frame_rate = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            
+
             frame_number = 0
-            frame_interval = max(1, int(frame_rate / 30))  # Stream at ~30 fps
+            # Optimize frame interval based on target streaming FPS
+            # Default: stream at 30fps, but can be configured via env var
+            target_stream_fps = int(os.getenv("MANIM_STREAM_FPS", "30"))
+            frame_interval = max(1, int(frame_rate / target_stream_fps))
             
             logger.info(f"Video opened successfully:")
             logger.info(f"  Total frames: {total_frames}")
@@ -450,7 +499,14 @@ class ManimService:
             
             # Update status to done
             self.jobs[job_id]["status"] = JobStatus.DONE
-            
+
+            # Cache the successful result if caching is enabled
+            if self.cache_enabled and self.jobs[job_id].get("video_url"):
+                cache_key = self._get_cache_key(description, student_context)
+                self.animation_cache[cache_key] = self.jobs[job_id]["video_url"]
+                logger.info(f"Cached animation result for: {description[:50]}...")
+                logger.info(f"Cache now contains {len(self.animation_cache)} entries")
+
             # Send completion message via WebSocket
             ws_manager = get_websocket_manager()
             if ws_manager and ws_manager.has_connections(job_id):
@@ -459,7 +515,7 @@ class ManimService:
                     "job_id": job_id,
                     "video_url": self.jobs[job_id].get("video_url"),
                 }))
-            
+
             logger.info(f"Job {job_id} completed successfully")
             
         except Exception as e:
