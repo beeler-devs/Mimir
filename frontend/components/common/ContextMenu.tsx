@@ -9,6 +9,7 @@ interface ContextMenuProps {
   triggerRef: RefObject<HTMLElement>;
   children: React.ReactNode;
   align?: 'left' | 'right';
+  position?: { top: number; left: number };
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -17,6 +18,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   triggerRef,
   children,
   align = 'right',
+  position: positionProp,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -29,7 +31,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   // Calculate position when menu opens or trigger moves
   useEffect(() => {
-    if (!isOpen || !triggerRef.current) return;
+    if (!isOpen || !triggerRef.current || positionProp) return;
 
     const calculatePosition = () => {
       if (!triggerRef.current) return;
@@ -53,7 +55,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       window.removeEventListener('scroll', calculatePosition, true);
       window.removeEventListener('resize', calculatePosition);
     };
-  }, [isOpen, triggerRef, align]);
+  }, [isOpen, triggerRef, align, positionProp]);
 
   // Click outside detection
   useEffect(() => {
@@ -90,8 +92,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       data-menu-interactive
       className="fixed w-44 bg-background border border-border rounded-lg shadow-lg py-1 z-[9999]"
       style={{
-        top: `${position.top}px`,
-        left: `${position.left}px`,
+        top: `${(positionProp || position).top}px`,
+        left: `${(positionProp || position).left}px`,
       }}
       onClick={(event) => event.stopPropagation()}
     >
@@ -100,4 +102,3 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     document.body
   );
 };
-
