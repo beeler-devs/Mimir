@@ -138,17 +138,33 @@ async def get_job_status(job_id: str):
             "error": null
         }
     """
+    logger.info("=" * 70)
+    logger.info(f"GET JOB STATUS REQUEST FOR: {job_id}")
+    logger.info("=" * 70)
+    
     job_status = manim_service.get_job_status(job_id)
     
+    logger.info(f"Job status retrieved: {job_status}")
+    logger.info(f"Status: {job_status.get('status')}")
+    logger.info(f"Video URL: {job_status.get('video_url')}")
+    logger.info(f"Error: {job_status.get('error')}")
+    
     if job_status.get("status") == "not_found":
+        logger.warning(f"Job {job_id} not found")
+        logger.info("=" * 70)
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return JobResponse(
+    response = JobResponse(
         job_id=job_id,
         status=job_status["status"],
         video_url=job_status.get("video_url"),
         error=job_status.get("error"),
     )
+    
+    logger.info(f"Returning response: status={response.status}, video_url={response.video_url}")
+    logger.info("=" * 70)
+    
+    return response
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):

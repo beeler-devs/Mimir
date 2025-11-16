@@ -15,7 +15,7 @@ from supabase import create_client, Client
 from manim import config, tempconfig
 from models import JobStatus
 from manim_worker.scenes import select_scene  # Keep for future use
-from manim_worker.codegen import generate_and_validate_manim_scene
+from manim_worker.enhanced_codegen import generate_and_validate_manim_scene
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -52,19 +52,71 @@ class ManimService:
         self.executor = ThreadPoolExecutor(max_workers=2)
         
         # Supabase client
-        supabase_url = os.getenv("SUPABASE_URL")
+        # Check for SUPABASE_URL first, then fall back to NEXT_PUBLIC_SUPABASE_URL
+        # (NEXT_PUBLIC_ prefix is for frontend, but backend can use it too)
+        supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.bucket_name = os.getenv("SUPABASE_BUCKET_NAME", "animations")
         
+        logger.info("=" * 70)
+        logger.info("SUPABASE INITIALIZATION DEBUG")
+        logger.info("=" * 70)
+        
+        # Check both environment variable names
+        supabase_url_direct = os.getenv("SUPABASE_URL")
+        supabase_url_public = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        
+        logger.info(f"SUPABASE_URL (direct) present: {bool(supabase_url_direct)}")
+        logger.info(f"NEXT_PUBLIC_SUPABASE_URL present: {bool(supabase_url_public)}")
+        
+        if supabase_url:
+            logger.info(f"Using Supabase URL: {supabase_url[:50]}... (truncated)")
+            if supabase_url_direct:
+                logger.info("  Source: SUPABASE_URL")
+            elif supabase_url_public:
+                logger.info("  Source: NEXT_PUBLIC_SUPABASE_URL (fallback)")
+        else:
+            logger.error("✗ SUPABASE_URL environment variable is NOT SET")
+            logger.error("   Checked: SUPABASE_URL and NEXT_PUBLIC_SUPABASE_URL")
+            logger.error("   Please add SUPABASE_URL to backend/.env file")
+        
+        logger.info(f"SUPABASE_SERVICE_ROLE_KEY present: {bool(supabase_key)}")
+        if supabase_key:
+            logger.info(f"SUPABASE_SERVICE_ROLE_KEY length: {len(supabase_key)} characters")
+        else:
+            logger.warning("SUPABASE_SERVICE_ROLE_KEY environment variable is NOT SET")
+        
+        logger.info(f"SUPABASE_BUCKET_NAME: {self.bucket_name}")
+        logger.info("=" * 70)
+        
         if supabase_url and supabase_key:
             try:
+                logger.info("Attempting to create Supabase client...")
                 self.supabase: Client = create_client(supabase_url, supabase_key)
-                logger.info("Supabase client initialized")
+                logger.info("✓ Supabase client initialized successfully")
+                
+                # Test bucket access
+                try:
+                    logger.info(f"Testing access to bucket '{self.bucket_name}'...")
+                    buckets = self.supabase.storage.list_buckets()
+                    bucket_names = [b.name for b in buckets]
+                    logger.info(f"Available buckets: {bucket_names}")
+                    
+                    if self.bucket_name not in bucket_names:
+                        logger.error(f"⚠️  Bucket '{self.bucket_name}' NOT FOUND in available buckets!")
+                        logger.error(f"   Available buckets: {bucket_names}")
+                        logger.error(f"   Please create the bucket '{self.bucket_name}' in Supabase dashboard")
+                    else:
+                        logger.info(f"✓ Bucket '{self.bucket_name}' found and accessible")
+                except Exception as bucket_test_error:
+                    logger.error(f"Failed to test bucket access: {bucket_test_error}", exc_info=True)
+                    
             except Exception as e:
-                logger.error(f"Failed to initialize Supabase client: {e}")
+                logger.error(f"✗ Failed to initialize Supabase client: {e}", exc_info=True)
                 self.supabase = None
         else:
-            logger.warning("Supabase credentials not provided, storage upload disabled")
+            logger.warning("⚠️  Supabase credentials not provided, storage upload disabled")
+            logger.warning("   Videos will use local paths instead of Supabase URLs")
             self.supabase = None
     
     def create_job(self, description: str, topic: str, student_context: str | None = None) -> str:
@@ -203,14 +255,28 @@ class ManimService:
                 raise FileNotFoundError(f"Output video not found in {job_dir}")
             
             logger.info(f"Render complete for job {job_id}: {video_path}")
+            logger.info(f"Video file exists: {video_path.exists()}")
+            logger.info(f"Video file size: {video_path.stat().st_size / (1024*1024):.2f} MB")
             
             # Upload to Supabase Storage
+            logger.info("=" * 70)
+            logger.info(f"UPLOAD DECISION FOR JOB {job_id}")
+            logger.info("=" * 70)
+            logger.info(f"Supabase client available: {self.supabase is not None}")
+            
             if self.supabase:
+                logger.info("✓ Supabase client is available, attempting upload...")
                 video_url = self._upload_to_supabase(job_id, video_path)
+                logger.info(f"Upload result URL: {video_url}")
                 self.jobs[job_id]["video_url"] = video_url
             else:
+                logger.warning("⚠️  Supabase client is NOT available")
+                logger.warning("   Using local path fallback (this will cause 404 errors in frontend)")
                 # Fallback: use local path (for development)
-                self.jobs[job_id]["video_url"] = f"/local/{job_id}/out.mp4"
+                fallback_url = f"/local/{job_id}/out.mp4"
+                logger.warning(f"   Fallback URL: {fallback_url}")
+                self.jobs[job_id]["video_url"] = fallback_url
+            logger.info("=" * 70)
             
             # Update status to done
             self.jobs[job_id]["status"] = JobStatus.DONE
@@ -231,6 +297,16 @@ class ManimService:
         Returns:
             Path to output video
         """
+        logger.info("=" * 70)
+        logger.info(f"SEARCHING FOR VIDEO IN: {job_dir}")
+        logger.info("=" * 70)
+        logger.info(f"Job directory exists: {job_dir.exists()}")
+        
+        if job_dir.exists():
+            logger.info(f"Job directory contents:")
+            for item in job_dir.iterdir():
+                logger.info(f"  - {item.name} ({'DIR' if item.is_dir() else 'FILE'})")
+        
         # Manim creates a subdirectory structure
         # Try common patterns
         patterns = [
@@ -240,15 +316,30 @@ class ManimService:
             job_dir / "videos" / "1080p60" / "out.mp4",
         ]
         
-        for pattern in patterns:
+        logger.info(f"Checking {len(patterns)} common patterns...")
+        for i, pattern in enumerate(patterns, 1):
+            logger.info(f"  Pattern {i}: {pattern}")
+            logger.info(f"    Exists: {pattern.exists()}")
             if pattern.exists():
+                logger.info(f"✓ Found video at: {pattern}")
+                logger.info("=" * 70)
                 return pattern
         
         # Search recursively
+        logger.info("No video found in common patterns, searching recursively...")
         mp4_files = list(job_dir.rglob("*.mp4"))
-        if mp4_files:
-            return mp4_files[0]
+        logger.info(f"Found {len(mp4_files)} MP4 files recursively:")
+        for mp4_file in mp4_files:
+            logger.info(f"  - {mp4_file}")
         
+        if mp4_files:
+            selected = mp4_files[0]
+            logger.info(f"✓ Using first found video: {selected}")
+            logger.info("=" * 70)
+            return selected
+        
+        logger.error("✗ No video file found in job directory!")
+        logger.info("=" * 70)
         return None
     
     def _upload_to_supabase(self, job_id: str, video_path: Path) -> str:
@@ -262,28 +353,70 @@ class ManimService:
         Returns:
             Public URL of uploaded video
         """
+        logger.info("=" * 70)
+        logger.info(f"SUPABASE UPLOAD STARTING FOR JOB {job_id}")
+        logger.info("=" * 70)
+        logger.info(f"Video path: {video_path}")
+        logger.info(f"Video path exists: {video_path.exists()}")
+        
+        if not video_path.exists():
+            logger.error(f"✗ Video file does not exist at: {video_path}")
+            logger.info("=" * 70)
+            return f"/local/{job_id}/out.mp4"
+        
         try:
             # Read video file
+            logger.info("Reading video file...")
+            file_size = video_path.stat().st_size
+            logger.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
+            
             with open(video_path, "rb") as f:
                 video_data = f.read()
             
+            logger.info(f"Video data read: {len(video_data)} bytes")
+            
             # Upload to Supabase Storage
             storage_path = f"{job_id}/out.mp4"
+            logger.info(f"Storage path: {storage_path}")
+            logger.info(f"Bucket name: {self.bucket_name}")
             
-            self.supabase.storage.from_(self.bucket_name).upload(
+            logger.info("Attempting upload to Supabase Storage...")
+            upload_response = self.supabase.storage.from_(self.bucket_name).upload(
                 storage_path,
                 video_data,
-                file_options={"content-type": "video/mp4"}
+                file_options={"content-type": "video/mp4", "upsert": "true"}
             )
+            logger.info(f"Upload response: {upload_response}")
+            logger.info("✓ Upload successful!")
             
             # Get public URL
+            logger.info("Getting public URL...")
             public_url = self.supabase.storage.from_(self.bucket_name).get_public_url(storage_path)
+            logger.info(f"✓ Public URL: {public_url}")
             
-            logger.info(f"Uploaded video for job {job_id} to Supabase: {public_url}")
+            # Verify the file exists
+            try:
+                logger.info("Verifying uploaded file exists...")
+                files = self.supabase.storage.from_(self.bucket_name).list(path=job_id)
+                logger.info(f"Files in {job_id}/ directory: {files}")
+                logger.info("✓ File verification successful")
+            except Exception as verify_error:
+                logger.warning(f"Could not verify file (non-critical): {verify_error}")
+            
+            logger.info("=" * 70)
+            logger.info(f"✓ Upload complete! URL: {public_url}")
+            logger.info("=" * 70)
             return public_url
             
         except Exception as e:
-            logger.error(f"Failed to upload to Supabase: {e}")
+            logger.error("=" * 70)
+            logger.error(f"✗ UPLOAD FAILED FOR JOB {job_id}")
+            logger.error("=" * 70)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Full traceback:", exc_info=True)
+            logger.error("=" * 70)
+            logger.warning(f"Falling back to local path: /local/{job_id}/out.mp4")
             # Return local path as fallback
             return f"/local/{job_id}/out.mp4"
 
