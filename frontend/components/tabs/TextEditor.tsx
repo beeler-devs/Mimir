@@ -52,10 +52,17 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
     <div className="h-full flex flex-col bg-background">
       {selectedText && (
         <div className="mb-4 flex items-center justify-end">
-          <Button onClick={handleAskAI} size="sm">
-            <Send className="h-4 w-4 mr-2" />
-            Ask AI about selection
-          </Button>
+          <button
+            onClick={handleAskAI}
+            className="px-3 py-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
+            style={{
+              backgroundColor: '#F5F5F5',
+              borderRadius: '0.85rem',
+            }}
+          >
+            <Send className="h-3.5 w-3.5 mr-2 inline" />
+            Ask Mimir
+          </button>
         </div>
       )}
       
@@ -72,7 +79,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
           focus:outline-none
           resize-none
         "
-        placeholder="Start writing your notes, problem sets, or essays here...&#10;&#10;Select any text and click 'Ask AI' to get explanations or guidance."
+        placeholder="Start writing your notes, problem sets, or essays here...&#10;&#10;Select any text and click 'Ask Mimir' to get explanations or guidance."
       />
       
       <div className="mt-4 text-sm text-muted-foreground">

@@ -676,21 +676,23 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       {/* Text Selection Popup */}
       {showPopup && (
         <div
-          className="fixed z-50 px-3 py-2 bg-popover border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
           style={{
             left: `${popupPosition.x}px`,
             top: `${popupPosition.y}px`,
             transform: 'translate(-50%, -100%)',
+            backgroundColor: '#F5F5F5',
+            borderRadius: '0.85rem',
+            borderColor: 'var(--border)',
           }}
         >
-          <Button
-            size="sm"
+          <button
             onClick={handleAddToChat}
-            className="gap-2"
+            className="flex items-center gap-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
           >
             <MessageSquarePlus className="w-3.5 h-3.5" />
-            Add to chat
-          </Button>
+            Ask Mimir
+          </button>
         </div>
       )}
     </div>

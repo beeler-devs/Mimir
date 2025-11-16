@@ -358,6 +358,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
             [],
             {}
           )}
+          onAddToChat={(text) => {
+            if (chatInputRef.current) {
+              chatInputRef.current.setMessage(text);
+            }
+          }}
         />
       </div>
       <ChatInput

@@ -6,7 +6,7 @@ import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
-import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import {
   loadUserChats,
@@ -123,6 +123,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [flashcardHint, setFlashcardHint] = useState<string>('');
   const [hintLoading, setHintLoading] = useState(false);
+
+  // Text selection state for summary
+  const [selectedSummaryText, setSelectedSummaryText] = useState<string>('');
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false);
+  const [summaryPopupPosition, setSummaryPopupPosition] = useState({ x: 0, y: 0 });
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
@@ -562,6 +567,55 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   // Remove automatic generation - user should click generate button instead
 
+  // Text selection handler for summary (only when in summary mode)
+  const handleSummaryTextSelection = (event: MouseEvent) => {
+    if (studyMode !== 'summary') return;
+
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+
+    if (text && text.length > 0) {
+      // Check if the selection is within the summary content
+      const target = event.target as HTMLElement;
+      const summaryContent = target.closest('[data-summary-content="true"]');
+      
+      if (summaryContent) {
+        setSelectedSummaryText(text);
+        const range = selection?.getRangeAt(0);
+        const rect = range?.getBoundingClientRect();
+
+        if (rect) {
+          setSummaryPopupPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top - 10,
+          });
+          setShowSummaryPopup(true);
+        }
+      } else {
+        setShowSummaryPopup(false);
+      }
+    } else {
+      setShowSummaryPopup(false);
+    }
+  };
+
+  const handleAddSummaryToChat = () => {
+    if (selectedSummaryText && chatInputRef.current) {
+      chatInputRef.current.setMessage(selectedSummaryText);
+      setShowSummaryPopup(false);
+      setSelectedSummaryText('');
+      window.getSelection()?.removeAllRanges();
+      setStudyMode('chat'); // Switch to chat view
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleSummaryTextSelection);
+    return () => {
+      document.removeEventListener('mouseup', handleSummaryTextSelection);
+    };
+  }, [studyMode]);
+
   if (initializing) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
@@ -586,6 +640,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                   [],
                   {}
                 )}
+                onAddToChat={(text) => {
+                  if (chatInputRef.current) {
+                    chatInputRef.current.setMessage(text);
+                  }
+                }}
               />
             </div>
             <ChatInput
@@ -984,7 +1043,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                 Regenerate
               </button>
             </div>
-            <div className="flex-1 prose prose-sm max-w-none dark:prose-invert">
+            <div className="flex-1 prose prose-sm max-w-none dark:prose-invert" data-summary-content="true">
               <MarkdownRenderer content={summary} />
             </div>
           </div>
@@ -1066,6 +1125,29 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       {/* Content Area */}
       {renderContent()}
+
+      {/* Summary Text Selection Popup */}
+      {showSummaryPopup && (
+        <div
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          style={{
+            left: `${summaryPopupPosition.x}px`,
+            top: `${summaryPopupPosition.y}px`,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: '#F5F5F5',
+            borderRadius: '0.85rem',
+            borderColor: 'var(--border)',
+          }}
+        >
+          <button
+            onClick={handleAddSummaryToChat}
+            className="flex items-center gap-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+            Ask Mimir
+          </button>
+        </div>
+      )}
     </div>
   );
 });
