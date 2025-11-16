@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '@/components/common';
+import { supabase } from '@/lib/supabaseClient';
 import {
   Upload,
   Download,
@@ -39,7 +40,7 @@ interface PDFViewerProps {
   fileName?: string;
   metadata?: PDFMetadata;
   fullText?: string;
-  onUpload: (file: File, url: string, metadata: { size: number; pageCount: number; summary: string; metadata: PDFMetadata; fullText: string }) => void;
+  onUpload: (file: File, url: string, metadata: { size: number; pageCount: number; summary: string; metadata: PDFMetadata; fullText: string; storagePath: string }) => void;
   onSummaryReady?: (summary: string) => void;
   onAddToChat?: (text: string) => void;
 }
@@ -82,9 +83,57 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Metadata panel
   const [showMetadata, setShowMetadata] = useState(false);
 
+  // Refs for scroll tracking
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     setNumPages(pages);
+    setCurrentPage(1); // Reset to page 1 on new document load
   }, []);
+
+  // IntersectionObserver to track visible page
+  useEffect(() => {
+    if (!containerRef.current || numPages === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the page with the largest intersection ratio
+        let maxRatio = 0;
+        let visiblePage = currentPage;
+
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
+            const pageNum = parseInt(
+              entry.target.getAttribute('data-page-number') || '1',
+              10
+            );
+            visiblePage = pageNum;
+          }
+        });
+
+        if (maxRatio > 0) {
+          setCurrentPage(visiblePage);
+        }
+      },
+      {
+        root: containerRef.current,
+        threshold: [0, 0.25, 0.5, 0.75, 1.0],
+      }
+    );
+
+    // Observe all page elements
+    pageRefs.current.forEach((pageEl) => {
+      if (pageEl) {
+        observer.observe(pageEl);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [numPages]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -94,10 +143,37 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setAnalyzing(true);
 
     try {
-      // Create blob URL for immediate display
-      const blobUrl = URL.createObjectURL(file);
+      // 1. Get user ID from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated. Please log in to upload PDFs.');
+      }
 
-      // Analyze PDF with Claude
+      // 2. Upload PDF to Supabase Storage
+      console.log('[PDFViewer] Starting upload to Supabase Storage...');
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      uploadFormData.append('userId', user.id);
+
+      const uploadResponse = await fetch('/api/pdf/upload', {
+        method: 'POST',
+        body: uploadFormData,
+      });
+
+      console.log('[PDFViewer] Upload response status:', uploadResponse.status);
+
+      if (!uploadResponse.ok) {
+        const uploadError = await uploadResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('[PDFViewer] Upload failed:', uploadError);
+        throw new Error(uploadError.error || uploadError.details || `Upload failed with status ${uploadResponse.status}`);
+      }
+
+      const uploadData = await uploadResponse.json();
+      console.log('[PDFViewer] Upload successful:', { url: uploadData.url, path: uploadData.path });
+      const supabaseUrl = uploadData.url; // Permanent Supabase Storage URL
+      const storagePath = uploadData.path;
+
+      // 3. Analyze PDF with Claude
       const analyzeFormData = new FormData();
       analyzeFormData.append('file', file);
 
@@ -112,8 +188,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
       const analyzeData = await analyzeResponse.json();
 
-      // Call onUpload with all the extracted data
-      onUpload(file, blobUrl, {
+      // 4. Call onUpload with Supabase URL and storage path
+      onUpload(file, supabaseUrl, {
         size: file.size,
         pageCount: analyzeData.metadata.pages,
         summary: analyzeData.summary,
@@ -126,6 +202,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
           modificationDate: analyzeData.metadata.modificationDate,
         },
         fullText: analyzeData.fullText,
+        storagePath: storagePath,
       });
 
       if (onSummaryReady) {
@@ -133,7 +210,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       }
     } catch (error) {
       console.error('Error uploading/analyzing PDF:', error);
-      alert('Failed to process PDF. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process PDF. Please try again.';
+      alert(errorMessage);
     } finally {
       setUploading(false);
       setAnalyzing(false);
@@ -159,14 +237,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   const handleZoomOut = () => {
     setScale(prev => Math.max(prev - 0.25, 0.5));
-  };
-
-  const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, numPages));
-  };
-
-  const handlePrevPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
   };
 
   // Text selection for chat
@@ -279,6 +349,45 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     );
   }
 
+  // Check for blob URLs (old instances)
+  if (pdfUrl && pdfUrl.startsWith('blob:')) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 bg-background">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <FileText className="w-16 h-16 text-yellow-500" />
+          <h3 className="text-lg font-medium">PDF No Longer Available</h3>
+          <p className="text-sm text-center max-w-md">
+            This PDF was uploaded using a temporary link that has expired.<br/>
+            Please upload the PDF again to view it.
+          </p>
+        </div>
+        <label htmlFor="pdf-upload-replace" className="inline-block">
+          <span className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus-visible:outline-none bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer disabled:opacity-50">
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {analyzing ? 'Analyzing...' : 'Uploading...'}
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Upload New PDF
+              </>
+            )}
+          </span>
+          <input
+            id="pdf-upload-replace"
+            type="file"
+            accept="application/pdf"
+            onChange={handleFileUpload}
+            className="hidden"
+            disabled={uploading}
+          />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex flex-col h-full ${
@@ -295,26 +404,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Page Navigation */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handlePrevPage}
-            disabled={currentPage <= 1}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <span className="text-sm px-2">
-            {currentPage} / {numPages}
+          {/* Page Indicator */}
+          <span className="text-sm px-2 font-medium">
+            Page {currentPage} of {numPages}
           </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleNextPage}
-            disabled={currentPage >= numPages}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
 
           <div className="w-px h-6 bg-border mx-1" />
 
@@ -456,20 +549,38 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         </div>
       )}
 
-      {/* PDF Display */}
-      <div className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8">
-        <div className="shadow-2xl">
+      {/* PDF Display - Continuous Scroll */}
+      <div 
+        ref={containerRef}
+        className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8"
+      >
+        <div className="flex flex-col gap-4">
           <Document
             file={pdfUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             className="pdf-document"
           >
-            <Page
-              pageNumber={currentPage}
-              scale={scale}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-            />
+            {Array.from({ length: numPages }, (_, index) => index + 1).map((pageNumber) => (
+              <div
+                key={`page-${pageNumber}`}
+                ref={(el) => {
+                  pageRefs.current[pageNumber - 1] = el;
+                }}
+                className="relative shadow-2xl mb-4 bg-white"
+                data-page-number={pageNumber}
+              >
+                <Page
+                  pageNumber={pageNumber}
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                />
+                {/* Page number overlay */}
+                <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
+                  {pageNumber}
+                </div>
+              </div>
+            ))}
           </Document>
         </div>
       </div>

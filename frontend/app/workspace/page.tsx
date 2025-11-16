@@ -407,6 +407,7 @@ function WorkspaceContent() {
         modificationDate?: string;
       };
       fullText: string;
+      storagePath: string;
     }
   ) => {
     if (!activeInstanceId) return;
@@ -429,6 +430,7 @@ function WorkspaceContent() {
                 summary: metadata.summary,
                 metadata: metadata.metadata,
                 fullText: metadata.fullText,
+                storagePath: metadata.storagePath,
               },
             }
           : instance
@@ -446,6 +448,7 @@ function WorkspaceContent() {
           summary: metadata.summary,
           metadata: metadata.metadata,
           fullText: metadata.fullText,
+          storagePath: metadata.storagePath,
         },
       });
     } catch (error) {
