@@ -121,51 +121,46 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     ];
 
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
-        {/* Header */}
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold mb-2">Study Your PDF</h2>
-          <p className="text-sm text-muted-foreground max-w-md">
-            Choose a study mode to get started with AI-powered learning tools
-          </p>
+      <>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 gap-8">
+          {/* Header */}
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold mb-2">Study Your PDF</h2>
+          </div>
+
+          {/* Study Mode Grid - moved higher with bigger buttons */}
+          <div className="flex flex-wrap gap-2.5 justify-center max-w-2xl">
+            {studyModes.map(({ id, label, icon: Icon, action, disabled }) => (
+              <button
+                key={id}
+                onClick={action}
+                disabled={disabled}
+                className={`
+                  flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
+                  ${disabled
+                    ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
+                    : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
+                  }
+                `}
+              >
+                <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Study Mode Grid */}
-        <div className="grid grid-cols-2 gap-3 w-full max-w-md">
-          {studyModes.map(({ id, label, icon: Icon, description, action, disabled }) => (
-            <button
-              key={id}
-              onClick={action}
-              disabled={disabled}
-              className={`
-                flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all
-                ${disabled
-                  ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
-                  : 'border-border bg-background hover:border-primary hover:bg-primary/5 hover:shadow-sm'
-                }
-              `}
-            >
-              <div className={`p-3 rounded-lg ${disabled ? 'bg-muted' : 'bg-primary/10'}`}>
-                <Icon className={`h-6 w-6 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
-              </div>
-              <div className="text-center">
-                <p className="font-semibold text-sm mb-1">{label}</p>
-                <p className="text-xs text-muted-foreground">{description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Start Chat CTA */}
-        <div className="mt-2">
-          <button
-            onClick={handleNewChat}
-            className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors shadow-sm"
-          >
-            Start New Chat
-          </button>
-        </div>
-      </div>
+        {/* Normal Chat Input */}
+        <ChatInput
+          ref={chatInputRef}
+          onSend={handleSendMessage}
+          loading={loading}
+          instances={instances}
+          folders={folders}
+          pendingText={pendingChatText}
+          onTextAdded={onChatTextAdded}
+        />
+      </>
     );
   };
 
