@@ -577,7 +577,7 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
           </div>
 
           <p className="text-xs text-muted-foreground text-center">
-            Paste a YouTube link for lectures, upload a ZIP for code projects, or just start typing
+            Press ⌘U to attach files, paste a YouTube link for lectures, or just start typing
           </p>
         </div>
       </div>
