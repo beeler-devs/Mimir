@@ -1017,54 +1017,62 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     <div className="flex flex-col h-full">
       {/* Header with Study Mode Tabs */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto scrollbar-hide-show">
-          {[
-            { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
-            { id: 'flashcards' as StudyMode, label: 'Flashcards', icon: BookOpen },
-            { id: 'quiz' as StudyMode, label: 'Quiz', icon: FileQuestion },
-            { id: 'summary' as StudyMode, label: 'Summary', icon: FileText },
-            { id: 'podcast' as StudyMode, label: 'Podcast', icon: Podcast },
-          ].map(({ id, label, icon: Icon }) => {
-            const active = studyMode === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setStudyMode(id)}
-                className={`
-                  flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
-                  focus-visible:outline-none focus-visible:ring-2
-                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
-                `}
-                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '#F5F5F5';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '';
-                  }
-                }}
-              >
-                <div className="flex items-center gap-2 justify-center">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="font-medium whitespace-nowrap">{label}</span>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center rounded-lg border border-border bg-background px-2 py-1">
+          {/* Scrollable Tabs Section */}
+          <div className="flex items-center gap-2 flex-1 overflow-x-auto scrollbar-hide-show">
+            {[
+              { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
+              { id: 'flashcards' as StudyMode, label: 'Flashcards', icon: BookOpen },
+              { id: 'quiz' as StudyMode, label: 'Quiz', icon: FileQuestion },
+              { id: 'summary' as StudyMode, label: 'Summary', icon: FileText },
+              { id: 'podcast' as StudyMode, label: 'Podcast', icon: Podcast },
+            ].map(({ id, label, icon: Icon }) => {
+              const active = studyMode === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setStudyMode(id)}
+                  className={`
+                    flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
+                    focus-visible:outline-none focus-visible:ring-2
+                    ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
+                  `}
+                  style={active ? { backgroundColor: '#F5F5F5' } : undefined}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.backgroundColor = '#F5F5F5';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.backgroundColor = '';
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-2 justify-center">
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="font-medium whitespace-nowrap">{label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-          {studyMode === 'chat' && <VoiceButton size="sm" className="shrink-0 ml-auto" />}
+          {/* Fixed Action Buttons Section */}
+          {(studyMode === 'chat' || collapseSidebar) && (
+            <div className="flex items-center gap-1 flex-shrink-0 pl-2 border-l border-border">
+              {studyMode === 'chat' && <VoiceButton size="sm" />}
 
-          {collapseSidebar && (
-            <button
-              onClick={collapseSidebar}
-              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 ml-auto"
-              aria-label="Collapse panel"
-            >
-              <PanelsLeftRight className="h-4 w-4" />
-            </button>
+              {collapseSidebar && (
+                <button
+                  onClick={collapseSidebar}
+                  className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
+                  aria-label="Collapse panel"
+                >
+                  <PanelsLeftRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
