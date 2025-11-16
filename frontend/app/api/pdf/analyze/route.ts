@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createRequire } from 'module';
 
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY || '',
@@ -37,26 +38,112 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Dynamically import pdf-parse to avoid build-time issues with pdfjs-dist
-    const pdfParseModule = await import('pdf-parse') as any;
-    const pdfParse = pdfParseModule.default || pdfParseModule;
-    
-    // Extract text and metadata from PDF
-    const pdfData = await pdfParse(buffer);
+    // Prevent pdf.js from attempting to spawn a worker in the API route
+    // (Turbopack was failing to locate the worker chunk). This forces
+    // pdf.js to run in "no worker" mode.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).PDFJS_DISABLE_WORKER = true;
+    process.env.PDFJS_DISABLE_WORKER = 'true';
 
-    const metadata = {
-      pages: pdfData.numpages,
-      info: pdfData.info || {},
-      title: pdfData.info?.Title || file.name,
-      author: pdfData.info?.Author || 'Unknown',
-      subject: pdfData.info?.Subject || '',
-      keywords: pdfData.info?.Keywords || '',
-      creationDate: pdfData.info?.CreationDate || '',
-      modificationDate: pdfData.info?.ModDate || '',
+    // Dynamically import pdf-parse with multiple fallbacks, and log what we got.
+    const importErrors: unknown[] = [];
+    const importTraces: string[] = [];
+    let PDFParse: typeof import('pdf-parse')['PDFParse'] | undefined;
+
+    // Helper to record what we tried
+    const note = (label: string, mod: any) => {
+      try {
+        importTraces.push(`${label}: keys=${Object.keys(mod || {})}`);
+      } catch {
+        importTraces.push(`${label}: keys=<unavailable>`);
+      }
     };
 
-    // Get full text (limit to 50,000 characters for processing)
-    const fullText = pdfData.text.slice(0, 50000);
+    // Attempt ESM default entry
+    try {
+      const mod = await import('pdf-parse');
+      note('import pdf-parse', mod);
+      PDFParse = (mod as any).PDFParse || (mod as any).default?.PDFParse || (mod as any).default;
+    } catch (err) {
+      importErrors.push(err);
+    }
+
+    // Attempt documented node export
+    if (!PDFParse) {
+      try {
+        const mod = await import('pdf-parse/node');
+        note('import pdf-parse/node', mod);
+        PDFParse = (mod as any).PDFParse || (mod as any).default?.PDFParse || (mod as any).default;
+      } catch (err) {
+        importErrors.push(err);
+      }
+    }
+
+    // Attempt deep CJS path
+    if (!PDFParse) {
+      try {
+        const mod = await import('pdf-parse/dist/pdf-parse/cjs/index.cjs');
+        note('import pdf-parse/dist/pdf-parse/cjs/index.cjs', mod);
+        PDFParse = (mod as any).PDFParse || (mod as any).default?.PDFParse || (mod as any).default;
+      } catch (err) {
+        importErrors.push(err);
+      }
+    }
+
+    // Attempt require() as last resort
+    if (!PDFParse) {
+      try {
+        const require = createRequire(import.meta.url);
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = require('pdf-parse');
+        note('require pdf-parse', mod);
+        PDFParse = (mod as any).PDFParse || (mod as any).default?.PDFParse || (mod as any).default;
+      } catch (err) {
+        importErrors.push(err);
+      }
+    }
+
+    if (!PDFParse) {
+      console.error('pdf-parse import attempts failed', { importTraces, importErrors });
+      throw new Error('Failed to load pdf-parse (no PDFParse export found)');
+    } else {
+      console.log('pdf-parse import succeeded', { importTraces });
+    }
+
+    console.log('pdf-analyze: received file', {
+      name: file.name,
+      type: file.type,
+      size: buffer.byteLength,
+    });
+
+    // Extract text and metadata from PDF using new pdf-parse v2 API
+    const parser = new PDFParse({ data: buffer });
+    
+    // Get text content
+    const textResult = await parser.getText();
+    console.log('pdf-analyze: text extracted', { textLength: textResult.text?.length });
+    const fullText = textResult.text.slice(0, 50000);
+    
+    // Get metadata
+    const infoResult = await parser.getInfo();
+    console.log('pdf-analyze: metadata extracted', {
+      numPages: infoResult.numPages,
+      info: infoResult.info,
+    });
+    
+    // Clean up parser
+    await parser.destroy();
+
+    const metadata = {
+      pages: infoResult.numPages,
+      info: infoResult.info || {},
+      title: infoResult.info?.Title || file.name,
+      author: infoResult.info?.Author || 'Unknown',
+      subject: infoResult.info?.Subject || '',
+      keywords: infoResult.info?.Keywords || '',
+      creationDate: infoResult.info?.CreationDate || '',
+      modificationDate: infoResult.info?.ModDate || '',
+    };
 
     // Clean up text (remove excessive whitespace, normalize line breaks)
     const cleanText = fullText
@@ -110,14 +197,21 @@ Provide a clear, structured summary in 3-5 paragraphs.`,
       summary,
       metadata,
       fullText: cleanText.slice(0, 5000), // Return first 5000 chars for reference
-      textLength: pdfData.text.length,
+      textLength: textResult.text.length,
     });
   } catch (error) {
     console.error('Error analyzing PDF:', error);
+    
+    // Log full error stack for debugging
+    if (error instanceof Error) {
+      console.error('Error stack:', error.stack);
+    }
+    
     return NextResponse.json(
       {
         error: 'Failed to analyze PDF',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined
       },
       { status: 500 }
     );
