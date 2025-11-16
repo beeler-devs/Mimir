@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, RefObject } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
@@ -28,23 +28,27 @@ interface AISidePanelProps {
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  annotationCanvasRef?: RefObject<AnnotateCanvasRef>;
+  annotationCanvasRef?: RefObject<AnnotateCanvasRef | null>;
+  pendingChatText?: string | null;
+  onChatTextAdded?: () => void;
+}
+
+export interface AISidePanelRef {
+  addToChat: (message: string) => void;
 }
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export interface AISidePanelRef {
-  addToChat: (message: string) => void;
-}
-
 export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
   activeInstance = null,
   instances = [],
   folders = [],
   annotationCanvasRef,
+  pendingChatText,
+  onChatTextAdded,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -111,7 +115,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     }
   }, [chatId]);
 
-  const handleSendMessage = async (content: string, learningMode?: LearningMode) => {
+  const handleSendMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => {
     if (!chatId) {
       console.error('No active chat');
       return;
@@ -179,12 +183,22 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         resolvedMentions,
         annotationExports
       );
+      
+      // Add PDF attachments to workspace context
+      if (pdfAttachments && pdfAttachments.length > 0) {
+        // Filter out PDFs that are not ready
+        const readyPdfs = pdfAttachments.filter(pdf => pdf.status === 'ready');
+        if (readyPdfs.length > 0) {
+          workspaceContext.pdfAttachments = readyPdfs;
+        }
+      }
 
       // Save user message to database (keep mentions visible in chat)
       savedUserMessage = await saveChatMessage(chatId, {
         parentId: activeNodeId,
         role: 'user',
         content: content, // Keep original content with mentions
+        pdfAttachments: pdfAttachments && pdfAttachments.length > 0 ? pdfAttachments : undefined,
       });
 
       // Update local state
@@ -362,7 +376,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                 key={id}
                 onClick={() => setViewMode(id)}
                 className={`
-                  flex-1 group rounded-lg h-8 px-3 text-sm transition-all
+                  flex-1 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
                   ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
                 `}
@@ -430,6 +444,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           loading={loading}
           instances={instances}
           folders={folders}
+          pendingText={pendingChatText}
+          onTextAdded={onChatTextAdded}
         />
       )}
     </div>

@@ -1,19 +1,20 @@
 'use client';
 
 import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
-import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown } from 'lucide-react';
-import { WorkspaceInstance, Folder, MentionableItem, LearningMode } from '@/lib/types';
+import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown, X, File } from 'lucide-react';
+import { WorkspaceInstance, Folder, MentionableItem, LearningMode, PdfAttachment } from '@/lib/types';
 import { findMentionableItems } from '@/lib/mentions';
 import { useActiveLearningMode, getAllLearningModes, getLearningModeConfig } from '@/lib/learningMode';
 
 interface ChatInputProps {
-  onSend: (message: string, learningMode?: LearningMode) => void;
+  onSend: (message: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => void;
   disabled?: boolean;
   loading?: boolean;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  initialMessage?: string;
-  onMessageSet?: () => void;
+  onPdfsChange?: (pdfs: PdfAttachment[]) => void;
+  pendingText?: string | null;
+  onTextAdded?: () => void;
 }
 
 export interface ChatInputRef {
@@ -25,6 +26,7 @@ export interface ChatInputRef {
  * Input component for sending chat messages
  * Redesigned with bottom action bar separated by a line
  * Supports @ mentions for instances and folders
+ * Supports PDF attachments with text extraction
  */
 export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   onSend,
@@ -32,8 +34,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   loading = false,
   instances = [],
   folders = [],
-  initialMessage,
-  onMessageSet,
+  onPdfsChange,
+  pendingText,
+  onTextAdded,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -43,6 +46,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Learning mode state
   const [activeMode, overrideMode, setOverrideMode] = useActiveLearningMode();
@@ -50,12 +54,15 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const modeButtonRef = useRef<HTMLButtonElement>(null);
   const allModes = getAllLearningModes();
+  
+  // PDF attachment state
+  const [attachedPdfs, setAttachedPdfs] = useState<PdfAttachment[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
     setMessage: (msg: string) => {
       setMessage(msg);
-      if (onMessageSet) onMessageSet();
       // Focus the textarea after setting message
       setTimeout(() => {
         textareaRef.current?.focus();
@@ -65,14 +72,6 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       textareaRef.current?.focus();
     },
   }));
-
-  // Handle initial message
-  useEffect(() => {
-    if (initialMessage) {
-      setMessage(initialMessage);
-      if (onMessageSet) onMessageSet();
-    }
-  }, [initialMessage, onMessageSet]);
 
   const adjustTextareaHeight = () => {
     if (!textareaRef.current) return;
@@ -96,13 +95,142 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     }
   }, [autocompleteQuery, showAutocomplete, instances, folders]);
 
+  // Handle pending text from PDF selection
+  useEffect(() => {
+    if (pendingText && pendingText.trim()) {
+      // Format as a quote and add to message
+      const quotedText = `> ${pendingText.replace(/\n/g, '\n> ')}\n\n`;
+      setMessage((prev) => {
+        const newMessage = prev ? `${prev}\n${quotedText}` : quotedText;
+        return newMessage;
+      });
+
+      // Focus textarea and move cursor to end
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        setTimeout(() => {
+          if (textareaRef.current) {
+            const length = textareaRef.current.value.length;
+            textareaRef.current.setSelectionRange(length, length);
+          }
+        }, 0);
+      }
+
+      // Notify parent that text has been added
+      if (onTextAdded) {
+        onTextAdded();
+      }
+    }
+  }, [pendingText, onTextAdded]);
+
   const handleSend = () => {
     if (message.trim() && !loading) {
-      onSend(message.trim(), activeMode);
+      onSend(message.trim(), activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined);
       setMessage('');
       setShowAutocomplete(false);
       setMentionStart(null);
+      setAttachedPdfs([]);
+      setUploadError(null);
     }
+  };
+  
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
+  };
+  
+  const removePdf = (pdfId: string) => {
+    const newPdfs = attachedPdfs.filter(pdf => pdf.id !== pdfId);
+    setAttachedPdfs(newPdfs);
+    if (onPdfsChange) {
+      onPdfsChange(newPdfs);
+    }
+  };
+  
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setUploadError(null);
+    
+    // Process each selected PDF
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        setUploadError(`${file.name} is not a PDF file`);
+        continue;
+      }
+      
+      // Create a temporary PDF attachment with uploading status
+      const tempId = `pdf-${Date.now()}-${i}`;
+      const tempPdf: PdfAttachment = {
+        id: tempId,
+        filename: file.name,
+        extractedText: '',
+        status: 'uploading',
+      };
+      
+      // Add to state immediately to show uploading UI
+      setAttachedPdfs(prev => [...prev, tempPdf]);
+      
+      try {
+        // Upload to backend for text extraction
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('http://localhost:8001/extract-pdf', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Check for extraction error
+        if (data.error) {
+          // Update status to error
+          setAttachedPdfs(prev => 
+            prev.map(pdf => 
+              pdf.id === tempId 
+                ? { ...pdf, status: 'error' as const }
+                : pdf
+            )
+          );
+          setUploadError(data.error);
+        } else {
+          // Update with extracted text
+          setAttachedPdfs(prev => 
+            prev.map(pdf => 
+              pdf.id === tempId 
+                ? { 
+                    ...pdf, 
+                    extractedText: data.extractedText,
+                    status: 'ready' as const 
+                  }
+                : pdf
+            )
+          );
+        }
+      } catch (error) {
+        console.error('Error uploading PDF:', error);
+        // Update status to error
+        setAttachedPdfs(prev => 
+          prev.map(pdf => 
+            pdf.id === tempId 
+              ? { ...pdf, status: 'error' as const }
+              : pdf
+          )
+        );
+        setUploadError(`Failed to process ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    // Reset file input
+    e.target.value = '';
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -249,36 +377,77 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
         </div>
       )}
 
-      {/* Learning mode dropdown - positioned outside overflow container */}
-      {showModeDropdown && (
-        <div 
-          ref={modeDropdownRef}
-          className="absolute bottom-full left-4 mb-2 w-64 bg-background border border-border rounded-xl shadow-lg py-1 z-50"
-        >
-          {allModes.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => {
-                setOverrideMode(mode.id);
-                setShowModeDropdown(false);
-              }}
-              className={`
-                w-full px-3 py-2 text-left hover:bg-muted transition-colors
-                ${activeMode === mode.id ? 'bg-primary/10' : ''}
-              `}
+      {/* PDF Chips - displayed above input */}
+      {attachedPdfs.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {attachedPdfs.map((pdf) => (
+            <div
+              key={pdf.id}
+              className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg"
             >
-              <div className="font-medium text-sm">{mode.name}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {mode.description}
+              <div className="p-1.5 rounded bg-red-500/20">
+                <File className="h-4 w-4 text-red-500" />
               </div>
-            </button>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">{pdf.filename}</span>
+                <span className="text-xs text-muted-foreground">PDF</span>
+              </div>
+              {pdf.status === 'uploading' && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+              {pdf.status === 'error' && (
+                <span className="text-xs text-red-500">Error</span>
+              )}
+              <button
+                type="button"
+                onClick={() => removePdf(pdf.id)}
+                className="ml-auto p-1 rounded-full hover:bg-red-500/20 transition-colors"
+                aria-label="Remove PDF"
+              >
+                <X className="h-4 w-4 text-foreground" />
+              </button>
+            </div>
           ))}
+        </div>
+      )}
+      
+      {/* Error message */}
+      {uploadError && (
+        <div className="mb-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-500">
+          {uploadError}
         </div>
       )}
 
       {/* Main input container with border */}
-      <div className="border border-input rounded-lg overflow-hidden bg-background">
+      <div className="relative border border-input rounded-lg overflow-visible bg-background">
+        {/* Learning mode dropdown - positioned inside input container */}
+        {showModeDropdown && (
+          <div
+            ref={modeDropdownRef}
+            className="absolute bottom-12 left-3 w-64 bg-background border border-border rounded-xl shadow-lg py-1 z-50"
+          >
+            {allModes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => {
+                  setOverrideMode(mode.id);
+                  setShowModeDropdown(false);
+                }}
+                className={`
+                  w-full px-3 py-2 text-left hover:bg-muted transition-colors
+                  ${activeMode === mode.id ? 'bg-primary/10' : ''}
+                `}
+              >
+                <div className="font-medium text-sm">{mode.name}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {mode.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Textarea area */}
         <textarea
           ref={textareaRef}
@@ -296,15 +465,27 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
             disabled:opacity-50 disabled:cursor-not-allowed
           "
         />
-        
+
         {/* Bottom action bar */}
         <div className="flex items-center justify-between px-3 py-1 bg-background">
           <div className="flex items-center space-x-2">
-            {/* Upload button placeholder */}
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            
+            {/* Upload button */}
             <button
               type="button"
-              className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-              aria-label="Attach file"
+              onClick={handleFileClick}
+              disabled={disabled || loading}
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Attach PDF"
             >
               <Paperclip className="h-4 w-4 text-muted-foreground" />
             </button>

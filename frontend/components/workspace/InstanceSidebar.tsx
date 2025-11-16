@@ -2,13 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Modal } from '@/components/common';
-import { 
-  FileText, 
-  Code2, 
-  PenTool, 
-  Plus, 
-  Settings2, 
-  MoreVertical, 
+import {
+  FileText,
+  Code2,
+  PenTool,
+  File,
+  Plus,
+  Settings2,
+  MoreVertical,
   PanelsLeftRight,
   Folder as FolderIcon,
   FolderOpen,
@@ -22,6 +23,7 @@ const typeMeta = {
   text: { label: 'Text', icon: FileText },
   code: { label: 'Code', icon: Code2 },
   annotate: { label: 'Annotate', icon: PenTool },
+  pdf: { label: 'PDF', icon: File },
 } as const;
 
 interface InstanceSidebarProps {
@@ -115,7 +117,10 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         cancelEditing();
       }
     };
-    const handleClick = () => {
+    const handleClick = (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest('[data-menu-interactive]')) {
+        return;
+      }
       setMenuOpenId(null);
     };
     document.addEventListener('keydown', handleKey);
@@ -256,6 +261,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             <button
               type="button"
+              data-menu-interactive
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpenId(isMenuOpen ? null : instance.id);
@@ -272,6 +278,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
               {isMenuOpen && (
                 <div
+                  data-menu-interactive
                   className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -382,6 +389,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
               <button
                 type="button"
+                data-menu-interactive
                 onClick={(event) => {
                   event.stopPropagation();
                   setMenuOpenId(isMenuOpen ? null : folder.id);
@@ -398,6 +406,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
               {isMenuOpen && (
                 <div
+                  data-menu-interactive
                   className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
                   onClick={(event) => event.stopPropagation()}
                 >

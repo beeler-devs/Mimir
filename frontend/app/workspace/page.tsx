@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
 import { TextEditor, AnnotateCanvas } from '@/components/tabs';
@@ -10,6 +11,19 @@ import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/w
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Upload, Download } from 'lucide-react';
+
+// Dynamically import PDFViewer with SSR disabled to avoid DOMMatrix issues
+const PDFViewer = dynamic(
+  () => import('@/components/tabs/PDFViewer').then((mod) => ({ default: mod.PDFViewer })),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center">
+        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+);
 import type {
   WorkspaceInstance,
   InstanceType,
@@ -41,6 +55,18 @@ const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
     return {
       language: 'python' as CodeLanguage,
       code: '# Write your code here\n',
+    };
+  }
+  if (type === 'pdf') {
+    return {
+      pdfUrl: undefined,
+      fileName: undefined,
+      fileSize: undefined,
+      pageCount: undefined,
+      summary: undefined,
+      storagePath: undefined,
+      metadata: undefined,
+      fullText: undefined,
     };
   }
   return {};
@@ -76,6 +102,7 @@ function WorkspaceContent() {
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [pendingChatText, setPendingChatText] = useState<string | null>(null);
   const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
 
@@ -321,6 +348,97 @@ function WorkspaceContent() {
     annotationCanvasRef.current?.exportAnnotatedPdf();
   };
 
+  const handlePDFUpload = async (
+    file: File,
+    url: string,
+    metadata: {
+      size: number;
+      pageCount: number;
+      summary: string;
+      metadata: {
+        title?: string;
+        author?: string;
+        subject?: string;
+        keywords?: string;
+        creationDate?: string;
+        modificationDate?: string;
+      };
+      fullText: string;
+    }
+  ) => {
+    if (!activeInstanceId) return;
+
+    const currentInstance = instances.find((i) => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'pdf') return;
+
+    // Update UI immediately with PDF data
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'pdf'
+          ? {
+              ...instance,
+              data: {
+                ...instance.data,
+                pdfUrl: url,
+                fileName: file.name,
+                fileSize: file.size,
+                pageCount: metadata.pageCount,
+                summary: metadata.summary,
+                metadata: metadata.metadata,
+                fullText: metadata.fullText,
+              },
+            }
+          : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: {
+          pdfUrl: url,
+          fileName: file.name,
+          fileSize: file.size,
+          pageCount: metadata.pageCount,
+          summary: metadata.summary,
+          metadata: metadata.metadata,
+          fullText: metadata.fullText,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save PDF upload:', error);
+    }
+  };
+
+  const handlePDFSummaryReady = async (summary: string) => {
+    if (!activeInstanceId) return;
+
+    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'pdf') return;
+
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'pdf'
+          ? { ...instance, data: { ...instance.data, summary } }
+          : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: { ...currentInstance.data, summary },
+      });
+    } catch (error) {
+      console.error('Failed to save PDF summary:', error);
+    }
+  };
+
+  const handleAddToChat = (text: string) => {
+    setPendingChatText(text);
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -355,6 +473,18 @@ function WorkspaceContent() {
                 aiSidePanelRef.current.addToChat(message);
               }
             }}
+          />
+        );
+      case 'pdf':
+        return (
+          <PDFViewer
+            pdfUrl={activeInstance.data.pdfUrl}
+            fileName={activeInstance.data.fileName}
+            metadata={activeInstance.data.metadata}
+            fullText={activeInstance.data.fullText}
+            onUpload={handlePDFUpload}
+            onSummaryReady={handlePDFSummaryReady}
+            onAddToChat={handleAddToChat}
           />
         );
       case 'annotate':
@@ -451,6 +581,8 @@ function WorkspaceContent() {
             instances={instances}
             folders={folders}
             annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
+            pendingChatText={pendingChatText}
+            onChatTextAdded={() => setPendingChatText(null)}
           />
         }>
           <div className="h-full p-4 flex flex-col gap-4">

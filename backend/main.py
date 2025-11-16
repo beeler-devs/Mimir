@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
@@ -9,6 +9,8 @@ import re
 import json
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import pdfplumber
+import io
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +49,81 @@ async def health_check():
     Returns the service status
     """
     return HealthResponse(status="ok", version="0.2.0")
+
+@app.post("/extract-pdf")
+async def extract_pdf(file: UploadFile = File(...)):
+    """
+    Extract text from a PDF file using pdfplumber
+    
+    Args:
+        file: Uploaded PDF file
+    
+    Returns:
+        JSON with filename and extractedText
+    
+    Example:
+        POST /extract-pdf
+        (multipart/form-data with PDF file)
+        
+        Response:
+        {
+            "filename": "document.pdf",
+            "extractedText": "Full text content...",
+            "error": null
+        }
+    """
+    try:
+        # Validate file type
+        if not file.filename or not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+        # Read file content into memory
+        content = await file.read()
+        
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty PDF file")
+        
+        # Extract text using pdfplumber
+        extracted_text = ""
+        
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            if len(pdf.pages) == 0:
+                raise HTTPException(status_code=400, detail="PDF has no pages")
+            
+            # Extract text from all pages
+            for page_num, page in enumerate(pdf.pages):
+                page_text = page.extract_text()
+                if page_text:
+                    extracted_text += f"\n--- Page {page_num + 1} ---\n"
+                    extracted_text += page_text
+        
+        # Check if any text was extracted
+        if not extracted_text.strip():
+            logger.warning(f"No text extracted from PDF: {file.filename}")
+            return {
+                "filename": file.filename,
+                "extractedText": "",
+                "error": "No text could be extracted from this PDF. It may be image-based or empty."
+            }
+        
+        logger.info(f"Successfully extracted {len(extracted_text)} characters from {file.filename}")
+        
+        return {
+            "filename": file.filename,
+            "extractedText": extracted_text.strip(),
+            "error": None
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF: {e}", exc_info=True)
+        return {
+            "filename": file.filename if file.filename else "unknown.pdf",
+            "extractedText": "",
+            "error": f"Failed to extract text: {str(e)}"
+        }
 
 @app.post("/jobs", response_model=JobResponse)
 async def create_job(request: JobRequest):
@@ -353,6 +430,19 @@ async def chat_stream(request: ChatRequest):
                         elif inst.type == "annotate":
                             if inst.id in request.workspaceContext.annotationImages:
                                 context_parts.append(f"  [Annotation canvas image included below]")
+                
+                # Add PDF attachments
+                if request.workspaceContext.pdfAttachments:
+                    context_parts.append("\nAttached PDF documents:")
+                    for pdf in request.workspaceContext.pdfAttachments:
+                        if pdf.status == "ready" and pdf.extractedText:
+                            # Truncate very long PDF text to avoid token limits
+                            max_pdf_length = 10000  # ~10KB per PDF
+                            text_preview = pdf.extractedText[:max_pdf_length]
+                            if len(pdf.extractedText) > max_pdf_length:
+                                text_preview += f"\n... (truncated, showing first {max_pdf_length} characters of {len(pdf.extractedText)} total)"
+                            context_parts.append(f"\n[PDF: {pdf.filename}]")
+                            context_parts.append(text_preview)
                 
                 if context_parts:
                     context_description = "\n".join(context_parts) + "\n"
