@@ -111,6 +111,8 @@ export interface WorkspaceContext {
   folders: WorkspaceContextFolder[];
   annotationImages: Record<string, string>; // instanceId -> base64 PNG
   pdfAttachments?: PdfAttachment[]; // PDF files attached to chat
+  pdfContext?: string; // Full text of PDF for context
+  currentPageImage?: string; // Base64 image of current PDF page
 }
 
 export interface ChatRequest {
