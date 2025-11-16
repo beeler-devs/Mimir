@@ -29,12 +29,13 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
-    // Disable worker for server-side rendering
-    // Workers are for browser environments and cause issues in Node.js
-    // Note: disableWorker is supported but not in the TS types for v5.x
+    // Configure pdfjs for Node.js environment
+    // Disable worker and browser-specific features
     const loadingTask = pdfjsLib.getDocument({
       data,
-      disableWorker: true,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
     } as any);
 
     const pdf = await loadingTask.promise;

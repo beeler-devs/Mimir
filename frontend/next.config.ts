@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // Externalize pdfjs-dist for server-side rendering (works with both Webpack and Turbopack)
+  serverExternalPackages: ['pdfjs-dist', 'canvas'],
   env: {
     // Expose non-prefixed Supabase variables to the client
     // This allows using SUPABASE_URL and SUPABASE_ANON_KEY instead of NEXT_PUBLIC_ versions
