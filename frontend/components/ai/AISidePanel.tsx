@@ -27,8 +27,8 @@ interface AISidePanelProps {
   instances?: WorkspaceInstance[];
   folders?: Folder[];
   annotationCanvasRef?: RefObject<AnnotateCanvasRef | null>;
-  pendingChatText?: string | null;
-  onChatTextAdded?: () => void;
+  contextText?: string | null;
+  onContextRemoved?: () => void;
 }
 
 export interface AISidePanelRef {
@@ -46,8 +46,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   instances = [],
   folders = [],
   annotationCanvasRef,
-  pendingChatText,
-  onChatTextAdded,
+  contextText,
+  onContextRemoved,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
-        chatInputRef.current.setMessage(message);
+        chatInputRef.current.setContext(message);
       }
     },
     createNewChat: async () => {
@@ -360,7 +360,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           )}
           onAddToChat={(text) => {
             if (chatInputRef.current) {
-              chatInputRef.current.setMessage(text);
+              chatInputRef.current.setContext(text);
             }
           }}
         />
@@ -371,9 +371,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         loading={loading}
         instances={instances}
         folders={folders}
-        pendingText={pendingChatText}
-        onTextAdded={onChatTextAdded}
-        learningMode={activeLearningMode}
+        contextText={contextText}
+        onContextRemoved={onContextRemoved}
       />
     </div>
   );

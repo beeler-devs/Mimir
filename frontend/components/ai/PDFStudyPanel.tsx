@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, RefObject } from 'react';
+import React, { useState, useEffect, RefObject, useCallback } from 'react';
 import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
@@ -27,8 +27,8 @@ interface PDFStudyPanelProps {
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  pendingChatText?: string | null;
-  onChatTextAdded?: () => void;
+  contextText?: string | null;
+  onContextRemoved?: () => void;
   getCurrentPageImage?: () => Promise<string | null>;
 }
 
@@ -96,8 +96,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   activeInstance = null,
   instances = [],
   folders = [],
-  pendingChatText,
-  onChatTextAdded,
+  contextText,
+  onContextRemoved,
   getCurrentPageImage,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
@@ -139,7 +139,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
-        chatInputRef.current.setMessage(message);
+        chatInputRef.current.setContext(message);
         setStudyMode('chat'); // Switch to chat view
       }
     },
@@ -568,7 +568,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   // Remove automatic generation - user should click generate button instead
 
   // Text selection handler for summary (only when in summary mode)
-  const handleSummaryTextSelection = (event: MouseEvent) => {
+  const handleSummaryTextSelection = useCallback((event: MouseEvent) => {
     if (studyMode !== 'summary') return;
 
     const selection = window.getSelection();
@@ -597,24 +597,24 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     } else {
       setShowSummaryPopup(false);
     }
-  };
+  }, [studyMode]);
 
-  const handleAddSummaryToChat = () => {
+  const handleAddSummaryToChat = useCallback(() => {
     if (selectedSummaryText && chatInputRef.current) {
-      chatInputRef.current.setMessage(selectedSummaryText);
+      chatInputRef.current.setContext(selectedSummaryText);
       setShowSummaryPopup(false);
       setSelectedSummaryText('');
       window.getSelection()?.removeAllRanges();
       setStudyMode('chat'); // Switch to chat view
     }
-  };
+  }, [selectedSummaryText]);
 
   useEffect(() => {
     document.addEventListener('mouseup', handleSummaryTextSelection);
     return () => {
       document.removeEventListener('mouseup', handleSummaryTextSelection);
     };
-  }, [studyMode]);
+  }, [handleSummaryTextSelection]);
 
   if (initializing) {
     return (
@@ -642,7 +642,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                 )}
                 onAddToChat={(text) => {
                   if (chatInputRef.current) {
-                    chatInputRef.current.setMessage(text);
+                    chatInputRef.current.setContext(text);
                   }
                 }}
               />
@@ -653,8 +653,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               loading={loading}
               instances={instances}
               folders={folders}
-              pendingText={pendingChatText}
-              onTextAdded={onChatTextAdded}
+              contextText={contextText}
+              onContextRemoved={onContextRemoved}
             />
           </>
         );

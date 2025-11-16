@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ChatNode, WorkspaceContext } from '@/lib/types';
 import { AnimationPanel } from './AnimationPanel';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
@@ -40,7 +40,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   }, [messages]);
 
   // Text selection handler (only for assistant messages)
-  const handleTextSelection = (event: MouseEvent) => {
+  const handleTextSelection = useCallback((event: MouseEvent) => {
     const selection = window.getSelection();
     const text = selection?.toString().trim();
 
@@ -67,23 +67,23 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
     } else {
       setShowPopup(false);
     }
-  };
+  }, []);
 
-  const handleAddToChatClick = () => {
+  const handleAddToChatClick = useCallback(() => {
     if (selectedText && onAddToChat) {
       onAddToChat(selectedText);
       setShowPopup(false);
       setSelectedText('');
       window.getSelection()?.removeAllRanges();
     }
-  };
+  }, [selectedText, onAddToChat]);
 
   useEffect(() => {
     document.addEventListener('mouseup', handleTextSelection);
     return () => {
       document.removeEventListener('mouseup', handleTextSelection);
     };
-  }, []);
+  }, [handleTextSelection]);
   
   if (messages.length === 0) {
     return (
