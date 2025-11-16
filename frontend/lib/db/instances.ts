@@ -72,10 +72,26 @@ export async function createFolder(
 /**
  * Update folder name
  */
-export async function updateFolder(folderId: string, name: string): Promise<void> {
+export async function updateFolder(
+  folderId: string,
+  name?: string,
+  parentFolderId?: string | null
+): Promise<void> {
+  const updates: { name?: string; parent_folder_id?: string | null } = {};
+  if (name !== undefined) {
+    updates.name = name;
+  }
+  if (parentFolderId !== undefined) {
+    updates.parent_folder_id = parentFolderId;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return;
+  }
+
   const { error } = await supabase
     .from('folders')
-    .update({ name })
+    .update(updates)
     .eq('id', folderId);
 
   if (error) {

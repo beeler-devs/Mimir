@@ -66,7 +66,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
         style={style}
         className={`
           group flex items-center gap-1.5 px-2 py-1 text-sm cursor-pointer rounded-md
-          ${isActive ? 'bg-[#F5F5F5] text-foreground' : 'hover:bg-muted/50'}
+          ${isActive ? 'bg-muted text-foreground ring-1 ring-border' : 'hover:bg-muted/50'}
         `}
         onClick={() => {
           if (isFolder) {

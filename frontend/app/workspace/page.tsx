@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
 import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
-import { TextEditor, AnnotateCanvas, FlashcardTab } from '@/components/tabs';
+import { TextEditor, AnnotateCanvas } from '@/components/tabs';
 import { CodeWorkspace } from '@/components/code/CodeWorkspace';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { PDFViewerRef } from '@/components/tabs/PDFViewer';
@@ -165,7 +165,6 @@ function WorkspaceContent() {
   const [contextText, setContextText] = useState<string | null>(null);
   const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
-  const [activePdfTab, setActivePdfTab] = useState<'pdf' | 'flashcards'>('pdf');
 
   // Refs for panel components
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
@@ -718,38 +717,19 @@ function WorkspaceContent() {
           <div className="h-full flex flex-col">
             <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={activePdfTab === 'pdf' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setActivePdfTab('pdf')}
-                >
-                  PDF
-                </Button>
-                <Button
-                  variant={activePdfTab === 'flashcards' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setActivePdfTab('flashcards')}
-                >
-                  Flashcards
-                </Button>
-              </div>
+              <div className="text-sm font-medium text-muted-foreground">PDF</div>
             </div>
             <div className="flex-1 overflow-hidden">
-              {activePdfTab === 'pdf' ? (
-                <PDFViewer
-                  ref={pdfViewerRef}
-                  pdfUrl={activeInstance.data.pdfUrl}
-                  fileName={activeInstance.data.fileName}
-                  metadata={activeInstance.data.metadata}
-                  fullText={activeInstance.data.fullText}
-                  onUpload={handlePDFUpload}
-                  onSummaryReady={handlePDFSummaryReady}
-                  onAddToChat={handleAddToChat}
-                />
-              ) : (
-                <FlashcardTab />
-              )}
+              <PDFViewer
+                ref={pdfViewerRef}
+                pdfUrl={activeInstance.data.pdfUrl}
+                fileName={activeInstance.data.fileName}
+                metadata={activeInstance.data.metadata}
+                fullText={activeInstance.data.fullText}
+                onUpload={handlePDFUpload}
+                onSummaryReady={handlePDFSummaryReady}
+                onAddToChat={handleAddToChat}
+              />
             </div>
           </div>
         );
@@ -830,6 +810,23 @@ function WorkspaceContent() {
     }
   };
 
+
+  const handleMoveFolder = async (folderId: string, parentFolderId: string | null) => {
+    // Optimistically update UI
+    setFolders((prev) =>
+      prev.map((folder) =>
+        folder.id === folderId ? { ...folder, parentFolderId } : folder
+      )
+    );
+
+    // Save to database
+    try {
+      await updateFolderDB(folderId, undefined, parentFolderId);
+    } catch (error) {
+      console.error('Failed to move folder:', error);
+    }
+  };
+
   const handleMoveToFolder = async (instanceId: string, folderId: string | null) => {
     // Optimistically update UI
     setInstances((prev) =>
@@ -861,6 +858,7 @@ function WorkspaceContent() {
         onRenameFolder={handleRenameFolder}
         onDeleteFolder={handleDeleteFolder}
         onMoveToFolder={handleMoveToFolder}
+        onMoveFolder={handleMoveFolder}
       />
 
       <div className="flex-1 h-full overflow-hidden">
@@ -976,18 +974,38 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
   onSelect,
 }) => {
   const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => setQuery(''));
+    setSelectedIndex(0);
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  if (!open) return null;
-
-  const filteredInstances = instances.filter(instance =>
-    instance.title.toLowerCase().includes(query.toLowerCase())
+  const filteredInstances = useMemo(
+    () =>
+      instances.filter((instance) =>
+        instance.title.toLowerCase().includes(query.toLowerCase())
+      ),
+    [instances, query]
   );
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  useEffect(() => {
+    if (filteredInstances.length === 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    setSelectedIndex((prev) =>
+      Math.min(prev, Math.max(filteredInstances.length - 1, 0))
+    );
+  }, [filteredInstances.length]);
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
@@ -996,18 +1014,26 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
         onClick={onClose}
       />
       <div className="relative z-10 w-full max-w-xl bg-card border border-border rounded-3xl shadow-2xl overflow-hidden">
-        <div className="flex flex-col max-h-[70vh] bg-[#F5F5F5]">
+        <div className="flex flex-col max-h-[70vh] bg-card">
           <input
             value={query}
             autoFocus
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search instances..."
-            className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-[#F5F5F5] focus:outline-none"
+            className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-card text-foreground placeholder:text-muted-foreground focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 onClose();
               } else if (e.key === 'Enter' && filteredInstances.length > 0) {
-                onSelect(filteredInstances[0].id);
+                onSelect(filteredInstances[selectedIndex].id);
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIndex((prev) =>
+                  Math.min(prev + 1, Math.max(filteredInstances.length - 1, 0))
+                );
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIndex((prev) => Math.max(prev - 1, 0));
               }
             }}
           />
@@ -1017,14 +1043,17 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
                 {query ? 'No instances found' : 'Start typing to search'}
               </div>
             ) : (
-              filteredInstances.map((instance) => {
+              filteredInstances.map((instance, index) => {
                 const meta = typeMeta[instance.type];
                 const Icon = meta.icon;
+                const isSelected = index === selectedIndex;
                 return (
                   <button
                     key={instance.id}
                     onClick={() => onSelect(instance.id)}
-                    className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[#FAFAFA]"
+                    className={`w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-muted ${
+                      isSelected ? 'bg-muted ring-1 ring-border' : ''
+                    }`}
                   >
                     <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                       <Icon className="h-3.5 w-3.5" />

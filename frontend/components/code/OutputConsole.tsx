@@ -20,9 +20,9 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
   onClear,
 }) => {
   return (
-    <div className="h-full flex flex-col bg-[#1E1E1E] text-[#D4D4D4] font-mono text-sm">
+    <div className="h-full flex flex-col bg-background text-foreground font-mono text-sm">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-blue-400" />
           <span className="text-sm font-medium">Output</span>
@@ -64,7 +64,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
         <button
           onClick={onClear}
           disabled={!result && !isRunning}
-          className="p-1 rounded hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title="Clear output"
         >
           <X className="h-4 w-4" />
@@ -84,7 +84,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
           <div className="space-y-2">
             {/* Success output */}
             {result.status === 'success' && result.output && (
-              <pre className="whitespace-pre-wrap break-words text-green-300">
+              <pre className="whitespace-pre-wrap break-words text-green-600 dark:text-green-300">
                 {result.output}
               </pre>
             )}
@@ -93,11 +93,11 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
             {result.status === 'error' && (
               <>
                 {result.output && (
-                  <pre className="whitespace-pre-wrap break-words text-gray-300 mb-2">
+                  <pre className="whitespace-pre-wrap break-words text-slate-600 dark:text-slate-300 mb-2">
                     {result.output}
                   </pre>
                 )}
-                <pre className="whitespace-pre-wrap break-words text-red-400">
+                <pre className="whitespace-pre-wrap break-words text-red-600 dark:text-red-400">
                   {result.error}
                 </pre>
               </>
@@ -106,7 +106,7 @@ export const OutputConsole: React.FC<OutputConsoleProps> = ({
         )}
 
         {!result && !isRunning && (
-          <div className="text-gray-500 italic">
+          <div className="text-muted-foreground italic">
             No output yet. Run your code to see results here.
           </div>
         )}

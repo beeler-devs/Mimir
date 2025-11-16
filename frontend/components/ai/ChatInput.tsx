@@ -268,6 +268,13 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Command+U: open file picker for attachments
+    if (e.metaKey && e.key.toLowerCase() === 'u') {
+      e.preventDefault();
+      handleFileClick();
+      return;
+    }
+
     if (showAutocomplete && autocompleteItems.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
