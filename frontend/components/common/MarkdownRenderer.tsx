@@ -55,20 +55,22 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       <li className="text-sm leading-relaxed" {...props} />
     ),
 
-    // Code - distinguish inline vs block via inline prop
-    code: ({ node, inline, ...props }) => {
-      if (inline) {
+    // Code - distinguish inline vs block via className presence
+    code: ({ node, className, ...props }) => {
+      // Block code has a language- className, inline code doesn't
+      const isBlock = className && className.startsWith('language-');
+      if (isBlock) {
         return (
           <code
-            className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono"
+            className={`block text-xs bg-muted p-2 rounded font-mono overflow-x-auto mb-2 ${className}`}
             {...props}
           />
         );
       }
-      // Block code
+      // Inline code
       return (
         <code
-          className="block text-xs bg-muted p-2 rounded font-mono overflow-x-auto mb-2"
+          className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono"
           {...props}
         />
       );

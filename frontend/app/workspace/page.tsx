@@ -1,14 +1,28 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel } from '@/components/ai/AISidePanel';
-import { TextEditor, CodeEditor, AnnotateCanvas, PDFViewer } from '@/components/tabs';
+import { TextEditor, CodeEditor, AnnotateCanvas } from '@/components/tabs';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Upload, Download } from 'lucide-react';
+
+// Dynamically import PDFViewer with SSR disabled to avoid DOMMatrix issues
+const PDFViewer = dynamic(
+  () => import('@/components/tabs/PDFViewer').then((mod) => ({ default: mod.PDFViewer })),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center">
+        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+);
 import type {
   WorkspaceInstance,
   InstanceType,

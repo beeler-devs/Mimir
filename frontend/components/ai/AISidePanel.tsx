@@ -28,7 +28,7 @@ interface AISidePanelProps {
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  annotationCanvasRef?: RefObject<AnnotateCanvasRef>;
+  annotationCanvasRef?: RefObject<AnnotateCanvasRef | null>;
   pendingChatText?: string | null;
   onChatTextAdded?: () => void;
 }

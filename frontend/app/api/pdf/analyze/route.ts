@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
-// pdf-parse is a CommonJS module, need to use dynamic import
-const pdfParse = require('pdf-parse');
-
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY || '',
 });
@@ -40,6 +37,10 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Dynamically import pdf-parse to avoid build-time issues with pdfjs-dist
+    const pdfParseModule = await import('pdf-parse') as any;
+    const pdfParse = pdfParseModule.default || pdfParseModule;
+    
     // Extract text and metadata from PDF
     const pdfData = await pdfParse(buffer);
 
