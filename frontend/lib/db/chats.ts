@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import { ChatNode, AnimationSuggestion } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, PdfAttachment } from '@/lib/types';
 
 /**
  * Chat database operations
@@ -21,6 +21,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   suggested_animation: AnimationSuggestion | null;
+  pdf_attachments: PdfAttachment[] | null;
   created_at: string;
 }
 
@@ -121,6 +122,7 @@ export async function loadChatMessages(chatId: string): Promise<ChatNode[]> {
     content: msg.content,
     createdAt: msg.created_at,
     suggestedAnimation: msg.suggested_animation,
+    pdfAttachments: msg.pdf_attachments || undefined,
   }));
 }
 
@@ -134,6 +136,7 @@ export async function saveChatMessage(
     role: 'user' | 'assistant';
     content: string;
     suggestedAnimation?: AnimationSuggestion;
+    pdfAttachments?: PdfAttachment[];
   }
 ): Promise<ChatNode> {
   const { data, error } = await supabase
@@ -144,6 +147,7 @@ export async function saveChatMessage(
       role: message.role,
       content: message.content,
       suggested_animation: message.suggestedAnimation || null,
+      pdf_attachments: message.pdfAttachments || null,
     })
     .select()
     .single();
@@ -161,6 +165,7 @@ export async function saveChatMessage(
     content: data.content,
     createdAt: data.created_at,
     suggestedAnimation: data.suggested_animation,
+    pdfAttachments: data.pdf_attachments || undefined,
   };
 }
 

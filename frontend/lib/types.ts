@@ -16,6 +16,7 @@ export interface ChatNode {
   content: string;
   createdAt: string;
   suggestedAnimation?: AnimationSuggestion;
+  pdfAttachments?: PdfAttachment[];
 }
 
 export interface Chat {

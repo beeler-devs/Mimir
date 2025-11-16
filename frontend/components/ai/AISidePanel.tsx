@@ -179,6 +179,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
         parentId: activeNodeId,
         role: 'user',
         content: content, // Keep original content with mentions
+        pdfAttachments: pdfAttachments && pdfAttachments.length > 0 ? pdfAttachments : undefined,
       });
 
       // Update local state

@@ -366,7 +366,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       )}
 
       {/* Main input container with border */}
-      <div className="relative border border-input rounded-lg overflow-hidden bg-background">
+      <div className="relative border border-input rounded-lg overflow-visible bg-background">
         {/* Learning mode dropdown - positioned inside input container */}
         {showModeDropdown && (
           <div

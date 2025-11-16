@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ChatNode, WorkspaceContext } from '@/lib/types';
 import { AnimationPanel } from './AnimationPanel';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
+import { File } from 'lucide-react';
 
 interface ChatMessageListProps {
   messages: ChatNode[];
@@ -12,8 +13,28 @@ interface ChatMessageListProps {
 
 /**
  * Displays a list of chat messages in the active branch
+ * Automatically scrolls to the bottom as new messages stream in
  */
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, workspaceContext }) => {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    // Use a small timeout to ensure DOM has updated
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+    
+    // Scroll immediately
+    scrollToBottom();
+    
+    // Also scroll after a brief delay to catch any layout changes
+    const timeoutId = setTimeout(scrollToBottom, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [messages]);
+  
   if (messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full p-6">
@@ -26,30 +47,53 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   }
 
   return (
-    <div className="flex flex-col space-y-4 p-4 overflow-y-auto bg-transparent">
+    <div ref={containerRef} className="flex flex-col space-y-4 p-4 overflow-y-auto bg-transparent">
       {messages.map((message) => (
         <div key={message.id}>
           <div
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-          <div
-            className={`max-w-[85%] ${
-              message.role === 'user'
-                ? 'rounded-lg px-4 py-2 text-white whitespace-pre-wrap break-words text-sm leading-relaxed'
-                : 'text-foreground py-1.5'
-            }`}
-            style={message.role === 'user' ? { backgroundColor: '#C5ADFC' } : undefined}
-          >
-            {message.role === 'user' ? (
-              // User messages: plain text with whitespace preservation
-              <div className="text-sm whitespace-pre-wrap break-words">
-                {message.content}
+            <div className={`max-w-[85%] ${message.role === 'user' ? 'flex flex-col items-end' : ''}`}>
+              {/* PDF attachments for user messages */}
+              {message.role === 'user' && message.pdfAttachments && message.pdfAttachments.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2 justify-end">
+                  {message.pdfAttachments.map((pdf) => (
+                    <div
+                      key={pdf.id}
+                      className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg"
+                    >
+                      <div className="p-1.5 rounded bg-red-500/20">
+                        <File className="h-4 w-4 text-red-500" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">{pdf.filename}</span>
+                        <span className="text-xs text-muted-foreground">PDF</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Message content */}
+              <div
+                className={`${
+                  message.role === 'user'
+                    ? 'rounded-lg px-4 py-2 text-black whitespace-pre-wrap break-words text-sm leading-relaxed'
+                    : 'text-foreground py-1.5'
+                }`}
+                style={message.role === 'user' ? { backgroundColor: '#E7DEFE' } : undefined}
+              >
+                {message.role === 'user' ? (
+                  // User messages: plain text with whitespace preservation
+                  <div className="text-sm whitespace-pre-wrap break-words">
+                    {message.content}
+                  </div>
+                ) : (
+                  // AI assistant messages: markdown rendered
+                  <MarkdownRenderer content={message.content} />
+                )}
               </div>
-            ) : (
-              // AI assistant messages: markdown rendered
-              <MarkdownRenderer content={message.content} />
-            )}
-          </div>
+            </div>
           </div>
 
           {/* Show animation panel if message has a suggestion */}
@@ -60,6 +104,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
           )}
         </div>
       ))}
+      
+      {/* Invisible element at the end for scrolling */}
+      <div ref={messagesEndRef} />
     </div>
   );
 };
