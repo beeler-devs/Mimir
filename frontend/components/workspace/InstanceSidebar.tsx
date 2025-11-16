@@ -39,6 +39,7 @@ interface InstanceSidebarProps {
   onRenameFolder?: (id: string, name: string) => void;
   onDeleteFolder?: (id: string) => void;
   onMoveToFolder?: (instanceId: string, folderId: string | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null) => void;
 }
 
 /**
@@ -57,6 +58,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   onRenameFolder,
   onDeleteFolder,
   onMoveToFolder,
+  onMoveFolder,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<'instance' | 'folder' | null>(null);
@@ -66,6 +68,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
   const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [rootDragOver, setRootDragOver] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
@@ -340,21 +343,33 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     return (
       <div
         key={folder.id}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.setData('application/mimir-folder', folder.id);
+          setDraggingFolderId(folder.id);
+        }}
+        onDragEnd={() => setDraggingFolderId(null)}
         onDragOver={(event) => {
-          if (draggingInstanceId) {
+          if (draggingInstanceId || draggingFolderId) {
             event.preventDefault();
           }
         }}
         onDrop={(event) => {
-          if (!onMoveToFolder || !draggingInstanceId) return;
+          if (!onMoveToFolder || !onMoveFolder) return;
           event.preventDefault();
           event.stopPropagation();
-          const instanceId =
-            draggingInstanceId || event.dataTransfer.getData('application/mimir-instance');
+          const instanceId = event.dataTransfer.getData('application/mimir-instance');
+          const folderId = event.dataTransfer.getData('application/mimir-folder');
+
           if (instanceId) {
             onMoveToFolder(instanceId, folder.id);
+          } else if (folderId) {
+            onMoveFolder(folderId, folder.id);
           }
+
           setDraggingInstanceId(null);
+          setDraggingFolderId(null);
           setRootDragOver(false);
         }}
       >
@@ -555,13 +570,20 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           }
         }}
         onDrop={(event) => {
-          if (!draggingInstanceId || !onMoveToFolder) return;
+          if (!onMoveToFolder || !onMoveFolder) return;
           event.preventDefault();
           if (event.target !== event.currentTarget) return;
-          const instanceId =
-            draggingInstanceId || event.dataTransfer.getData('application/mimir-instance');
-          onMoveToFolder(instanceId, null);
+          const instanceId = event.dataTransfer.getData('application/mimir-instance');
+          const folderId = event.dataTransfer.getData('application/mimir-folder');
+
+          if (instanceId) {
+            onMoveToFolder(instanceId, null);
+          } else if (folderId) {
+            onMoveFolder(folderId, null);
+          }
+          
           setDraggingInstanceId(null);
+          setDraggingFolderId(null);
           setRootDragOver(false);
         }}
       >
