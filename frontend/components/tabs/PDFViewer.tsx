@@ -44,6 +44,11 @@ interface PDFViewerProps {
   onAddToChat?: (text: string) => void;
 }
 
+export interface PDFViewerRef {
+  getCurrentPageImage: () => Promise<string | null>;
+  getCurrentPage: () => number;
+}
+
 /**
  * Enhanced PDF Viewer Component
  * Features:
@@ -53,8 +58,9 @@ interface PDFViewerProps {
  * - Full-text search with highlighting
  * - Page navigation, zoom, fullscreen
  * - Text selection with "Add to chat"
+ * - Page capture for AI context
  */
-export const PDFViewer: React.FC<PDFViewerProps> = ({
+export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   pdfUrl,
   fileName,
   metadata,
@@ -62,7 +68,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onUpload,
   onSummaryReady,
   onAddToChat,
-}) => {
+}, ref) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
@@ -72,6 +78,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const pageRef = React.useRef<HTMLDivElement>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +88,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Metadata panel
   const [showMetadata, setShowMetadata] = useState(false);
+
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    getCurrentPageImage: async () => {
+      if (!pageRef.current) return null;
+
+      try {
+        // Import html2canvas dynamically
+        const html2canvas = (await import('html2canvas')).default;
+
+        // Capture the PDF page
+        const canvas = await html2canvas(pageRef.current, {
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+        });
+
+        // Convert to base64
+        return canvas.toDataURL('image/png');
+      } catch (error) {
+        console.error('Failed to capture page image:', error);
+        return null;
+      }
+    },
+    getCurrentPage: () => currentPage,
+  }));
 
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     setNumPages(pages);
@@ -458,7 +491,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
       {/* PDF Display */}
       <div className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8">
-        <div className="shadow-2xl">
+        <div className="shadow-2xl" ref={pageRef}>
           <Document
             file={pdfUrl}
             onLoadSuccess={onDocumentLoadSuccess}
@@ -496,4 +529,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       )}
     </div>
   );
-};
+});
+
+PDFViewer.displayName = 'PDFViewer';

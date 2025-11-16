@@ -4,9 +4,11 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
+import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
 import { TextEditor, AnnotateCanvas } from '@/components/tabs';
 import { CodeEditorEnhanced } from '@/components/tabs/CodeEditorEnhanced';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
+import { PDFViewerRef } from '@/components/tabs/PDFViewer';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -15,7 +17,7 @@ import { Upload, Download } from 'lucide-react';
 // Dynamically import PDFViewer with SSR disabled to avoid DOMMatrix issues
 const PDFViewer = dynamic(
   () => import('@/components/tabs/PDFViewer').then((mod) => ({ default: mod.PDFViewer })),
-  { 
+  {
     ssr: false,
     loading: () => (
       <div className="h-full flex items-center justify-center">
@@ -105,6 +107,8 @@ function WorkspaceContent() {
   const [pendingChatText, setPendingChatText] = useState<string | null>(null);
   const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
+  const pdfStudyPanelRef = useRef<PDFStudyPanelRef>(null);
+  const pdfViewerRef = useRef<PDFViewerRef>(null);
 
   // Load instances and folders from database on mount
   useEffect(() => {
@@ -439,6 +443,13 @@ function WorkspaceContent() {
     setPendingChatText(text);
   };
 
+  const getCurrentPageImage = async (): Promise<string | null> => {
+    if (pdfViewerRef.current) {
+      return await pdfViewerRef.current.getCurrentPageImage();
+    }
+    return null;
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -469,7 +480,9 @@ function WorkspaceContent() {
             onCodeChange={updateCode}
             onLanguageChange={updateLanguage}
             onAddToChat={(message) => {
-              if (aiSidePanelRef.current) {
+              if (activeInstance?.type === 'pdf' && pdfStudyPanelRef.current) {
+                pdfStudyPanelRef.current.addToChat(message);
+              } else if (aiSidePanelRef.current) {
                 aiSidePanelRef.current.addToChat(message);
               }
             }}
@@ -478,6 +491,7 @@ function WorkspaceContent() {
       case 'pdf':
         return (
           <PDFViewer
+            ref={pdfViewerRef}
             pdfUrl={activeInstance.data.pdfUrl}
             fileName={activeInstance.data.fileName}
             metadata={activeInstance.data.metadata}
@@ -575,15 +589,27 @@ function WorkspaceContent() {
 
       <div className="flex-1 h-full overflow-hidden">
         <WorkspaceLayout sidebar={
-          <AISidePanel
-            ref={aiSidePanelRef}
-            activeInstance={activeInstance}
-            instances={instances}
-            folders={folders}
-            annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
-            pendingChatText={pendingChatText}
-            onChatTextAdded={() => setPendingChatText(null)}
-          />
+          activeInstance?.type === 'pdf' ? (
+            <PDFStudyPanel
+              ref={pdfStudyPanelRef}
+              activeInstance={activeInstance}
+              instances={instances}
+              folders={folders}
+              pendingChatText={pendingChatText}
+              onChatTextAdded={() => setPendingChatText(null)}
+              getCurrentPageImage={getCurrentPageImage}
+            />
+          ) : (
+            <AISidePanel
+              ref={aiSidePanelRef}
+              activeInstance={activeInstance}
+              instances={instances}
+              folders={folders}
+              annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
+              pendingChatText={pendingChatText}
+              onChatTextAdded={() => setPendingChatText(null)}
+            />
+          )
         }>
           <div className="h-full p-4 flex flex-col gap-4">
             {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text' || activeInstance?.type === 'code') && (
