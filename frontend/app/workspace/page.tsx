@@ -49,6 +49,9 @@ const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
       fileSize: undefined,
       pageCount: undefined,
       summary: undefined,
+      storagePath: undefined,
+      metadata: undefined,
+      fullText: undefined,
     };
   }
   return {};
@@ -329,10 +332,27 @@ function WorkspaceContent() {
     annotationCanvasRef.current?.exportAnnotatedPdf();
   };
 
-  const handlePDFUpload = async (file: File, url: string, metadata: { size: number; pageCount: number }) => {
+  const handlePDFUpload = async (
+    file: File,
+    url: string,
+    metadata: {
+      size: number;
+      pageCount: number;
+      summary: string;
+      metadata: {
+        title?: string;
+        author?: string;
+        subject?: string;
+        keywords?: string;
+        creationDate?: string;
+        modificationDate?: string;
+      };
+      fullText: string;
+    }
+  ) => {
     if (!activeInstanceId) return;
 
-    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    const currentInstance = instances.find((i) => i.id === activeInstanceId);
     if (!currentInstance || currentInstance.type !== 'pdf') return;
 
     // Update UI immediately with PDF data
@@ -347,6 +367,9 @@ function WorkspaceContent() {
                 fileName: file.name,
                 fileSize: file.size,
                 pageCount: metadata.pageCount,
+                summary: metadata.summary,
+                metadata: metadata.metadata,
+                fullText: metadata.fullText,
               },
             }
           : instance
@@ -361,7 +384,9 @@ function WorkspaceContent() {
           fileName: file.name,
           fileSize: file.size,
           pageCount: metadata.pageCount,
-          summary: currentInstance.data.summary,
+          summary: metadata.summary,
+          metadata: metadata.metadata,
+          fullText: metadata.fullText,
         },
       });
     } catch (error) {
@@ -434,6 +459,8 @@ function WorkspaceContent() {
           <PDFViewer
             pdfUrl={activeInstance.data.pdfUrl}
             fileName={activeInstance.data.fileName}
+            metadata={activeInstance.data.metadata}
+            fullText={activeInstance.data.fullText}
             onUpload={handlePDFUpload}
             onSummaryReady={handlePDFSummaryReady}
             onAddToChat={handleAddToChat}

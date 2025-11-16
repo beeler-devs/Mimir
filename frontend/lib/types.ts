@@ -177,6 +177,16 @@ export interface PDFInstance extends BaseInstance {
     fileSize?: number;
     pageCount?: number;
     summary?: string;
+    storagePath?: string; // Path in Supabase Storage
+    metadata?: {
+      title?: string;
+      author?: string;
+      subject?: string;
+      keywords?: string;
+      creationDate?: string;
+      modificationDate?: string;
+    };
+    fullText?: string; // Extracted text for search
   };
 }
 

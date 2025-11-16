@@ -14,6 +14,10 @@ import {
   ChevronRight,
   FileText,
   MessageSquarePlus,
+  Search,
+  X,
+  Loader2,
+  Info,
 } from 'lucide-react';
 
 // Configure PDF.js worker
@@ -21,29 +25,40 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
 
+interface PDFMetadata {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string;
+  creationDate?: string;
+  modificationDate?: string;
+}
+
 interface PDFViewerProps {
   pdfUrl?: string;
   fileName?: string;
-  onUpload: (file: File, url: string, metadata: { size: number; pageCount: number }) => void;
+  metadata?: PDFMetadata;
+  fullText?: string;
+  onUpload: (file: File, url: string, metadata: { size: number; pageCount: number; summary: string; metadata: PDFMetadata; fullText: string }) => void;
   onSummaryReady?: (summary: string) => void;
   onAddToChat?: (text: string) => void;
 }
 
 /**
- * PDF Viewer Component
- * Allows users to upload, view, navigate, zoom, and interact with PDF documents.
+ * Enhanced PDF Viewer Component
  * Features:
- * - File upload
- * - Page navigation
- * - Zoom controls (50% to 300%)
- * - Fullscreen mode
- * - Download PDF
- * - Text selection with "Add to chat" popup
- * - Automatic PDF summarization (stubbed)
+ * - File upload with Supabase Storage integration
+ * - AI-powered analysis and summarization
+ * - Enhanced metadata extraction
+ * - Full-text search with highlighting
+ * - Page navigation, zoom, fullscreen
+ * - Text selection with "Add to chat"
  */
 export const PDFViewer: React.FC<PDFViewerProps> = ({
   pdfUrl,
   fileName,
+  metadata,
+  fullText,
   onUpload,
   onSummaryReady,
   onAddToChat,
@@ -55,31 +70,73 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [selectedText, setSelectedText] = useState<string>('');
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+
+  // Metadata panel
+  const [showMetadata, setShowMetadata] = useState(false);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     setNumPages(pages);
+  }, []);
 
-    // TODO: Extract text from PDF and send for summarization
-    // This would call an API endpoint to analyze the PDF with Claude
-    if (onSummaryReady) {
-      // Placeholder for actual PDF analysis
-      setTimeout(() => {
-        onSummaryReady(`PDF uploaded: ${fileName || 'document.pdf'} with ${pages} pages.`);
-      }, 1000);
-    }
-  }, [fileName, onSummaryReady]);
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      const url = URL.createObjectURL(file);
+    if (!file || file.type !== 'application/pdf') return;
 
-      // We'll get the page count in onDocumentLoadSuccess
-      // For now, pass basic metadata
-      onUpload(file, url, {
-        size: file.size,
-        pageCount: 0, // Will be updated when PDF loads
+    setUploading(true);
+    setAnalyzing(true);
+
+    try {
+      // Create blob URL for immediate display
+      const blobUrl = URL.createObjectURL(file);
+
+      // Analyze PDF with Claude
+      const analyzeFormData = new FormData();
+      analyzeFormData.append('file', file);
+
+      const analyzeResponse = await fetch('/api/pdf/analyze', {
+        method: 'POST',
+        body: analyzeFormData,
       });
+
+      if (!analyzeResponse.ok) {
+        throw new Error('Failed to analyze PDF');
+      }
+
+      const analyzeData = await analyzeResponse.json();
+
+      // Call onUpload with all the extracted data
+      onUpload(file, blobUrl, {
+        size: file.size,
+        pageCount: analyzeData.metadata.pages,
+        summary: analyzeData.summary,
+        metadata: {
+          title: analyzeData.metadata.title,
+          author: analyzeData.metadata.author,
+          subject: analyzeData.metadata.subject,
+          keywords: analyzeData.metadata.keywords,
+          creationDate: analyzeData.metadata.creationDate,
+          modificationDate: analyzeData.metadata.modificationDate,
+        },
+        fullText: analyzeData.fullText,
+      });
+
+      if (onSummaryReady) {
+        onSummaryReady(analyzeData.summary);
+      }
+    } catch (error) {
+      console.error('Error uploading/analyzing PDF:', error);
+      alert('Failed to process PDF. Please try again.');
+    } finally {
+      setUploading(false);
+      setAnalyzing(false);
     }
   };
 
@@ -112,15 +169,13 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     setCurrentPage(prev => Math.max(prev - 1, 1));
   };
 
-  // Handle text selection
+  // Text selection for chat
   const handleTextSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim();
 
     if (text && text.length > 0) {
       setSelectedText(text);
-
-      // Get selection position for popup
       const range = selection?.getRangeAt(0);
       const rect = range?.getBoundingClientRect();
 
@@ -145,7 +200,39 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   };
 
-  // Listen for text selection changes
+  // Search functionality
+  const handleSearch = useCallback(() => {
+    if (!searchQuery || !fullText) {
+      setSearchResults([]);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const text = fullText.toLowerCase();
+    const matches: number[] = [];
+
+    let index = text.indexOf(query);
+    while (index !== -1) {
+      matches.push(index);
+      index = text.indexOf(query, index + 1);
+    }
+
+    setSearchResults(matches);
+    setCurrentSearchIndex(0);
+  }, [searchQuery, fullText]);
+
+  const handleNextSearchResult = () => {
+    if (searchResults.length > 0) {
+      setCurrentSearchIndex((prev) => (prev + 1) % searchResults.length);
+    }
+  };
+
+  const handlePrevSearchResult = () => {
+    if (searchResults.length > 0) {
+      setCurrentSearchIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
+    }
+  };
+
   useEffect(() => {
     document.addEventListener('mouseup', handleTextSelection);
     return () => {
@@ -153,18 +240,31 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    handleSearch();
+  }, [handleSearch]);
+
   if (!pdfUrl) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8 bg-background">
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
           <FileText className="w-16 h-16" />
           <h3 className="text-lg font-medium">No PDF loaded</h3>
-          <p className="text-sm">Upload a PDF to get started</p>
+          <p className="text-sm">Upload a PDF to get started with AI-powered analysis</p>
         </div>
         <label htmlFor="pdf-upload" className="inline-block">
-          <span className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus-visible:outline-none bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload PDF
+          <span className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus-visible:outline-none bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer disabled:opacity-50">
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {analyzing ? 'Analyzing...' : 'Uploading...'}
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Upload PDF
+              </>
+            )}
           </span>
           <input
             id="pdf-upload"
@@ -172,6 +272,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             accept="application/pdf"
             onChange={handleFileUpload}
             className="hidden"
+            disabled={uploading}
           />
         </label>
       </div>
@@ -189,7 +290,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium truncate max-w-[200px]">
-            {fileName || 'document.pdf'}
+            {metadata?.title || fileName || 'document.pdf'}
           </span>
         </div>
 
@@ -240,10 +341,32 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
           <div className="w-px h-6 bg-border mx-1" />
 
-          {/* Action Buttons */}
+          {/* Search */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSearch(!showSearch)}
+            className={showSearch ? 'bg-accent' : ''}
+          >
+            <Search className="w-4 h-4" />
+          </Button>
+
+          {/* Metadata */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowMetadata(!showMetadata)}
+            className={showMetadata ? 'bg-accent' : ''}
+          >
+            <Info className="w-4 h-4" />
+          </Button>
+
+          {/* Download */}
           <Button variant="ghost" size="sm" onClick={handleDownload}>
             <Download className="w-4 h-4" />
           </Button>
+
+          {/* Fullscreen */}
           <Button variant="ghost" size="sm" onClick={toggleFullscreen}>
             {isFullscreen ? (
               <Minimize2 className="w-4 h-4" />
@@ -265,10 +388,73 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
               accept="application/pdf"
               onChange={handleFileUpload}
               className="hidden"
+              disabled={uploading}
             />
           </label>
         </div>
       </div>
+
+      {/* Search Bar */}
+      {showSearch && (
+        <div className="flex items-center gap-2 p-3 border-b bg-muted/30">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search in PDF..."
+            className="flex-1 px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {searchResults.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {currentSearchIndex + 1} / {searchResults.length}
+              </span>
+              <Button variant="ghost" size="sm" onClick={handlePrevSearchResult}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleNextSearchResult}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => setShowSearch(false)}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Metadata Panel */}
+      {showMetadata && metadata && (
+        <div className="p-4 border-b bg-muted/30 text-sm space-y-2">
+          <h4 className="font-semibold">Document Information</h4>
+          <div className="grid grid-cols-2 gap-2">
+            {metadata.title && (
+              <div>
+                <span className="text-muted-foreground">Title:</span>
+                <p className="font-medium">{metadata.title}</p>
+              </div>
+            )}
+            {metadata.author && (
+              <div>
+                <span className="text-muted-foreground">Author:</span>
+                <p>{metadata.author}</p>
+              </div>
+            )}
+            {metadata.subject && (
+              <div>
+                <span className="text-muted-foreground">Subject:</span>
+                <p>{metadata.subject}</p>
+              </div>
+            )}
+            {metadata.keywords && (
+              <div>
+                <span className="text-muted-foreground">Keywords:</span>
+                <p>{metadata.keywords}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* PDF Display */}
       <div className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8">
