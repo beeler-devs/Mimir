@@ -76,7 +76,18 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
 
+  // Study mode customization options
+  const [studyModeScope, setStudyModeScope] = useState<'entire' | 'current-page' | 'custom'>('entire');
+  const [studyModeFocus, setStudyModeFocus] = useState<string>('');
+
+  // Study mode chat history (separate from main chat)
+  const [flashcardsChatNodes, setFlashcardsChatNodes] = useState<ChatNode[]>([]);
+  const [quizChatNodes, setQuizChatNodes] = useState<ChatNode[]>([]);
+  const [summaryChatNodes, setSummaryChatNodes] = useState<ChatNode[]>([]);
+  const [studyModeChatLoading, setStudyModeChatLoading] = useState(false);
+
   const chatInputRef = React.useRef<ChatInputRef>(null);
+  const studyModeChatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
 
   // Empty state view component
@@ -644,7 +655,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       const response = await fetch(`${backendUrl}/study-tools/flashcards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfText: pdfContext }),
+        body: JSON.stringify({
+          pdfText: pdfContext,
+          scope: studyModeScope,
+          focus: studyModeFocus || undefined
+        }),
       });
 
       if (!response.ok) {
@@ -655,6 +670,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setFlashcards(data.flashcards || []);
       setCurrentFlashcardIndex(0);
       setShowFlashcardAnswer(false);
+      // Reset customization options for next generation
+      setStudyModeScope('entire');
+      setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating flashcards:', error);
     } finally {
@@ -671,7 +689,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       const response = await fetch(`${backendUrl}/study-tools/quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfText: pdfContext }),
+        body: JSON.stringify({
+          pdfText: pdfContext,
+          scope: studyModeScope,
+          focus: studyModeFocus || undefined
+        }),
       });
 
       if (!response.ok) {
@@ -685,6 +707,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setSelectedAnswer(null);
       setUserAnswers(new Array(questions.length).fill(null));
       setQuizCompleted(false);
+      // Reset customization options for next generation
+      setStudyModeScope('entire');
+      setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating quiz:', error);
     } finally {
@@ -701,7 +726,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       const response = await fetch(`${backendUrl}/study-tools/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfText: pdfContext }),
+        body: JSON.stringify({
+          pdfText: pdfContext,
+          scope: studyModeScope,
+          focus: studyModeFocus || undefined
+        }),
       });
 
       if (!response.ok) {
@@ -710,6 +739,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       const data = await response.json();
       setSummary(data.summary || '');
+      // Reset customization options for next generation
+      setStudyModeScope('entire');
+      setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating summary:', error);
     } finally {
@@ -717,16 +749,131 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     }
   };
 
-  // Load study tools when mode changes
-  useEffect(() => {
-    if (studyMode === 'flashcards' && flashcards.length === 0) {
-      generateFlashcards();
-    } else if (studyMode === 'quiz' && quizQuestions.length === 0) {
-      generateQuiz();
-    } else if (studyMode === 'summary' && !summary) {
-      generateSummary();
+  // Auto-generation removed - users now manually trigger generation with customization options
+
+  // Study mode chat handlers
+  const handleStudyModeChat = async (message: string, mode: 'flashcards' | 'quiz' | 'summary') => {
+    setStudyModeChatLoading(true);
+
+    // Get the appropriate chat nodes and setter based on mode
+    const getChatNodes = () => {
+      switch (mode) {
+        case 'flashcards': return flashcardsChatNodes;
+        case 'quiz': return quizChatNodes;
+        case 'summary': return summaryChatNodes;
+      }
+    };
+
+    const setChatNodes = (nodes: ChatNode[]) => {
+      switch (mode) {
+        case 'flashcards': setFlashcardsChatNodes(nodes); break;
+        case 'quiz': setQuizChatNodes(nodes); break;
+        case 'summary': setSummaryChatNodes(nodes); break;
+      }
+    };
+
+    const currentChatNodes = getChatNodes();
+
+    // Create user message node
+    const userMessage: ChatNode = {
+      id: `user-${Date.now()}`,
+      parentId: currentChatNodes.length > 0 ? currentChatNodes[currentChatNodes.length - 1].id : null,
+      role: 'user',
+      content: message,
+      createdAt: new Date().toISOString(),
+    };
+
+    setChatNodes([...currentChatNodes, userMessage]);
+
+    try {
+      const pdfContext = getPDFContext();
+      const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
+
+      // Get current content based on mode
+      const currentContent = mode === 'flashcards' ? flashcards : mode === 'quiz' ? quizQuestions : summary;
+
+      const response = await fetch(`${backendUrl}/study-tools/${mode}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          pdfText: pdfContext,
+          content: currentContent,
+          chatHistory: currentChatNodes.map(n => ({ role: n.role, content: n.content }))
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to chat about ${mode}`);
+      }
+
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = '';
+      let buffer = '';
+
+      if (reader) {
+        const streamingMessageId = `streaming-${Date.now()}`;
+        const streamingMessage: ChatNode = {
+          id: streamingMessageId,
+          parentId: userMessage.id,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+        };
+
+        setChatNodes([...currentChatNodes, userMessage, streamingMessage]);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.type === 'chunk') {
+                  fullContent += data.content;
+                  setChatNodes(prev => prev.map(node =>
+                    node.id === streamingMessageId
+                      ? { ...node, content: fullContent }
+                      : node
+                  ));
+                } else if (data.type === 'done') {
+                  fullContent = data.content;
+                  const finalMessage: ChatNode = {
+                    ...streamingMessage,
+                    content: fullContent,
+                  };
+                  setChatNodes([...currentChatNodes, userMessage, finalMessage]);
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error chatting about ${mode}:`, error);
+      const errorMessage: ChatNode = {
+        id: `error-${Date.now()}`,
+        parentId: userMessage.id,
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.',
+        createdAt: new Date().toISOString(),
+      };
+      setChatNodes([...currentChatNodes, userMessage, errorMessage]);
+    } finally {
+      setStudyModeChatLoading(false);
     }
-  }, [studyMode]);
+  };
 
   if (initializing) {
     return (
@@ -786,8 +933,52 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
         if (flashcards.length === 0) {
           return (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <p className="text-sm text-muted-foreground">No flashcards available</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="text-center">
+                <BookOpen className="h-12 w-12 mx-auto mb-4 text-primary" />
+                <h3 className="text-lg font-semibold mb-2">Generate Flashcards</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Create flashcards from your PDF to help you study and memorize key concepts
+                </p>
+              </div>
+
+              <div className="w-full max-w-md space-y-4">
+                {/* Scope Selector */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Scope</label>
+                  <select
+                    value={studyModeScope}
+                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="entire">Entire PDF</option>
+                    <option value="current-page">Current Page Only</option>
+                    <option value="custom">Custom Focus</option>
+                  </select>
+                </div>
+
+                {/* Custom Focus Input */}
+                {studyModeScope === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                    <textarea
+                      value={studyModeFocus}
+                      onChange={(e) => setStudyModeFocus(e.target.value)}
+                      placeholder="e.g., Focus on key definitions, formulas, or specific concepts..."
+                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    />
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={generateFlashcards}
+                  disabled={generatingFlashcards}
+                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                >
+                  {generatingFlashcards ? 'Generating...' : 'Generate Flashcards'}
+                </button>
+              </div>
             </div>
           );
         }
@@ -856,8 +1047,52 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
         if (quizQuestions.length === 0) {
           return (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <p className="text-sm text-muted-foreground">No quiz questions available</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="text-center">
+                <FileQuestion className="h-12 w-12 mx-auto mb-4 text-primary" />
+                <h3 className="text-lg font-semibold mb-2">Generate Quiz</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Test your knowledge with multiple-choice questions generated from your PDF
+                </p>
+              </div>
+
+              <div className="w-full max-w-md space-y-4">
+                {/* Scope Selector */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Scope</label>
+                  <select
+                    value={studyModeScope}
+                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="entire">Entire PDF</option>
+                    <option value="current-page">Current Page Only</option>
+                    <option value="custom">Custom Focus</option>
+                  </select>
+                </div>
+
+                {/* Custom Focus Input */}
+                {studyModeScope === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                    <textarea
+                      value={studyModeFocus}
+                      onChange={(e) => setStudyModeFocus(e.target.value)}
+                      placeholder="e.g., Focus on specific topics, difficulty level, or question types..."
+                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    />
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={generateQuiz}
+                  disabled={generatingQuiz}
+                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                >
+                  {generatingQuiz ? 'Generating...' : 'Generate Quiz'}
+                </button>
+              </div>
             </div>
           );
         }
@@ -1099,6 +1334,58 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           );
         }
 
+        if (!summary) {
+          return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="text-center">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-primary" />
+                <h3 className="text-lg font-semibold mb-2">Generate Summary</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Get a concise overview of your PDF's main points and key takeaways
+                </p>
+              </div>
+
+              <div className="w-full max-w-md space-y-4">
+                {/* Scope Selector */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Scope</label>
+                  <select
+                    value={studyModeScope}
+                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="entire">Entire PDF</option>
+                    <option value="current-page">Current Page Only</option>
+                    <option value="custom">Custom Focus</option>
+                  </select>
+                </div>
+
+                {/* Custom Focus Input */}
+                {studyModeScope === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                    <textarea
+                      value={studyModeFocus}
+                      onChange={(e) => setStudyModeFocus(e.target.value)}
+                      placeholder="e.g., Focus on methodology, results, or specific sections..."
+                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    />
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={generateSummary}
+                  disabled={generatingSummary}
+                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                >
+                  {generatingSummary ? 'Generating...' : 'Generate Summary'}
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         return (
           <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
             <div className="flex items-center justify-between">
@@ -1111,7 +1398,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               </button>
             </div>
             <div className="flex-1 bg-muted/30 p-4 rounded-lg">
-              <p className="text-sm whitespace-pre-wrap">{summary || 'No summary available'}</p>
+              <p className="text-sm whitespace-pre-wrap">{summary}</p>
             </div>
           </div>
         );
