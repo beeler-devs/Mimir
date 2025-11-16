@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Union
 from enum import Enum
 
 """
@@ -33,15 +33,27 @@ class Mention(BaseModel):
     name: str
 
 class PdfAttachment(BaseModel):
+    type: Literal["pdf"] = "pdf"
     id: str
     filename: str
-    extractedText: str
+    url: Optional[str] = None
+    extractedText: Optional[str] = None
+    pageCount: Optional[int] = None
     status: Literal["uploading", "ready", "error"] = "ready"
+
+class ImageAttachment(BaseModel):
+    type: Literal["image"] = "image"
+    id: str
+    filename: str
+    url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+    mimeType: str
 
 class WorkspaceContextInstance(BaseModel):
     id: str
     title: str
-    type: Literal["text", "code", "annotate"]
+    type: Literal["text", "code", "annotate", "pdf"]
     folderId: Optional[str] = None
     content: Optional[str] = None  # For text instances
     code: Optional[str] = None  # For code instances
@@ -56,7 +68,10 @@ class WorkspaceContext(BaseModel):
     instances: List[WorkspaceContextInstance]
     folders: List[WorkspaceContextFolder]
     annotationImages: dict[str, str] = {}  # instanceId -> base64 PNG
-    pdfAttachments: List[PdfAttachment] = []  # PDF files attached to chat
+    pdfAttachments: Optional[List[PdfAttachment]] = None  # Backwards compatibility
+    attachments: Optional[List[Union[PdfAttachment, ImageAttachment]]] = None  # New unified format
+    pdfContext: Optional[str] = None  # Full text of PDF for context
+    currentPageImage: Optional[str] = None  # Base64 image of current PDF page
 
 class JobRequest(BaseModel):
     description: str
@@ -74,6 +89,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     branchPath: List[str]
     workspaceContext: Optional[WorkspaceContext] = None
+    learningMode: Optional[Literal["socratic", "direct", "guided", "exploratory", "conceptual"]] = None
 
 class ChatMessageResponse(BaseModel):
     role: Literal["assistant"]

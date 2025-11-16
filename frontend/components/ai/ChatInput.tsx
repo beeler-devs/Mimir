@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
-import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown, X, File } from 'lucide-react';
+import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown, X, File, CornerDownRight } from 'lucide-react';
 import { WorkspaceInstance, Folder, MentionableItem, LearningMode, PdfAttachment } from '@/lib/types';
 import { findMentionableItems } from '@/lib/mentions';
 import { useActiveLearningMode, getAllLearningModes, getLearningModeConfig } from '@/lib/learningMode';
@@ -366,8 +366,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       {/* Context bubble - displayed above input */}
       {contextText && (
         <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-muted/50 border border-border rounded-lg">
+          <CornerDownRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="flex-1 text-sm text-foreground line-clamp-2">
-            <span className="text-xs text-muted-foreground font-medium">Context: </span>
             {contextText}
           </div>
           <button

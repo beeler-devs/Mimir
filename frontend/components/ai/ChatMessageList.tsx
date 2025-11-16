@@ -41,12 +41,18 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
 
   // Text selection handler (only for assistant messages)
   const handleTextSelection = useCallback((event: MouseEvent) => {
+    const target = event.target as HTMLElement | null;
     const selection = window.getSelection();
     const text = selection?.toString().trim();
 
+    // Ignore selections that originate outside of this message list
+    if (!target || !containerRef.current?.contains(target)) {
+      setShowPopup(false);
+      return;
+    }
+
     if (text && text.length > 0) {
       // Check if the selection is within an assistant message
-      const target = event.target as HTMLElement;
       const assistantMessage = target.closest('[data-role="assistant"]');
       
       if (assistantMessage) {
