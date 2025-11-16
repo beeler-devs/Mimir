@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import json
+import asyncio
 from anthropic import Anthropic
 from dotenv import load_dotenv
 import pdfplumber
@@ -27,6 +28,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import WebSocket manager
+from websocket_manager import websocket_manager
+
 app = FastAPI(
     title="Mimir Manim Worker",
     description="Job-based animation rendering service using Manim",
@@ -34,13 +38,26 @@ app = FastAPI(
 )
 
 # CORS middleware to allow requests from frontend
+# Note: CORSMiddleware in FastAPI also handles WebSocket connections
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3003"],  # Frontend URLs
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3003", "http://localhost:3002"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Request logging middleware to debug WebSocket connections
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Skip logging for WebSocket upgrade requests
+    if request.url.path.startswith("/ws/"):
+        return await call_next(request)
+    
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    response = await call_next(request)
+    return response
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -49,6 +66,33 @@ async def health_check():
     Returns the service status
     """
     return HealthResponse(status="ok", version="0.2.0")
+
+@app.get("/ws/test")
+async def websocket_test():
+    """
+    Test endpoint to verify WebSocket support is available
+    """
+    return {"message": "WebSocket endpoint available at /ws/manim/{job_id}"}
+
+@app.get("/ws/health")
+async def websocket_health():
+    """Check if WebSocket support is available"""
+    return {
+        "websocket_support": True,
+        "endpoint": "/ws/manim/{job_id}",
+        "status": "ready"
+    }
+
+@app.websocket("/ws/test")
+async def websocket_test_endpoint(websocket: WebSocket):
+    """Minimal WebSocket endpoint for testing connection"""
+    logger.info("WebSocket test connection attempt")
+    await websocket.accept()
+    logger.info("WebSocket test connection accepted")
+    await websocket.send_text("test")
+    logger.info("WebSocket test message sent")
+    await websocket.close()
+    logger.info("WebSocket test connection closed")
 
 @app.post("/extract-pdf")
 async def extract_pdf(file: UploadFile = File(...)):
@@ -223,17 +267,116 @@ async def get_job_status(job_id: str):
             "error": null
         }
     """
+    logger.info("=" * 70)
+    logger.info(f"GET JOB STATUS REQUEST FOR: {job_id}")
+    logger.info("=" * 70)
+    
     job_status = manim_service.get_job_status(job_id)
     
+    logger.info(f"Job status retrieved: {job_status}")
+    logger.info(f"Status: {job_status.get('status')}")
+    logger.info(f"Video URL: {job_status.get('video_url')}")
+    logger.info(f"Error: {job_status.get('error')}")
+    
     if job_status.get("status") == "not_found":
+        logger.warning(f"Job {job_id} not found")
+        logger.info("=" * 70)
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return JobResponse(
+    response = JobResponse(
         job_id=job_id,
         status=job_status["status"],
         video_url=job_status.get("video_url"),
         error=job_status.get("error"),
     )
+    
+    logger.info(f"Returning response: status={response.status}, video_url={response.video_url}")
+    logger.info("=" * 70)
+    
+    return response
+
+@app.websocket("/ws/manim/{job_id}")
+async def websocket_manim(websocket: WebSocket, job_id: str):
+    """
+    WebSocket endpoint for streaming Manim animation frames
+    
+    Args:
+        websocket: WebSocket connection
+        job_id: Job identifier for the animation
+    """
+    logger.info(f"[WebSocket] Connection attempt for job {job_id}")
+    logger.info(f"[WebSocket] Client: {websocket.client}")
+    
+    try:
+        # Accept the WebSocket connection first
+        await websocket.accept()
+        logger.info(f"[WebSocket] Connection accepted for job {job_id}")
+        
+        # Add to manager after accepting (this just tracks it, doesn't accept again)
+        websocket_manager.active_connections[job_id].add(websocket)
+        logger.info(f"[WebSocket] Registered in manager for job {job_id} (total connections: {len(websocket_manager.active_connections[job_id])})")
+        
+        # Send initial connection confirmation
+        await websocket.send_json({
+            "type": "connected",
+            "job_id": job_id,
+            "message": "WebSocket connected successfully"
+        })
+        logger.info(f"[WebSocket] Sent connection confirmation for job {job_id}")
+        
+        # Keep connection alive - wait for disconnect or messages
+        # Use a simple loop that waits for messages or disconnect
+        while True:
+            try:
+                # Wait for a message with a timeout
+                # This keeps the connection alive and allows us to detect disconnects
+                message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"[WebSocket] Client disconnected for job {job_id}")
+                    break
+                elif message.get("type") == "websocket.receive":
+                    # Handle text messages if client sends any (optional)
+                    if "text" in message:
+                        data = message["text"]
+                        logger.debug(f"[WebSocket] Received message from client for job {job_id}: {data}")
+            except asyncio.TimeoutError:
+                # No message received, but connection is still alive
+                # Send a ping to keep connection alive and verify it's still open
+                try:
+                    await websocket.send_json({"type": "ping", "job_id": job_id})
+                    logger.debug(f"[WebSocket] Sent ping to keep connection alive for job {job_id}")
+                except Exception as ping_error:
+                    # Connection is closed
+                    logger.info(f"[WebSocket] Connection closed while sending ping for job {job_id}: {ping_error}")
+                    break
+            except WebSocketDisconnect:
+                logger.info(f"[WebSocket] Disconnected for job {job_id}")
+                break
+            except Exception as receive_error:
+                logger.warning(f"[WebSocket] Error receiving message for job {job_id}: {receive_error}")
+                # Check if connection is still open by trying to send a message
+                try:
+                    await websocket.send_json({"type": "error", "job_id": job_id, "error": "Connection error"})
+                except:
+                    # Connection is closed
+                    break
+    except WebSocketDisconnect:
+        logger.info(f"[WebSocket] Disconnected for job {job_id}")
+    except Exception as e:
+        logger.error(f"[WebSocket] Error for job {job_id}: {e}", exc_info=True)
+        # Try to send error message if connection is still open
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "job_id": job_id,
+                "error": str(e)
+            })
+        except:
+            pass
+    finally:
+        websocket_manager.disconnect(websocket, job_id)
+        logger.info(f"[WebSocket] Cleanup complete for job {job_id}")
 
 @app.post("/jobs/plan")
 async def plan_animation(request: JobRequest):
@@ -1025,13 +1168,290 @@ ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/study-tools/flashcards")
+async def generate_flashcards(request: dict):
+    """
+    Generate flashcards from PDF text using Claude AI
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content
+
+    Returns:
+        JSON with array of flashcards (front/back pairs)
+    """
+    try:
+        pdf_text = request.get('pdfText', '')
+        if not pdf_text:
+            raise HTTPException(status_code=400, detail="PDF text is required")
+
+        # Get Claude API key from environment
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        if not claude_api_key:
+            raise HTTPException(status_code=500, detail="CLAUDE_API_KEY not configured")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=claude_api_key)
+
+        # Limit PDF text to avoid token limits (~20K characters)
+        max_text_length = 20000
+        if len(pdf_text) > max_text_length:
+            pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+        # System prompt for flashcard generation
+        system_prompt = """You are an expert educator creating flashcards from educational content.
+
+Your task: Generate high-quality flashcards that help students learn and review key concepts.
+
+Guidelines:
+1. Create 8-12 flashcards covering the most important concepts
+2. Front: A clear, concise question or prompt
+3. Back: A focused answer with essential information
+4. Focus on key definitions, concepts, formulas, and relationships
+5. Vary question types: definitions, applications, examples, comparisons
+6. Keep each card focused on ONE concept
+7. Use clear, student-friendly language
+
+Output format: Return ONLY a JSON array of flashcards, no other text.
+
+Example output:
+[
+  {
+    "front": "What is the derivative of x^2?",
+    "back": "2x"
+  },
+  {
+    "front": "Define photosynthesis",
+    "back": "The process by which plants convert light energy into chemical energy stored in glucose"
+  }
+]"""
+
+        user_prompt = f"""Generate flashcards from this content:
+
+{pdf_text}
+
+Return a JSON array of flashcards with "front" and "back" fields."""
+
+        # Call Claude API
+        chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+        response = client.messages.create(
+            model=chat_model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+
+        # Extract response text
+        response_text = response.content[0].text.strip()
+
+        # Parse JSON (handle potential markdown code blocks)
+        if response_text.startswith('```'):
+            # Extract JSON from code block
+            lines = response_text.split('\n')
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith('```'):
+                    in_code_block = not in_code_block
+                elif in_code_block:
+                    json_lines.append(line)
+            response_text = '\n'.join(json_lines)
+
+        # Parse JSON response
+        flashcards = json.loads(response_text)
+
+        logger.info(f"Generated {len(flashcards)} flashcards")
+        return {"flashcards": flashcards}
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse flashcards JSON: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse flashcards response")
+    except Exception as e:
+        logger.error(f"Error generating flashcards: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/study-tools/quiz")
+async def generate_quiz(request: dict):
+    """
+    Generate quiz questions from PDF text using Claude AI
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content
+
+    Returns:
+        JSON with array of quiz questions (question, options, correctIndex)
+    """
+    try:
+        pdf_text = request.get('pdfText', '')
+        if not pdf_text:
+            raise HTTPException(status_code=400, detail="PDF text is required")
+
+        # Get Claude API key from environment
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        if not claude_api_key:
+            raise HTTPException(status_code=500, detail="CLAUDE_API_KEY not configured")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=claude_api_key)
+
+        # Limit PDF text to avoid token limits (~20K characters)
+        max_text_length = 20000
+        if len(pdf_text) > max_text_length:
+            pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+        # System prompt for quiz generation
+        system_prompt = """You are an expert educator creating quiz questions from educational content.
+
+Your task: Generate multiple-choice quiz questions that test understanding of key concepts.
+
+Guidelines:
+1. Create 6-10 questions covering the most important concepts
+2. Each question should have 4 answer options
+3. Exactly one correct answer per question
+4. Make distractors plausible but clearly incorrect
+5. Test various levels: recall, comprehension, application
+6. Questions should be clear and unambiguous
+7. Answers should be concise
+
+Output format: Return ONLY a JSON array of questions, no other text.
+
+Example output:
+[
+  {
+    "question": "What is the capital of France?",
+    "options": ["London", "Paris", "Berlin", "Madrid"],
+    "correctIndex": 1
+  }
+]"""
+
+        user_prompt = f"""Generate quiz questions from this content:
+
+{pdf_text}
+
+Return a JSON array of questions with "question", "options" (array of 4 strings), and "correctIndex" (0-3) fields."""
+
+        # Call Claude API
+        chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+        response = client.messages.create(
+            model=chat_model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+
+        # Extract response text
+        response_text = response.content[0].text.strip()
+
+        # Parse JSON (handle potential markdown code blocks)
+        if response_text.startswith('```'):
+            # Extract JSON from code block
+            lines = response_text.split('\n')
+            json_lines = []
+            in_code_block = False
+            for line in lines:
+                if line.startswith('```'):
+                    in_code_block = not in_code_block
+                elif in_code_block:
+                    json_lines.append(line)
+            response_text = '\n'.join(json_lines)
+
+        # Parse JSON response
+        questions = json.loads(response_text)
+
+        logger.info(f"Generated {len(questions)} quiz questions")
+        return {"questions": questions}
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse quiz JSON: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse quiz response")
+    except Exception as e:
+        logger.error(f"Error generating quiz: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/study-tools/summary")
+async def generate_summary(request: dict):
+    """
+    Generate a summary from PDF text using Claude AI
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content
+
+    Returns:
+        JSON with summary text
+    """
+    try:
+        pdf_text = request.get('pdfText', '')
+        if not pdf_text:
+            raise HTTPException(status_code=400, detail="PDF text is required")
+
+        # Get Claude API key from environment
+        claude_api_key = os.getenv("CLAUDE_API_KEY")
+        if not claude_api_key:
+            raise HTTPException(status_code=500, detail="CLAUDE_API_KEY not configured")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=claude_api_key)
+
+        # Limit PDF text to avoid token limits (~30K characters for summary)
+        max_text_length = 30000
+        if len(pdf_text) > max_text_length:
+            pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+        # System prompt for summary generation
+        system_prompt = """You are an expert educator creating concise summaries of educational content.
+
+Your task: Generate a clear, structured summary that captures the key concepts and main ideas.
+
+Guidelines:
+1. Start with a brief overview (1-2 sentences)
+2. Break down into main topics with headers
+3. Use bullet points for key concepts
+4. Include important definitions, formulas, or principles
+5. Highlight relationships between concepts
+6. Keep it concise but comprehensive
+7. Use clear, student-friendly language
+8. Aim for 300-500 words
+
+Output format: Plain text with markdown formatting (headers, bullet points)"""
+
+        user_prompt = f"""Summarize this content:
+
+{pdf_text}
+
+Create a structured summary with main topics and key concepts."""
+
+        # Call Claude API
+        chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+        response = client.messages.create(
+            model=chat_model,
+            max_tokens=1500,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+
+        # Extract response text
+        summary = response.content[0].text.strip()
+
+        logger.info(f"Generated summary ({len(summary)} characters)")
+        return {"summary": summary}
+
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     import os
-    
+
     # Get port from environment or default to 8001
     port = int(os.getenv("PORT", 8001))
-    
+
     logger.info(f"Starting Manim Worker on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        "main:app",  # Use string import path instead of app object
+        host="0.0.0.0", 
+        port=port,
+        ws="auto",  # Auto-detect WebSocket implementation (more compatible)
+        log_level="info",
+        access_log=True  # Enable access logging to see all requests
+    )
 

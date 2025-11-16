@@ -265,6 +265,9 @@ class GeneratedScene(Scene):
 
 Mobjects (visual elements):
 - Text, MathTex, Tex (for text and equations)
+  IMPORTANT: MathTex already puts content in math mode - NEVER use $ signs inside MathTex!
+  ✓ Correct: MathTex(r"a"), MathTex(r"\vec{v}"), MathTex(r"\frac{1}{2}")
+  ✗ Wrong: MathTex(r"$a$"), MathTex(r"$\vec{v}$") - These will cause LaTeX errors!
 - Dot, Circle, Square, Rectangle, Polygon, Line, Arrow
 - NumberPlane, Axes (for coordinate systems)
 - VGroup (for grouping objects)
@@ -689,6 +692,9 @@ class GeneratedScene(Scene):
 
 Mobjects (visual elements):
 - Text, MathTex, Tex (for text and equations)
+  IMPORTANT: MathTex already puts content in math mode - NEVER use $ signs inside MathTex!
+  ✓ Correct: MathTex(r"a"), MathTex(r"\vec{v}"), MathTex(r"\frac{1}{2}")
+  ✗ Wrong: MathTex(r"$a$"), MathTex(r"$\vec{v}$") - These will cause LaTeX errors!
 - Dot, Circle, Square, Rectangle, Polygon, Line, Arrow
 - NumberPlane, Axes (for coordinate systems)
 - VGroup (for grouping objects)
@@ -709,6 +715,10 @@ Layout methods:
 - Attribute errors: Incorrect method names or properties
 - Type errors: Passing wrong types to functions
 - Runtime errors: Logic errors, infinite loops, missing waits
+- LaTeX errors with MathTex: If you see "LaTeX compilation error" with MathTex, check for:
+  * Dollar signs ($) inside MathTex - REMOVE THEM! MathTex is already in math mode.
+  * Example: Change MathTex(r"$a$") to MathTex(r"a")
+  * Example: Change MathTex(r"$\frac{1}{2}$") to MathTex(r"\frac{1}{2}")
 
 === FIXING STRATEGY ===
 1. Read the error message carefully - it tells you what went wrong

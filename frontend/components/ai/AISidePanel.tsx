@@ -5,9 +5,8 @@ import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode,
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
-import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
-import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
+import { PanelsLeftRight } from 'lucide-react';
 import {
   loadUserChats,
   createChat,
@@ -20,8 +19,6 @@ import {
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
-
-type ViewMode = 'chat' | 'tree';
 
 interface AISidePanelProps {
   collapseSidebar?: () => void;
@@ -52,7 +49,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -66,7 +62,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
         chatInputRef.current.setMessage(message);
-        setViewMode('chat'); // Switch to chat view
       }
     },
   }));
@@ -347,11 +342,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     }
   };
 
-  const handleNodeClick = (nodeId: string) => {
-    setActiveNodeId(nodeId);
-    setViewMode('chat');
-  };
-
   if (initializing) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
@@ -363,43 +353,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header Actions - Single Rounded Card */}
+      {/* Header Actions */}
       <div className="px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
-          {[
-            { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
-            { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
-          ].map(({ id, label, icon: Icon }) => {
-            const active = viewMode === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setViewMode(id)}
-                className={`
-                  flex-1 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
-                  focus-visible:outline-none focus-visible:ring-2
-                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
-                `}
-                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '#F5F5F5';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '';
-                  }
-                }}
-              >
-                <div className="flex items-center gap-2 justify-center">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="font-medium">{label}</span>
-                </div>
-              </button>
-            );
-          })}
-
           <VoiceButton size="sm" className="shrink-0" />
 
           {collapseSidebar && (
@@ -416,38 +372,28 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
-        {viewMode === 'chat' ? (
-          <ChatMessageList 
-            messages={activeBranch} 
-            workspaceContext={buildWorkspaceContext(
-              activeInstance,
-              instances,
-              folders,
-              [],
-              {}
-            )}
-          />
-        ) : (
-          <ChatTreeView
-            nodes={nodes}
-            activeNodeId={activeNodeId || ''}
-            onNodeClick={handleNodeClick}
-          />
-        )}
+        <ChatMessageList
+          messages={activeBranch}
+          workspaceContext={buildWorkspaceContext(
+            activeInstance,
+            instances,
+            folders,
+            [],
+            {}
+          )}
+        />
       </div>
 
-      {/* Chat Input (only in chat mode) */}
-      {viewMode === 'chat' && (
-        <ChatInput
-          ref={chatInputRef}
-          onSend={handleSendMessage}
-          loading={loading}
-          instances={instances}
-          folders={folders}
-          pendingText={pendingChatText}
-          onTextAdded={onChatTextAdded}
-        />
-      )}
+      {/* Chat Input */}
+      <ChatInput
+        ref={chatInputRef}
+        onSend={handleSendMessage}
+        loading={loading}
+        instances={instances}
+        folders={folders}
+        pendingText={pendingChatText}
+        onTextAdded={onChatTextAdded}
+      />
     </div>
   );
 });

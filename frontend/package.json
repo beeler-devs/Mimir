@@ -13,6 +13,7 @@
     "@excalidraw/excalidraw": "^0.18.0",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.81.1",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^0.553.0",
     "nanoid": "^5.1.6",
     "next": "16.0.3",

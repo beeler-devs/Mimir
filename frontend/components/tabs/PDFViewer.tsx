@@ -45,6 +45,11 @@ interface PDFViewerProps {
   onAddToChat?: (text: string) => void;
 }
 
+export interface PDFViewerRef {
+  getCurrentPageImage: () => Promise<string | null>;
+  getCurrentPage: () => number;
+}
+
 /**
  * Enhanced PDF Viewer Component
  * Features:
@@ -54,8 +59,9 @@ interface PDFViewerProps {
  * - Full-text search with highlighting
  * - Page navigation, zoom, fullscreen
  * - Text selection with "Add to chat"
+ * - Page capture for AI context
  */
-export const PDFViewer: React.FC<PDFViewerProps> = ({
+export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   pdfUrl,
   fileName,
   metadata,
@@ -63,7 +69,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   onUpload,
   onSummaryReady,
   onAddToChat,
-}) => {
+}, ref) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
@@ -73,6 +79,13 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  
+  // Refs for scroll tracking
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Drag and drop state
+  const [isDragging, setIsDragging] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,57 +96,41 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   // Metadata panel
   const [showMetadata, setShowMetadata] = useState(false);
 
-  // Refs for scroll tracking
-  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    getCurrentPageImage: async () => {
+      const currentPageEl = pageRefs.current[currentPage - 1];
+      if (!currentPageEl) return null;
+
+      try {
+        // Import html2canvas dynamically
+        // @ts-ignore - html2canvas is a runtime dependency
+        const html2canvasModule = await import('html2canvas');
+        const html2canvas = html2canvasModule.default as (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
+
+        // Capture the PDF page
+        const canvas = await html2canvas(currentPageEl, {
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+        });
+
+        // Convert to base64
+        return canvas.toDataURL('image/png');
+      } catch (error) {
+        console.error('Failed to capture page image:', error);
+        return null;
+      }
+    },
+    getCurrentPage: () => currentPage,
+  }));
 
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     setNumPages(pages);
     setCurrentPage(1); // Reset to page 1 on new document load
+    // Initialize pageRefs array
+    pageRefs.current = new Array(pages).fill(null);
   }, []);
-
-  // IntersectionObserver to track visible page
-  useEffect(() => {
-    if (!containerRef.current || numPages === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the page with the largest intersection ratio
-        let maxRatio = 0;
-        let visiblePage = currentPage;
-
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
-            maxRatio = entry.intersectionRatio;
-            const pageNum = parseInt(
-              entry.target.getAttribute('data-page-number') || '1',
-              10
-            );
-            visiblePage = pageNum;
-          }
-        });
-
-        if (maxRatio > 0) {
-          setCurrentPage(visiblePage);
-        }
-      },
-      {
-        root: containerRef.current,
-        threshold: [0, 0.25, 0.5, 0.75, 1.0],
-      }
-    );
-
-    // Observe all page elements
-    pageRefs.current.forEach((pageEl) => {
-      if (pageEl) {
-        observer.observe(pageEl);
-      }
-    });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [numPages]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -314,37 +311,128 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
     handleSearch();
   }, [handleSearch]);
 
+  // IntersectionObserver to track visible page
+  useEffect(() => {
+    if (!containerRef.current || numPages === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the page with the largest intersection ratio
+        let maxRatio = 0;
+        let visiblePage = currentPage;
+
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
+            const pageNum = parseInt(
+              entry.target.getAttribute('data-page-number') || '1',
+              10
+            );
+            visiblePage = pageNum;
+          }
+        });
+
+        if (maxRatio > 0) {
+          setCurrentPage(visiblePage);
+        }
+      },
+      {
+        root: containerRef.current,
+        threshold: [0, 0.25, 0.5, 0.75, 1.0],
+      }
+    );
+
+    // Observe all page elements
+    pageRefs.current.forEach((pageEl) => {
+      if (pageEl) {
+        observer.observe(pageEl);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [numPages, currentPage]);
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const pdfFile = files.find(file => file.type === 'application/pdf');
+
+    if (pdfFile) {
+      // Create a mock event to reuse the handleFileUpload logic
+      const mockEvent = {
+        target: {
+          files: [pdfFile]
+        }
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+      await handleFileUpload(mockEvent);
+    }
+  };
+
   if (!pdfUrl) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 bg-background">
+      <div
+        className={`flex flex-col items-center justify-center h-full gap-4 p-8 bg-background transition-colors ${
+          isDragging ? 'bg-muted/50 border-2 border-dashed border-primary' : ''
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
           <FileText className="w-16 h-16" />
-          <h3 className="text-lg font-medium">No PDF loaded</h3>
-          <p className="text-sm">Upload a PDF to get started with AI-powered analysis</p>
+          <h3 className="text-lg font-medium">
+            {isDragging ? 'Drop PDF here' : 'No PDF loaded'}
+          </h3>
+          <p className="text-sm">
+            {isDragging
+              ? 'Release to upload'
+              : 'Upload a PDF or drag and drop to get started with AI-powered analysis'}
+          </p>
         </div>
-        <label htmlFor="pdf-upload" className="inline-block">
-          <span className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus-visible:outline-none bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer disabled:opacity-50">
-            {uploading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                {analyzing ? 'Analyzing...' : 'Uploading...'}
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 mr-2" />
-                Upload PDF
-              </>
-            )}
-          </span>
-          <input
-            id="pdf-upload"
-            type="file"
-            accept="application/pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-            disabled={uploading}
-          />
-        </label>
+        {!isDragging && (
+          <label htmlFor="pdf-upload" className="inline-block">
+            <span className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus-visible:outline-none bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer disabled:opacity-50">
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {analyzing ? 'Analyzing...' : 'Uploading...'}
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload PDF
+                </>
+              )}
+            </span>
+            <input
+              id="pdf-upload"
+              type="file"
+              accept="application/pdf"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={uploading}
+            />
+          </label>
+        )}
       </div>
     );
   }
@@ -607,4 +695,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       )}
     </div>
   );
-};
+});
+
+PDFViewer.displayName = 'PDFViewer';
