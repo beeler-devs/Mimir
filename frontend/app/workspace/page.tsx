@@ -10,6 +10,7 @@ import { CodeWorkspace } from '@/components/code/CodeWorkspace';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { PDFViewerRef } from '@/components/tabs/PDFViewer';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
+import { CentralDashboard } from '@/components/dashboard/CentralDashboard';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Upload, Download, MessageSquare, File, FileText, Code2, PenTool } from 'lucide-react';
@@ -318,7 +319,7 @@ function WorkspaceContent() {
     }
   };
 
-  const handleCreateInstance = async (title: string, type: InstanceType) => {
+  const handleCreateInstance = async (title: string, type: InstanceType, additionalData?: any) => {
     const trimmed = title.trim();
     if (!trimmed) {
       console.warn('[handleCreateInstance] Empty title provided, aborting');
@@ -329,15 +330,19 @@ function WorkspaceContent() {
     console.log('[handleCreateInstance] Creating new instance...');
     console.log('[handleCreateInstance] Title:', trimmed);
     console.log('[handleCreateInstance] Type:', type);
+    console.log('[handleCreateInstance] Additional data:', additionalData);
 
     const instanceData = createInstanceData(type);
-    console.log('[handleCreateInstance] Generated data:', JSON.stringify(instanceData, null, 2));
+
+    // Merge additional data with default instance data
+    const finalData = additionalData ? { ...instanceData, ...additionalData } : instanceData;
+    console.log('[handleCreateInstance] Generated data:', JSON.stringify(finalData, null, 2));
 
     const instancePayload = {
       title: trimmed,
       type,
       folderId: null,
-      data: instanceData,
+      data: finalData,
     } as Omit<WorkspaceInstance, 'id'>;
 
     console.log('[handleCreateInstance] Full payload:', JSON.stringify(instancePayload, null, 2));
@@ -359,13 +364,13 @@ function WorkspaceContent() {
       console.error('[handleCreateInstance] ❌ FAILED to create instance');
       console.error('[handleCreateInstance] Error type:', typeof error);
       console.error('[handleCreateInstance] Error:', error);
-      
+
       if (error instanceof Error) {
         console.error('[handleCreateInstance] Error name:', error.name);
         console.error('[handleCreateInstance] Error message:', error.message);
         console.error('[handleCreateInstance] Error stack:', error.stack);
       }
-      
+
       // Try to extract Supabase-specific error details
       if (error && typeof error === 'object') {
         console.error('[handleCreateInstance] Error keys:', Object.keys(error));
@@ -374,7 +379,7 @@ function WorkspaceContent() {
         console.error('[handleCreateInstance] Error details:', (error as any).details);
         console.error('[handleCreateInstance] Error hint:', (error as any).hint);
       }
-      
+
       console.error('[handleCreateInstance] Full error JSON:', JSON.stringify(error, null, 2));
       console.error('[handleCreateInstance] ========================================');
     }
@@ -862,61 +867,70 @@ function WorkspaceContent() {
       />
 
       <div className="flex-1 h-full overflow-hidden">
-        <WorkspaceLayout sidebar={
-          (activeInstance?.type === 'pdf' || activeInstance?.type === 'lecture') ? (
-            <PDFStudyPanel
-              ref={pdfStudyPanelRef}
-              activeInstance={activeInstance}
-              instances={instances}
-              folders={folders}
-              contextText={contextText}
-              onContextRemoved={() => setContextText(null)}
-              getCurrentPageImage={getCurrentPageImage}
-            />
-          ) : (
-            <AISidePanel
-              ref={aiSidePanelRef}
-              activeInstance={activeInstance}
-              instances={instances}
-              folders={folders}
-              annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
-              contextText={contextText}
-              onContextRemoved={() => setContextText(null)}
-            />
-          )
-        }>
-          <div className="h-full p-4 flex flex-col gap-4">
-            {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text') && (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
-                {activeInstance?.type === 'annotate' && (
-                  <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1 bg-background">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={triggerAnnotationUpload}
-                      className="text-sm font-medium"
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload PDF
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={triggerAnnotationExport}
-                      className="text-sm font-medium"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                  </div>
-                )}
+        <WorkspaceLayout
+          showSidebar={!!activeInstance}
+          sidebar={
+            activeInstance ? (
+              (activeInstance.type === 'pdf' || activeInstance.type === 'lecture') ? (
+                <PDFStudyPanel
+                  ref={pdfStudyPanelRef}
+                  activeInstance={activeInstance}
+                  instances={instances}
+                  folders={folders}
+                  contextText={contextText}
+                  onContextRemoved={() => setContextText(null)}
+                  getCurrentPageImage={getCurrentPageImage}
+                />
+              ) : (
+                <AISidePanel
+                  ref={aiSidePanelRef}
+                  activeInstance={activeInstance}
+                  instances={instances}
+                  folders={folders}
+                  annotationCanvasRef={activeInstance.type === 'annotate' ? annotationCanvasRef : undefined}
+                  contextText={contextText}
+                  onContextRemoved={() => setContextText(null)}
+                />
+              )
+            ) : undefined
+          }
+        >
+          {activeInstance ? (
+            <div className="h-full p-4 flex flex-col gap-4">
+              {(activeInstance.type === 'annotate' || activeInstance.type === 'text') && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
+                  {activeInstance.type === 'annotate' && (
+                    <div className="flex items-center gap-2 border border-border rounded-lg px-2 py-1 bg-background">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={triggerAnnotationUpload}
+                        className="text-sm font-medium"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload PDF
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={triggerAnnotationExport}
+                        className="text-sm font-medium"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Export
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
+                {renderActiveContent()}
               </div>
-            )}
-            <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
-              {renderActiveContent()}
             </div>
-          </div>
+          ) : (
+            <CentralDashboard onCreateInstance={handleCreateInstance} />
+          )}
         </WorkspaceLayout>
       </div>
 
