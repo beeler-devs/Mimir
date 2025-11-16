@@ -80,6 +80,14 @@ export interface MentionableItem {
   icon?: string;
 }
 
+// PDF Attachment types
+export interface PdfAttachment {
+  id: string;
+  filename: string;
+  extractedText: string;
+  status: 'uploading' | 'ready' | 'error';
+}
+
 // Workspace context types
 export interface WorkspaceContextInstance {
   id: string;
@@ -101,6 +109,7 @@ export interface WorkspaceContext {
   instances: WorkspaceContextInstance[];
   folders: WorkspaceContextFolder[];
   annotationImages: Record<string, string>; // instanceId -> base64 PNG
+  pdfAttachments?: PdfAttachment[]; // PDF files attached to chat
 }
 
 export interface ChatRequest {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, RefObject } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -96,7 +96,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
     }
   }, [chatId]);
 
-  const handleSendMessage = async (content: string, learningMode?: LearningMode) => {
+  const handleSendMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => {
     if (!chatId) {
       console.error('No active chat');
       return;
@@ -164,6 +164,15 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
         resolvedMentions,
         annotationExports
       );
+      
+      // Add PDF attachments to workspace context
+      if (pdfAttachments && pdfAttachments.length > 0) {
+        // Filter out PDFs that are not ready
+        const readyPdfs = pdfAttachments.filter(pdf => pdf.status === 'ready');
+        if (readyPdfs.length > 0) {
+          workspaceContext.pdfAttachments = readyPdfs;
+        }
+      }
 
       // Save user message to database (keep mentions visible in chat)
       savedUserMessage = await saveChatMessage(chatId, {
@@ -347,7 +356,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
                 key={id}
                 onClick={() => setViewMode(id)}
                 className={`
-                  flex-1 group rounded-lg h-8 px-3 text-sm transition-all
+                  flex-1 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
                   ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
                 `}
