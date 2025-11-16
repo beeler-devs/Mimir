@@ -350,6 +350,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     setGeneratingFlashcards(true);
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
       const response = await fetch(`${backendUrl}/study-tools/flashcards`, {
@@ -359,7 +365,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate flashcards');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate flashcards');
       }
 
       const data = await response.json();
@@ -368,6 +375,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setShowFlashcardAnswer(false);
     } catch (error) {
       console.error('Error generating flashcards:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate flashcards. Please ensure the backend server is running.');
     } finally {
       setGeneratingFlashcards(false);
     }
@@ -377,6 +385,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     setGeneratingQuiz(true);
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
       const response = await fetch(`${backendUrl}/study-tools/quiz`, {
@@ -386,7 +400,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate quiz');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate quiz');
       }
 
       const data = await response.json();
@@ -398,6 +413,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setQuizCompleted(false);
     } catch (error) {
       console.error('Error generating quiz:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate quiz. Please ensure the backend server is running.');
     } finally {
       setGeneratingQuiz(false);
     }
@@ -407,6 +423,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     setGeneratingSummary(true);
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
       const response = await fetch(`${backendUrl}/study-tools/summary`, {
@@ -416,28 +438,21 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate summary');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate summary');
       }
 
       const data = await response.json();
       setSummary(data.summary || '');
     } catch (error) {
       console.error('Error generating summary:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate summary. Please ensure the backend server is running.');
     } finally {
       setGeneratingSummary(false);
     }
   };
 
-  // Load study tools when mode changes
-  useEffect(() => {
-    if (studyMode === 'flashcards' && flashcards.length === 0) {
-      generateFlashcards();
-    } else if (studyMode === 'quiz' && quizQuestions.length === 0) {
-      generateQuiz();
-    } else if (studyMode === 'summary' && !summary) {
-      generateSummary();
-    }
-  }, [studyMode]);
+  // Remove automatic generation - user should click generate button instead
 
   if (initializing) {
     return (
@@ -491,8 +506,20 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
         if (flashcards.length === 0) {
           return (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <p className="text-sm text-muted-foreground">No flashcards available</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+              <BookOpen className="w-16 h-16 text-muted-foreground" />
+              <div className="text-center">
+                <h3 className="text-lg font-semibold mb-2">Generate Flashcards</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Create flashcards from your PDF to help study key concepts
+                </p>
+              </div>
+              <button
+                onClick={generateFlashcards}
+                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors"
+              >
+                Generate Flashcards
+              </button>
             </div>
           );
         }
@@ -561,8 +588,20 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
         if (quizQuestions.length === 0) {
           return (
-            <div className="flex-1 flex items-center justify-center p-4">
-              <p className="text-sm text-muted-foreground">No quiz questions available</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+              <FileQuestion className="w-16 h-16 text-muted-foreground" />
+              <div className="text-center">
+                <h3 className="text-lg font-semibold mb-2">Generate Quiz</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Test your knowledge with multiple-choice questions
+                </p>
+              </div>
+              <button
+                onClick={generateQuiz}
+                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors"
+              >
+                Generate Quiz
+              </button>
             </div>
           );
         }
@@ -804,6 +843,26 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           );
         }
 
+        if (!summary) {
+          return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
+              <FileText className="w-16 h-16 text-muted-foreground" />
+              <div className="text-center">
+                <h3 className="text-lg font-semibold mb-2">Generate Summary</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Get a concise overview of the key concepts in your PDF
+                </p>
+              </div>
+              <button
+                onClick={generateSummary}
+                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors"
+              >
+                Generate Summary
+              </button>
+            </div>
+          );
+        }
+
         return (
           <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
             <div className="flex items-center justify-between">
@@ -816,7 +875,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               </button>
             </div>
             <div className="flex-1 bg-muted/30 p-4 rounded-lg">
-              <p className="text-sm whitespace-pre-wrap">{summary || 'No summary available'}</p>
+              <p className="text-sm whitespace-pre-wrap">{summary}</p>
             </div>
           </div>
         );

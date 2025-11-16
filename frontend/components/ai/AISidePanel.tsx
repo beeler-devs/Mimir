@@ -6,7 +6,7 @@ import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
-import { PanelsLeftRight, MessageSquare, Code, Zap } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare } from 'lucide-react';
 import {
   loadUserChats,
   createChat,
@@ -20,8 +20,6 @@ import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/me
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { useActiveLearningMode } from '@/lib/learningMode';
-
-type StudyMode = 'chat' | 'code' | 'flappy-bird';
 
 interface AISidePanelProps {
   collapseSidebar?: () => void;
@@ -40,7 +38,7 @@ export interface AISidePanelRef {
 
 /**
  * Main AI sidepanel component
- * Manages chat state and switches between chat and other modes
+ * Manages chat state and conversation branching
  */
 export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
@@ -53,7 +51,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [studyMode, setStudyMode] = useState<StudyMode>('chat');
   const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -67,7 +64,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
         chatInputRef.current.setMessage(message);
-        setStudyMode('chat'); // Switch to chat view
       }
     },
     createNewChat: async () => {
@@ -77,7 +73,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         setActiveNodeId(null);
         setChatId(newChat.id);
         localStorage.setItem('mimir.activeChatId', newChat.id);
-        setStudyMode('chat');
         const userChats = await loadUserChats();
         setChats(userChats);
       } catch (error) {
@@ -331,109 +326,21 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     );
   }
 
-  const renderContent = () => {
-    switch (studyMode) {
-      case 'chat':
-        return (
-          <>
-            <div className="flex-1 overflow-y-auto">
-              <ChatMessageList
-                messages={activeBranch}
-                workspaceContext={buildWorkspaceContext(
-                  activeInstance,
-                  instances,
-                  folders,
-                  [],
-                  {}
-                )}
-              />
-            </div>
-            <ChatInput
-              ref={chatInputRef}
-              onSend={handleSendMessage}
-              loading={loading}
-              instances={instances}
-              folders={folders}
-              pendingText={pendingChatText}
-              onTextAdded={onChatTextAdded}
-              learningMode={activeLearningMode}
-            />
-          </>
-        );
-      case 'code':
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Code className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Code Mode</h3>
-              <p className="text-sm text-muted-foreground">
-                Interactive code exercises will be available here.
-              </p>
-            </div>
-          </div>
-        );
-      case 'flappy-bird':
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Zap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Flappy Bird</h3>
-              <p className="text-sm text-muted-foreground">
-                Coming soon!
-              </p>
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto">
-          {[ 
-            { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
-            { id: 'code' as StudyMode, label: 'Code', icon: Code },
-            { id: 'flappy-bird' as StudyMode, label: 'Flappy Bird', icon: Zap },
-          ].map(({ id, label, icon: Icon }) => {
-            const active = studyMode === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setStudyMode(id)}
-                className={`
-                  flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
-                  focus-visible:outline-none focus-visible:ring-2
-                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
-                `}
-                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '#F5F5F5';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.backgroundColor = '';
-                  }
-                }}
-              >
-                <div className="flex items-center gap-2 justify-center">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="font-medium whitespace-nowrap">{label}</span>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
+          <div className="flex items-center gap-2 px-3 h-8">
+            <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-medium text-sm">Chat</span>
+          </div>
 
-          {studyMode === 'chat' && <VoiceButton size="sm" className="shrink-0 ml-auto" />}
+          <VoiceButton size="sm" className="shrink-0 ml-auto" />
 
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
-              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 ml-auto"
+              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
               aria-label="Collapse panel"
             >
               <PanelsLeftRight className="h-4 w-4" />
@@ -441,7 +348,28 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           )}
         </div>
       </div>
-      {renderContent()}
+      <div className="flex-1 overflow-y-auto">
+        <ChatMessageList
+          messages={activeBranch}
+          workspaceContext={buildWorkspaceContext(
+            activeInstance,
+            instances,
+            folders,
+            [],
+            {}
+          )}
+        />
+      </div>
+      <ChatInput
+        ref={chatInputRef}
+        onSend={handleSendMessage}
+        loading={loading}
+        instances={instances}
+        folders={folders}
+        pendingText={pendingChatText}
+        onTextAdded={onChatTextAdded}
+        learningMode={activeLearningMode}
+      />
     </div>
   );
 });

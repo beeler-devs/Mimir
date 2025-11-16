@@ -44,15 +44,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       <p className="text-sm mb-2 last:mb-0 leading-relaxed" {...props} />
     ),
 
-    // Lists - compact spacing between items
+    // Lists - compact spacing between items with consistent alignment
     ul: ({ node, ...props }) => (
-      <ul className="text-sm list-disc list-inside mb-2 space-y-0.5" {...props} />
+      <ul className="text-sm list-disc list-outside mb-2 space-y-0.5 pl-5" {...props} />
     ),
     ol: ({ node, ...props }) => (
-      <ol className="text-sm list-decimal list-inside mb-2 space-y-0.5" {...props} />
+      <ol className="text-sm list-decimal list-outside mb-2 space-y-0.5 pl-5" {...props} />
     ),
     li: ({ node, ...props }) => (
-      <li className="text-sm leading-relaxed" {...props} />
+      <li className="text-sm leading-relaxed pl-1" {...props} />
     ),
 
     // Code - distinguish inline vs block via className presence

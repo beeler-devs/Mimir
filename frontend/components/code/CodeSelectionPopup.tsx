@@ -1,23 +1,21 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import React from 'react';
+import { MessageSquare } from 'lucide-react';
 import { Button } from '@/components/common';
 
 interface CodeSelectionPopupProps {
   position: { top: number; left: number } | null;
   onAddToChat: () => void;
-  onAskAI: () => void;
 }
 
 /**
  * Popup that appears when code is selected
- * Allows user to add selection to chat or ask AI for suggestions
+ * Allows user to add selection to chat
  */
 export const CodeSelectionPopup: React.FC<CodeSelectionPopupProps> = ({
   position,
   onAddToChat,
-  onAskAI,
 }) => {
   if (!position) return null;
 
@@ -37,14 +35,6 @@ export const CodeSelectionPopup: React.FC<CodeSelectionPopupProps> = ({
       >
         <MessageSquare className="h-4 w-4" />
         Add to chat
-      </Button>
-      <Button
-        size="sm"
-        onClick={onAskAI}
-        className="flex items-center gap-2"
-      >
-        <Sparkles className="h-4 w-4" />
-        Ask AI
       </Button>
     </div>
   );
