@@ -33,6 +33,7 @@ interface PDFStudyPanelProps {
 
 export interface PDFStudyPanelRef {
   addToChat: (message: string) => void;
+  createNewChat: () => Promise<void>;
 }
 
 /**
@@ -63,6 +64,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [quizQuestions, setQuizQuestions] = useState<{ question: string; options: string[]; correctIndex: number }[]>([]);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
+  const [quizCompleted, setQuizCompleted] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
@@ -77,6 +80,25 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       if (chatInputRef.current) {
         chatInputRef.current.setMessage(message);
         setStudyMode('chat'); // Switch to chat view
+      }
+    },
+    createNewChat: async () => {
+      try {
+        // Create a new chat
+        const newChat = await createChat();
+
+        // Clear current messages and switch to new chat
+        setNodes([]);
+        setActiveNodeId(null);
+        setChatId(newChat.id);
+        localStorage.setItem('mimir.activeChatId', newChat.id);
+        setStudyMode('chat'); // Switch to chat view
+
+        // Reload chats list to include the new chat
+        const userChats = await loadUserChats();
+        setChats(userChats);
+      } catch (error) {
+        console.error('Failed to create new chat:', error);
       }
     },
   }));
@@ -368,9 +390,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       }
 
       const data = await response.json();
-      setQuizQuestions(data.questions || []);
+      const questions = data.questions || [];
+      setQuizQuestions(questions);
       setCurrentQuizIndex(0);
       setSelectedAnswer(null);
+      setUserAnswers(new Array(questions.length).fill(null));
+      setQuizCompleted(false);
     } catch (error) {
       console.error('Error generating quiz:', error);
     } finally {
@@ -542,75 +567,227 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           );
         }
 
+        // Calculate score
+        const score = userAnswers.reduce((acc, answer, idx) => {
+          if (answer === quizQuestions[idx]?.correctIndex) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+
+        // Check if all questions answered
+        const allAnswered = userAnswers.every(answer => answer !== null);
+
+        // Show results screen if quiz completed
+        if (quizCompleted) {
+          const percentage = Math.round((score / quizQuestions.length) * 100);
+          const passed = percentage >= 70;
+
+          return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="text-center">
+                <div className={`text-6xl font-bold mb-2 ${passed ? 'text-green-500' : 'text-orange-500'}`}>
+                  {percentage}%
+                </div>
+                <p className="text-2xl font-semibold mb-2">
+                  {passed ? 'Great Job!' : 'Keep Practicing!'}
+                </p>
+                <p className="text-muted-foreground">
+                  You got {score} out of {quizQuestions.length} questions correct
+                </p>
+              </div>
+
+              <div className="w-full max-w-md space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Correct Answers</span>
+                  <span className="font-medium text-green-500">{score}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Incorrect Answers</span>
+                  <span className="font-medium text-red-500">{quizQuestions.length - score}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden mt-4">
+                  <div
+                    className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-1000"
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setCurrentQuizIndex(0);
+                    setSelectedAnswer(null);
+                    setUserAnswers(new Array(quizQuestions.length).fill(null));
+                    setQuizCompleted(false);
+                  }}
+                  className="px-6 py-2.5 bg-background border border-border rounded-lg hover:bg-muted font-medium transition-colors"
+                >
+                  Retake Quiz
+                </button>
+                <button
+                  onClick={() => {
+                    setQuizCompleted(false);
+                    setCurrentQuizIndex(0);
+                    setSelectedAnswer(userAnswers[0]);
+                  }}
+                  className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors"
+                >
+                  Review Answers
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         const currentQuestion = quizQuestions[currentQuizIndex];
+        const currentUserAnswer = userAnswers[currentQuizIndex];
+        const isAnswered = currentUserAnswer !== null;
+
         return (
           <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Question {currentQuizIndex + 1} of {quizQuestions.length}</span>
+            {/* Header with score and progress */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="text-sm font-medium">
+                  <span className="text-muted-foreground">Question </span>
+                  <span className="text-primary">{currentQuizIndex + 1}</span>
+                  <span className="text-muted-foreground"> / {quizQuestions.length}</span>
+                </div>
+                <div className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                  Score: {score}/{quizQuestions.length}
+                </div>
+              </div>
               <button
                 onClick={generateQuiz}
-                className="text-primary hover:underline"
+                className="text-sm text-primary hover:underline"
               >
-                Regenerate
+                New Quiz
               </button>
             </div>
-            <div className="bg-muted/30 p-4 rounded-lg">
-              <p className="text-base font-medium mb-4">{currentQuestion.question}</p>
-              <div className="space-y-2">
-                {currentQuestion.options.map((option, idx) => {
-                  const isSelected = selectedAnswer === idx;
-                  const isCorrect = idx === currentQuestion.correctIndex;
-                  const showResult = selectedAnswer !== null;
 
-                  let className = 'w-full text-left p-3 rounded-lg border transition-colors ';
+            {/* Progress bar */}
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${((currentQuizIndex + 1) / quizQuestions.length) * 100}%` }}
+              />
+            </div>
+
+            {/* Question card */}
+            <div className="flex-1 flex flex-col gap-4">
+              <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-6 rounded-xl border border-primary/20">
+                <p className="text-lg font-semibold leading-relaxed">{currentQuestion.question}</p>
+              </div>
+
+              {/* Answer options */}
+              <div className="space-y-3">
+                {currentQuestion.options.map((option, idx) => {
+                  const isSelected = currentUserAnswer === idx;
+                  const isCorrect = idx === currentQuestion.correctIndex;
+                  const showResult = isAnswered;
+
+                  let className = 'w-full text-left p-4 rounded-xl border-2 transition-all font-medium ';
+                  let icon = '';
+
                   if (showResult) {
                     if (isCorrect) {
-                      className += 'border-green-500 bg-green-50 dark:bg-green-950';
+                      className += 'border-green-500 bg-green-50 dark:bg-green-950/30 text-green-900 dark:text-green-100';
+                      icon = '✓';
                     } else if (isSelected) {
-                      className += 'border-red-500 bg-red-50 dark:bg-red-950';
+                      className += 'border-red-500 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100';
+                      icon = '✗';
                     } else {
-                      className += 'border-border bg-background opacity-50';
+                      className += 'border-border bg-background/50 opacity-60';
                     }
                   } else {
                     className += isSelected
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border bg-background hover:bg-muted';
+                      ? 'border-primary bg-primary/10 shadow-sm scale-[1.02]'
+                      : 'border-border bg-background hover:bg-muted hover:border-primary/50 hover:shadow-sm';
                   }
 
                   return (
                     <button
                       key={idx}
-                      onClick={() => setSelectedAnswer(idx)}
-                      disabled={selectedAnswer !== null}
+                      onClick={() => {
+                        if (!isAnswered) {
+                          const newAnswers = [...userAnswers];
+                          newAnswers[currentQuizIndex] = idx;
+                          setUserAnswers(newAnswers);
+                          setSelectedAnswer(idx);
+                        }
+                      }}
+                      disabled={isAnswered}
                       className={className}
                     >
-                      {option}
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                          showResult
+                            ? (isCorrect ? 'bg-green-500 text-white' : isSelected ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground')
+                            : isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {icon || String.fromCharCode(65 + idx)}
+                        </div>
+                        <span className="flex-1">{option}</span>
+                      </div>
                     </button>
                   );
                 })}
               </div>
+
+              {/* Feedback message */}
+              {isAnswered && (
+                <div className={`p-4 rounded-lg ${
+                  currentUserAnswer === currentQuestion.correctIndex
+                    ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
+                    : 'bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800'
+                }`}>
+                  <p className={`text-sm font-medium ${
+                    currentUserAnswer === currentQuestion.correctIndex
+                      ? 'text-green-900 dark:text-green-100'
+                      : 'text-orange-900 dark:text-orange-100'
+                  }`}>
+                    {currentUserAnswer === currentQuestion.correctIndex
+                      ? '🎉 Correct! Well done!'
+                      : `The correct answer is: ${currentQuestion.options[currentQuestion.correctIndex]}`}
+                  </p>
+                </div>
+              )}
             </div>
-            <div className="flex gap-2">
+
+            {/* Navigation buttons */}
+            <div className="flex gap-3 pt-2">
               <button
                 onClick={() => {
                   setCurrentQuizIndex(Math.max(0, currentQuizIndex - 1));
-                  setSelectedAnswer(null);
+                  setSelectedAnswer(userAnswers[currentQuizIndex - 1]);
                 }}
                 disabled={currentQuizIndex === 0}
-                className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+                className="flex-1 px-4 py-3 bg-background border-2 border-border rounded-xl hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all"
               >
-                Previous
+                ← Previous
               </button>
-              <button
-                onClick={() => {
-                  setCurrentQuizIndex(Math.min(quizQuestions.length - 1, currentQuizIndex + 1));
-                  setSelectedAnswer(null);
-                }}
-                disabled={currentQuizIndex === quizQuestions.length - 1}
-                className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
-              >
-                Next
-              </button>
+
+              {currentQuizIndex < quizQuestions.length - 1 ? (
+                <button
+                  onClick={() => {
+                    setCurrentQuizIndex(currentQuizIndex + 1);
+                    setSelectedAnswer(userAnswers[currentQuizIndex + 1]);
+                  }}
+                  className="flex-1 px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 font-medium transition-all shadow-sm"
+                >
+                  Next →
+                </button>
+              ) : (
+                <button
+                  onClick={() => setQuizCompleted(true)}
+                  disabled={!allAnswered}
+                  className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-sm"
+                >
+                  {allAnswered ? 'Finish Quiz ✓' : 'Answer All Questions'}
+                </button>
+              )}
             </div>
           </div>
         );

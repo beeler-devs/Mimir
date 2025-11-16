@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
 import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
-import { TextEditor, AnnotateCanvas } from '@/components/tabs';
+import { TextEditor, AnnotateCanvas, FlashcardTab } from '@/components/tabs';
 import { CodeEditorEnhanced } from '@/components/tabs/CodeEditorEnhanced';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { PDFViewerRef } from '@/components/tabs/PDFViewer';
@@ -43,7 +43,6 @@ import {
   updateFolder as updateFolderDB,
   deleteFolder as deleteFolderDB,
 } from '@/lib/db/instances';
-import { createChat } from '@/lib/db/chats';
 
 const STORAGE_KEYS = {
   active: 'mimir.activeInstance',
@@ -108,9 +107,12 @@ function WorkspaceContent() {
   const [pendingChatText, setPendingChatText] = useState<string | null>(null);
   const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
-  const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
+  const [activePdfTab, setActivePdfTab] = useState<'pdf' | 'flashcards'>('pdf');
+
+  // Refs for panel components
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
   const pdfStudyPanelRef = useRef<PDFStudyPanelRef>(null);
+  const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
   const pdfViewerRef = useRef<PDFViewerRef>(null);
 
   // Load instances and folders from database on mount
@@ -537,11 +539,12 @@ function WorkspaceContent() {
 
   const handleCreateNewChat = async () => {
     try {
-      const newChat = await createChat();
-      localStorage.setItem('mimir.activeChatId', newChat.id);
-      // Force refresh of the chat panel by triggering a re-render
-      // The AI panel will pick up the new chat ID from localStorage
-      window.location.reload();
+      // Use the ref to create a new chat without reloading the page
+      if (activeInstance?.type === 'pdf' && pdfStudyPanelRef.current) {
+        await pdfStudyPanelRef.current.createNewChat();
+      } else if (aiSidePanelRef.current) {
+        await aiSidePanelRef.current.createNewChat();
+      }
     } catch (error) {
       console.error('Failed to create new chat:', error);
     }
@@ -587,16 +590,43 @@ function WorkspaceContent() {
         );
       case 'pdf':
         return (
-          <PDFViewer
-            ref={pdfViewerRef}
-            pdfUrl={activeInstance.data.pdfUrl}
-            fileName={activeInstance.data.fileName}
-            metadata={activeInstance.data.metadata}
-            fullText={activeInstance.data.fullText}
-            onUpload={handlePDFUpload}
-            onSummaryReady={handlePDFSummaryReady}
-            onAddToChat={handleAddToChat}
-          />
+          <div className="h-full flex flex-col">
+            <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center justify-between">
+              <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={activePdfTab === 'pdf' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setActivePdfTab('pdf')}
+                >
+                  PDF
+                </Button>
+                <Button
+                  variant={activePdfTab === 'flashcards' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setActivePdfTab('flashcards')}
+                >
+                  Flashcards
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {activePdfTab === 'pdf' ? (
+                <PDFViewer
+                  ref={pdfViewerRef}
+                  pdfUrl={activeInstance.data.pdfUrl}
+                  fileName={activeInstance.data.fileName}
+                  metadata={activeInstance.data.metadata}
+                  fullText={activeInstance.data.fullText}
+                  onUpload={handlePDFUpload}
+                  onSummaryReady={handlePDFSummaryReady}
+                  onAddToChat={handleAddToChat}
+                />
+              ) : (
+                <FlashcardTab />
+              )}
+            </div>
+          </div>
         );
       case 'annotate':
       default:

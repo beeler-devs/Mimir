@@ -6,7 +6,7 @@ import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
-import { PanelsLeftRight } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare, Code, Zap } from 'lucide-react';
 import {
   loadUserChats,
   createChat,
@@ -19,6 +19,9 @@ import {
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
+import { useActiveLearningMode } from '@/lib/learningMode';
+
+type StudyMode = 'chat' | 'code' | 'flappy-bird';
 
 interface AISidePanelProps {
   collapseSidebar?: () => void;
@@ -32,11 +35,12 @@ interface AISidePanelProps {
 
 export interface AISidePanelRef {
   addToChat: (message: string) => void;
+  createNewChat: () => Promise<void>;
 }
 
 /**
  * Main AI sidepanel component
- * Manages chat state and switches between chat and tree views
+ * Manages chat state and switches between chat and other modes
  */
 export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
@@ -49,48 +53,55 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [studyMode, setStudyMode] = useState<StudyMode>('chat');
   const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
+  const [activeLearningMode] = useActiveLearningMode();
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
 
-  // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
         chatInputRef.current.setMessage(message);
+        setStudyMode('chat'); // Switch to chat view
+      }
+    },
+    createNewChat: async () => {
+      try {
+        const newChat = await createChat();
+        setNodes([]);
+        setActiveNodeId(null);
+        setChatId(newChat.id);
+        localStorage.setItem('mimir.activeChatId', newChat.id);
+        setStudyMode('chat');
+        const userChats = await loadUserChats();
+        setChats(userChats);
+      } catch (error) {
+        console.error('Failed to create new chat:', error);
       }
     },
   }));
 
-  // Load or create chat on mount
   useEffect(() => {
     const initializeChat = async () => {
       try {
-        // Try to load stored chat ID from localStorage
         const storedChatId = localStorage.getItem('mimir.activeChatId');
-        
         if (storedChatId) {
-          // Load messages for the stored chat
           const messages = await loadChatMessages(storedChatId);
           setNodes(messages);
           setChatId(storedChatId);
-          
-          // Set active node to the last message
           if (messages.length > 0) {
             setActiveNodeId(messages[messages.length - 1].id);
           }
         } else {
-          // Create a new chat
           const newChat = await createChat();
           setChatId(newChat.id);
           localStorage.setItem('mimir.activeChatId', newChat.id);
         }
-
-        // Load all chats for the user
         const userChats = await loadUserChats();
         setChats(userChats);
       } catch (error) {
@@ -99,11 +110,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         setInitializing(false);
       }
     };
-
     initializeChat();
   }, []);
 
-  // Save chatId to localStorage when it changes
   useEffect(() => {
     if (chatId) {
       localStorage.setItem('mimir.activeChatId', chatId);
@@ -120,11 +129,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     let savedUserMessage: ChatNode | null = null;
 
     try {
-      // Parse mentions from message
       const rawMentions = parseMentions(content);
       const resolvedMentions = resolveMentions(rawMentions, instances, folders);
       
-      // Export annotation canvas if active instance is annotation type
       const annotationExports: Record<string, string> = {};
       if (activeInstance?.type === 'annotate' && annotationCanvasRef?.current) {
         try {
@@ -132,23 +139,17 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           annotationExports[activeInstance.id] = imageBase64;
         } catch (error) {
           console.error('Failed to export active annotation canvas:', error);
-          // Continue without image - don't block message sending
         }
       }
       
-      // Also export mentioned annotation instances using saved state
       for (const mention of resolvedMentions) {
         if (mention.type === 'instance' && mention.id) {
           const mentionedInstance = instances.find((i) => i.id === mention.id);
           if (mentionedInstance?.type === 'annotate') {
-            // Skip if already exported as active instance
             if (mentionedInstance.id === activeInstance?.id) {
               continue;
             }
-            
-            // Try to export from saved state
             if (mentionedInstance.data.excalidrawState) {
-              // Validate state structure before attempting export
               const state = mentionedInstance.data.excalidrawState;
               if (!state.elements || !Array.isArray(state.elements)) {
                 console.warn(`Invalid excalidrawState for instance ${mentionedInstance.id}: missing or invalid elements`);
@@ -158,19 +159,15 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                   annotationExports[mentionedInstance.id] = imageBase64;
                 } catch (error) {
                   console.error(`Failed to export annotation canvas for instance ${mentionedInstance.id}:`, error);
-                  // Continue without image - don't block message sending
                 }
               } else {
                 console.warn(`Cannot export canvas: annotationCanvasRef not available`);
               }
-            } else {
-              // No saved state - skip silently (this is expected for new/empty canvases)
             }
           }
         }
       }
 
-      // Build workspace context
       const workspaceContext = buildWorkspaceContext(
         activeInstance,
         instances,
@@ -179,35 +176,29 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         annotationExports
       );
       
-      // Add PDF attachments to workspace context
       if (pdfAttachments && pdfAttachments.length > 0) {
-        // Filter out PDFs that are not ready
         const readyPdfs = pdfAttachments.filter(pdf => pdf.status === 'ready');
         if (readyPdfs.length > 0) {
           workspaceContext.pdfAttachments = readyPdfs;
         }
       }
 
-      // Save user message to database (keep mentions visible in chat)
       savedUserMessage = await saveChatMessage(chatId, {
         parentId: activeNodeId,
         role: 'user',
-        content: content, // Keep original content with mentions
+        content: content,
         pdfAttachments: pdfAttachments && pdfAttachments.length > 0 ? pdfAttachments : undefined,
       });
 
-      // Update local state
       const updatedNodes = [...nodes, savedUserMessage];
       setNodes(updatedNodes);
       setActiveNodeId(savedUserMessage.id);
 
-      // If this is the first user message, generate a title
       if (nodes.length === 0) {
         const title = generateChatTitle(content);
         await updateChatTitle(chatId, title);
       }
 
-      // Call backend API to get streaming AI response
       if (!savedUserMessage) {
         throw new Error('Failed to save user message');
       }
@@ -215,7 +206,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       const branchPath = buildBranchPath(updatedNodes, savedUserMessage.id);
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
       
-      // Create a temporary streaming message node
       const streamingMessageId = `streaming-${Date.now()}`;
       const streamingMessage: ChatNode = {
         id: streamingMessageId,
@@ -225,20 +215,16 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         createdAt: new Date().toISOString(),
       };
       
-      // Add streaming message to state
       const nodesWithStreaming = [...updatedNodes, streamingMessage];
       setNodes(nodesWithStreaming);
       setActiveNodeId(streamingMessageId);
       
-      // Stream the response
-      // Filter out empty messages before sending to backend
       const branchMessages = getActiveBranch(updatedNodes, savedUserMessage.id)
         .map(n => ({
           role: n.role,
           content: n.content || '',
         }))
         .filter((msg, idx, arr) => {
-          // Allow empty content only for the final assistant message
           const isFinalAssistant = idx === arr.length - 1 && msg.role === 'assistant';
           const hasContent = msg.content && msg.content.trim().length > 0;
           return hasContent || isFinalAssistant;
@@ -283,7 +269,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
               const data = JSON.parse(line.slice(6));
               
               if (data.type === 'chunk') {
-                // Update streaming message with new chunk
                 fullContent += data.content;
                 setNodes(prev => prev.map(node => 
                   node.id === streamingMessageId
@@ -291,11 +276,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                     : node
                 ));
               } else if (data.type === 'done') {
-                // Streaming complete, save final message
                 fullContent = data.content;
                 suggestedAnimation = data.suggestedAnimation;
                 
-                // Save AI response to database
                 const savedAIMessage = await saveChatMessage(chatId, {
                   parentId: savedUserMessage.id,
                   role: 'assistant',
@@ -303,7 +286,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                   suggestedAnimation,
                 });
 
-                // Replace streaming message with saved message
                 setNodes(prev => prev.map(node => 
                   node.id === streamingMessageId
                     ? savedAIMessage
@@ -322,10 +304,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     } catch (error) {
       console.error('Error sending message:', error);
       
-      // Remove streaming message if it exists
       setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
       
-      // Try to save error message to database
       try {
         const errorMessage = await saveChatMessage(chatId, {
           parentId: savedUserMessage?.id || activeNodeId,
@@ -351,49 +331,117 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     );
   }
 
+  const renderContent = () => {
+    switch (studyMode) {
+      case 'chat':
+        return (
+          <>
+            <div className="flex-1 overflow-y-auto">
+              <ChatMessageList
+                messages={activeBranch}
+                workspaceContext={buildWorkspaceContext(
+                  activeInstance,
+                  instances,
+                  folders,
+                  [],
+                  {}
+                )}
+              />
+            </div>
+            <ChatInput
+              ref={chatInputRef}
+              onSend={handleSendMessage}
+              loading={loading}
+              instances={instances}
+              folders={folders}
+              pendingText={pendingChatText}
+              onTextAdded={onChatTextAdded}
+              learningMode={activeLearningMode}
+            />
+          </>
+        );
+      case 'code':
+        return (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Code className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Code Mode</h3>
+              <p className="text-sm text-muted-foreground">
+                Interactive code exercises will be available here.
+              </p>
+            </div>
+          </div>
+        );
+      case 'flappy-bird':
+        return (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Zap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Flappy Bird</h3>
+              <p className="text-sm text-muted-foreground">
+                Coming soon!
+              </p>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header Actions */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
-          <VoiceButton size="sm" className="shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto">
+          {[ 
+            { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
+            { id: 'code' as StudyMode, label: 'Code', icon: Code },
+            { id: 'flappy-bird' as StudyMode, label: 'Flappy Bird', icon: Zap },
+          ].map(({ id, label, icon: Icon }) => {
+            const active = studyMode === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setStudyMode(id)}
+                className={`
+                  flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
+                  focus-visible:outline-none focus-visible:ring-2
+                  ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
+                `}
+                style={active ? { backgroundColor: '#F5F5F5' } : undefined}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = '#F5F5F5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = '';
+                  }
+                }}
+              >
+                <div className="flex items-center gap-2 justify-center">
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="font-medium whitespace-nowrap">{label}</span>
+                </div>
+              </button>
+            );
+          })}
+
+          {studyMode === 'chat' && <VoiceButton size="sm" className="shrink-0 ml-auto" />}
 
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
-              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
-              aria-label="Collapse AI panel"
+              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0 ml-auto"
+              aria-label="Collapse panel"
             >
               <PanelsLeftRight className="h-4 w-4" />
             </button>
           )}
         </div>
       </div>
-
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        <ChatMessageList
-          messages={activeBranch}
-          workspaceContext={buildWorkspaceContext(
-            activeInstance,
-            instances,
-            folders,
-            [],
-            {}
-          )}
-        />
-      </div>
-
-      {/* Chat Input */}
-      <ChatInput
-        ref={chatInputRef}
-        onSend={handleSendMessage}
-        loading={loading}
-        instances={instances}
-        folders={folders}
-        pendingText={pendingChatText}
-        onTextAdded={onChatTextAdded}
-      />
+      {renderContent()}
     </div>
   );
 });
