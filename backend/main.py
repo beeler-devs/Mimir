@@ -1500,6 +1500,127 @@ Create a structured summary with main topics and key concepts."""
         logger.error(f"Error generating summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/study-tools/summary/stream")
+async def generate_summary_stream(request: dict):
+    """
+    Generate a summary from PDF text using Claude AI with streaming
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content
+
+    Returns:
+        StreamingResponse with SSE format containing summary chunks
+    """
+    def generate():
+        try:
+            pdf_text = request.get('pdfText', '')
+            if not pdf_text:
+                error_response = {
+                    "type": "error",
+                    "content": "PDF text is required"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Get Claude API key from environment
+            claude_api_key = os.getenv("CLAUDE_API_KEY")
+            if not claude_api_key:
+                error_response = {
+                    "type": "error",
+                    "content": "CLAUDE_API_KEY not configured"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Initialize Anthropic client
+            client = Anthropic(api_key=claude_api_key)
+
+            # Limit PDF text to avoid token limits (~30K characters for summary)
+            max_text_length = 30000
+            if len(pdf_text) > max_text_length:
+                pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+            # Enhanced system prompt for summary generation
+            system_prompt = """You are an expert educator creating comprehensive, well-structured summaries of educational content.
+
+Your task: Generate a clear, engaging summary that helps students understand and retain the key concepts.
+
+Guidelines:
+1. **Opening Overview**: Start with 2-3 sentences capturing the document's main theme and purpose
+2. **Hierarchical Structure**: 
+   - Use markdown headers (##, ###) to organize topics
+   - Group related concepts together logically
+   - Progress from foundational to advanced ideas
+3. **Key Concepts**: For each major topic:
+   - Provide clear, concise definitions
+   - Include important formulas, equations, or principles
+   - Use bullet points for lists and sub-concepts
+   - Add examples where they clarify understanding
+4. **Connections**: Explicitly highlight:
+   - How concepts relate to each other
+   - Prerequisites or dependencies between topics
+   - Real-world applications or implications
+5. **Visual Organization**:
+   - Use **bold** for key terms and concepts
+   - Use *italics* for emphasis
+   - Keep paragraphs short (2-4 sentences)
+6. **Comprehensiveness**: Aim for 400-600 words
+   - Balance depth with clarity
+   - Don't omit important details, but stay concise
+   - Prioritize understanding over exhaustive coverage
+
+Output format: Well-formatted markdown with:
+- ## for main sections
+- ### for subsections
+- Bullet points for lists
+- **Bold** for key terms
+- Code blocks for formulas/equations when appropriate
+
+Remember: Your goal is to create a study resource that students can review to quickly grasp the material's core ideas and structure."""
+
+            user_prompt = f"""Create a comprehensive, well-structured summary of the following educational content:
+
+{pdf_text}
+
+Focus on clarity, organization, and helping students understand the key concepts and their relationships."""
+
+            # Stream from Claude API
+            chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+            full_content = ""
+
+            with client.messages.stream(
+                model=chat_model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            ) as stream:
+                for text_block in stream.text_stream:
+                    full_content += text_block
+                    # Send each chunk as it arrives
+                    chunk_response = {
+                        "type": "chunk",
+                        "content": text_block
+                    }
+                    yield f"data: {json.dumps(chunk_response)}\n\n"
+
+            # Send final complete message
+            logger.info(f"Generated summary ({len(full_content)} characters)")
+            final_response = {
+                "type": "done",
+                "content": full_content
+            }
+            yield f"data: {json.dumps(final_response)}\n\n"
+
+        except Exception as e:
+            logger.error(f"Error in summary streaming endpoint: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
 @app.post("/chat/generate-title")
 async def generate_chat_title(request: dict):
     """

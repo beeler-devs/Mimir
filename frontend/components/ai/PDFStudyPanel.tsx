@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, RefObject } from 'react';
+import React, { useState, useEffect, RefObject, useCallback } from 'react';
 import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
 import { ChatTabBar } from './ChatTabBar';
-import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus } from 'lucide-react';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import {
   loadUserChats,
   createChat,
@@ -28,8 +29,8 @@ interface PDFStudyPanelProps {
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  pendingChatText?: string | null;
-  onChatTextAdded?: () => void;
+  contextText?: string | null;
+  onContextRemoved?: () => void;
   getCurrentPageImage?: () => Promise<string | null>;
 }
 
@@ -37,6 +38,56 @@ export interface PDFStudyPanelRef {
   addToChat: (message: string) => void;
   createNewChat: () => Promise<void>;
 }
+
+const THINKING_STATEMENTS = [
+  'Dusting off some neurons…',
+  'One moment, consulting my imaginary whiteboard...',
+  'Spinning up the tiny hamster that powers my brain…',
+  'Running the numbers. Then arguing with them.',
+  'Hold on—my thoughts are buffering...',
+  'Performing a quick sanity check. Results may vary.',
+  'Cross-referencing with Section 7 of “Things I Should Know.”',
+  'Running a Bayesian update on my confidence levels…',
+  'Evaluating edge cases and their feelings.',
+  'Simulating 10,000 parallel universes. Picking the least chaotic answer.',
+];
+
+// Provides a rotating thinking message while async work is in progress
+const useThinkingMessage = (active: boolean) => {
+  const [message, setMessage] = React.useState(THINKING_STATEMENTS[0]);
+
+  React.useEffect(() => {
+    if (!active) return undefined;
+
+    const interval = setInterval(() => {
+      setMessage(prev => {
+        let next = prev;
+        while (next === prev) {
+          next = THINKING_STATEMENTS[Math.floor(Math.random() * THINKING_STATEMENTS.length)];
+        }
+        return next;
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [active]);
+
+  return active ? message : '';
+};
+
+const buildHintFromCard = (front: string, back: string) => {
+  const fallback = 'Think about the key concept the question is pointing to, not the exact wording.';
+  if (!back) return fallback;
+
+  const sentences = back.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
+  const source = sentences[0] || back;
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return fallback;
+
+  const visibleCount = Math.max(4, Math.ceil(words.length * 0.35));
+  const hintSnippet = words.slice(0, visibleCount).join(' ');
+  return `Hint: it involves ${hintSnippet}... Reflect on how that connects to "${front}".`;
+};
 
 /**
  * PDF Study Tools Panel
@@ -47,8 +98,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   activeInstance = null,
   instances = [],
   folders = [],
-  pendingChatText,
-  onChatTextAdded,
+  contextText,
+  onContextRemoved,
   getCurrentPageImage,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
@@ -75,20 +126,23 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [flashcardHint, setFlashcardHint] = useState<string>('');
+  const [hintLoading, setHintLoading] = useState(false);
+
+  // Text selection state for summary
+  const [selectedSummaryText, setSelectedSummaryText] = useState<string>('');
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false);
+  const [summaryPopupPosition, setSummaryPopupPosition] = useState({ x: 0, y: 0 });
 
   // Study mode customization options
   const [studyModeScope, setStudyModeScope] = useState<'entire' | 'current-page' | 'custom'>('entire');
   const [studyModeFocus, setStudyModeFocus] = useState<string>('');
 
-  // Study mode chat history (separate from main chat)
-  const [flashcardsChatNodes, setFlashcardsChatNodes] = useState<ChatNode[]>([]);
-  const [quizChatNodes, setQuizChatNodes] = useState<ChatNode[]>([]);
-  const [summaryChatNodes, setSummaryChatNodes] = useState<ChatNode[]>([]);
-  const [studyModeChatLoading, setStudyModeChatLoading] = useState(false);
-
   const chatInputRef = React.useRef<ChatInputRef>(null);
-  const studyModeChatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
+  const flashcardThinkingMessage = useThinkingMessage(generatingFlashcards);
+  const quizThinkingMessage = useThinkingMessage(generatingQuiz);
+  const summaryThinkingMessage = useThinkingMessage(generatingSummary);
 
   // Empty state view component
   const EmptyStateView = () => {
@@ -192,8 +246,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           loading={loading}
           instances={instances}
           folders={folders}
-          pendingText={pendingChatText}
-          onTextAdded={onChatTextAdded}
+          contextText={contextText}
+          onContextRemoved={onContextRemoved}
         />
       </>
     );
@@ -250,7 +304,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
-        chatInputRef.current.setMessage(message);
+        chatInputRef.current.setContext(message);
         setStudyMode('chat'); // Switch to chat view
       }
     },
@@ -648,8 +702,15 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   const generateFlashcards = async () => {
     setGeneratingFlashcards(true);
+    setFlashcardHint('');
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
       const response = await fetch(`${backendUrl}/study-tools/flashcards`, {
@@ -663,7 +724,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate flashcards');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate flashcards');
       }
 
       const data = await response.json();
@@ -675,8 +737,22 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating flashcards:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate flashcards. Please ensure the backend server is running.');
     } finally {
       setGeneratingFlashcards(false);
+    }
+  };
+
+  const handleAskFlashcardHint = () => {
+    if (!flashcards.length) return;
+    setHintLoading(true);
+    try {
+      const currentCard = flashcards[currentFlashcardIndex];
+      const hint = buildHintFromCard(currentCard.front, currentCard.back);
+      setFlashcardHint(hint);
+      setShowFlashcardAnswer(false);
+    } finally {
+      setHintLoading(false);
     }
   };
 
@@ -684,6 +760,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     setGeneratingQuiz(true);
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
       const response = await fetch(`${backendUrl}/study-tools/quiz`, {
@@ -697,7 +779,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate quiz');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate quiz');
       }
 
       const data = await response.json();
@@ -712,6 +795,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating quiz:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate quiz. Please ensure the backend server is running.');
     } finally {
       setGeneratingQuiz(false);
     }
@@ -719,11 +803,18 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   const generateSummary = async () => {
     setGeneratingSummary(true);
+    setSummary(''); // Clear previous summary
     try {
       const pdfContext = getPDFContext();
+      
+      if (!pdfContext || pdfContext.trim().length === 0) {
+        alert('No PDF content available. Please open a PDF document first.');
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
-      const response = await fetch(`${backendUrl}/study-tools/summary`, {
+      const response = await fetch(`${backendUrl}/study-tools/summary/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -734,146 +825,109 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate summary');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate summary');
       }
 
-      const data = await response.json();
-      setSummary(data.summary || '');
+      // Stream the response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'chunk') {
+                fullContent += data.content;
+                setSummary(fullContent);
+              } else if (data.type === 'done') {
+                fullContent = data.content;
+                setSummary(fullContent);
+              } else if (data.type === 'error') {
+                throw new Error(data.content);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+
       // Reset customization options for next generation
       setStudyModeScope('entire');
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating summary:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate summary. Please ensure the backend server is running.');
+      setSummary('');
     } finally {
       setGeneratingSummary(false);
     }
   };
 
-  // Auto-generation removed - users now manually trigger generation with customization options
+  // Text selection handler for summary (only when in summary mode)
+  const handleSummaryTextSelection = useCallback((event: MouseEvent) => {
+    if (studyMode !== 'summary') return;
 
-  // Study mode chat handlers
-  const handleStudyModeChat = async (message: string, mode: 'flashcards' | 'quiz' | 'summary') => {
-    setStudyModeChatLoading(true);
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
 
-    // Get the appropriate chat nodes and setter based on mode
-    const getChatNodes = () => {
-      switch (mode) {
-        case 'flashcards': return flashcardsChatNodes;
-        case 'quiz': return quizChatNodes;
-        case 'summary': return summaryChatNodes;
-      }
-    };
+    if (text && text.length > 0) {
+      // Check if the selection is within the summary content
+      const target = event.target as HTMLElement;
+      const summaryContent = target.closest('[data-summary-content="true"]');
+      
+      if (summaryContent) {
+        setSelectedSummaryText(text);
+        const range = selection?.getRangeAt(0);
+        const rect = range?.getBoundingClientRect();
 
-    const setChatNodes = (nodes: ChatNode[]) => {
-      switch (mode) {
-        case 'flashcards': setFlashcardsChatNodes(nodes); break;
-        case 'quiz': setQuizChatNodes(nodes); break;
-        case 'summary': setSummaryChatNodes(nodes); break;
-      }
-    };
-
-    const currentChatNodes = getChatNodes();
-
-    // Create user message node
-    const userMessage: ChatNode = {
-      id: `user-${Date.now()}`,
-      parentId: currentChatNodes.length > 0 ? currentChatNodes[currentChatNodes.length - 1].id : null,
-      role: 'user',
-      content: message,
-      createdAt: new Date().toISOString(),
-    };
-
-    setChatNodes([...currentChatNodes, userMessage]);
-
-    try {
-      const pdfContext = getPDFContext();
-      const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
-
-      // Get current content based on mode
-      const currentContent = mode === 'flashcards' ? flashcards : mode === 'quiz' ? quizQuestions : summary;
-
-      const response = await fetch(`${backendUrl}/study-tools/${mode}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message,
-          pdfText: pdfContext,
-          content: currentContent,
-          chatHistory: currentChatNodes.map(n => ({ role: n.role, content: n.content }))
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to chat about ${mode}`);
-      }
-
-      // Read SSE stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = '';
-      let buffer = '';
-
-      if (reader) {
-        const streamingMessageId = `streaming-${Date.now()}`;
-        const streamingMessage: ChatNode = {
-          id: streamingMessageId,
-          parentId: userMessage.id,
-          role: 'assistant',
-          content: '',
-          createdAt: new Date().toISOString(),
-        };
-
-        setChatNodes([...currentChatNodes, userMessage, streamingMessage]);
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === 'chunk') {
-                  fullContent += data.content;
-                  setChatNodes(prev => prev.map(node =>
-                    node.id === streamingMessageId
-                      ? { ...node, content: fullContent }
-                      : node
-                  ));
-                } else if (data.type === 'done') {
-                  fullContent = data.content;
-                  const finalMessage: ChatNode = {
-                    ...streamingMessage,
-                    content: fullContent,
-                  };
-                  setChatNodes([...currentChatNodes, userMessage, finalMessage]);
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
-            }
-          }
+        if (rect) {
+          setSummaryPopupPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top - 10,
+          });
+          setShowSummaryPopup(true);
         }
+      } else {
+        setShowSummaryPopup(false);
       }
-    } catch (error) {
-      console.error(`Error chatting about ${mode}:`, error);
-      const errorMessage: ChatNode = {
-        id: `error-${Date.now()}`,
-        parentId: userMessage.id,
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-        createdAt: new Date().toISOString(),
-      };
-      setChatNodes([...currentChatNodes, userMessage, errorMessage]);
-    } finally {
-      setStudyModeChatLoading(false);
+    } else {
+      setShowSummaryPopup(false);
     }
-  };
+  }, [studyMode]);
+
+  const handleAddSummaryToChat = useCallback(() => {
+    if (selectedSummaryText && chatInputRef.current) {
+      chatInputRef.current.setContext(selectedSummaryText);
+      setShowSummaryPopup(false);
+      setSelectedSummaryText('');
+      window.getSelection()?.removeAllRanges();
+      setStudyMode('chat'); // Switch to chat view
+    }
+  }, [selectedSummaryText]);
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleSummaryTextSelection);
+    return () => {
+      document.removeEventListener('mouseup', handleSummaryTextSelection);
+    };
+  }, [handleSummaryTextSelection]);
 
   if (initializing) {
     return (
@@ -905,6 +959,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                   [],
                   {}
                 )}
+                onAddToChat={(text) => {
+                  if (chatInputRef.current) {
+                    chatInputRef.current.setContext(text);
+                  }
+                }}
               />
             </div>
             <ChatInput
@@ -913,8 +972,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               loading={loading}
               instances={instances}
               folders={folders}
-              pendingText={pendingChatText}
-              onTextAdded={onChatTextAdded}
+              contextText={contextText}
+              onContextRemoved={onContextRemoved}
             />
           </>
         );
@@ -924,8 +983,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           return (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4 mx-auto" />
-                <p className="text-sm text-muted-foreground">Generating flashcards...</p>
+                <div className="text-sm text-muted-foreground">{flashcardThinkingMessage || 'Thinking...'}</div>
               </div>
             </div>
           );
@@ -988,47 +1046,70 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           <div className="flex-1 flex flex-col p-4 gap-4">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
-              <button
-                onClick={generateFlashcards}
-                className="text-primary hover:underline"
-              >
-                Regenerate
-              </button>
-            </div>
-            <div
-              className="flex-1 flex items-center justify-center p-8 bg-muted/30 rounded-lg cursor-pointer border-2 border-border hover:border-primary transition-colors"
-              onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
-            >
-              <div className="text-center">
-                <p className="text-lg font-medium mb-4">
-                  {showFlashcardAnswer ? currentCard.back : currentCard.front}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Click to {showFlashcardAnswer ? 'hide' : 'reveal'} answer
-                </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={generateFlashcards}
+                  className="text-primary hover:underline"
+                >
+                  Regenerate
+                </button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setCurrentFlashcardIndex(Math.max(0, currentFlashcardIndex - 1));
-                  setShowFlashcardAnswer(false);
-                }}
-                disabled={currentFlashcardIndex === 0}
-                className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+            <div className="flex flex-col items-center gap-4 flex-1">
+              <div
+                className="relative w-full max-w-4xl aspect-[16/9] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm"
+                onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
               >
-                Previous
-              </button>
-              <button
-                onClick={() => {
-                  setCurrentFlashcardIndex(Math.min(flashcards.length - 1, currentFlashcardIndex + 1));
-                  setShowFlashcardAnswer(false);
-                }}
-                disabled={currentFlashcardIndex === flashcards.length - 1}
-                className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
-              >
-                Next
-              </button>
+                <div className="text-center mx-auto max-w-3xl">
+                  <p className="text-xl font-semibold mb-4">
+                    {showFlashcardAnswer ? currentCard.back : currentCard.front}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Click to {showFlashcardAnswer ? 'hide' : 'reveal'} answer
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 w-full max-w-3xl">
+                <button
+                  onClick={() => {
+                    setCurrentFlashcardIndex(Math.max(0, currentFlashcardIndex - 1));
+                    setShowFlashcardAnswer(false);
+                    setFlashcardHint('');
+                  }}
+                  disabled={currentFlashcardIndex === 0}
+                  className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentFlashcardIndex(Math.min(flashcards.length - 1, currentFlashcardIndex + 1));
+                    setShowFlashcardAnswer(false);
+                    setFlashcardHint('');
+                  }}
+                  disabled={currentFlashcardIndex === flashcards.length - 1}
+                  className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="w-full max-w-3xl border-t border-border pt-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">Need a nudge? Ask for a hint without revealing the answer.</p>
+                  <button
+                    onClick={handleAskFlashcardHint}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors disabled:opacity-60"
+                    disabled={hintLoading}
+                  >
+                    {hintLoading ? 'Thinking...' : 'Ask AI for a hint'}
+                  </button>
+                </div>
+                {flashcardHint && (
+                  <div className="p-3 bg-muted/40 border border-border rounded-lg text-sm text-muted-foreground">
+                    {flashcardHint}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -1038,8 +1119,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           return (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4 mx-auto" />
-                <p className="text-sm text-muted-foreground">Generating quiz...</p>
+                <div className="text-sm text-muted-foreground">{quizThinkingMessage || 'Thinking...'}</div>
               </div>
             </div>
           );
@@ -1098,7 +1178,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         }
 
         // Calculate score
-        const score = userAnswers.reduce((acc, answer, idx) => {
+        const score = userAnswers.reduce((acc: number, answer, idx) => {
           if (answer === quizQuestions[idx]?.correctIndex) {
             return acc + 1;
           }
@@ -1176,29 +1256,29 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         const isAnswered = currentUserAnswer !== null;
 
         return (
-          <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+          <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto text-sm">
             {/* Header with score and progress */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <div className="text-sm font-medium">
                   <span className="text-muted-foreground">Question </span>
                   <span className="text-primary">{currentQuizIndex + 1}</span>
                   <span className="text-muted-foreground"> / {quizQuestions.length}</span>
                 </div>
-                <div className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                <div className="px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">
                   Score: {score}/{quizQuestions.length}
                 </div>
               </div>
               <button
                 onClick={generateQuiz}
-                className="text-sm text-primary hover:underline"
+                className="text-xs text-primary hover:underline"
               >
                 New Quiz
               </button>
             </div>
 
             {/* Progress bar */}
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary transition-all duration-300"
                 style={{ width: `${((currentQuizIndex + 1) / quizQuestions.length) * 100}%` }}
@@ -1206,34 +1286,34 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
             </div>
 
             {/* Question card */}
-            <div className="flex-1 flex flex-col gap-4">
-              <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-6 rounded-xl border border-primary/20">
-                <p className="text-lg font-semibold leading-relaxed">{currentQuestion.question}</p>
+            <div className="flex-1 flex flex-col gap-3">
+              <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-4 rounded-lg border border-primary/20">
+                <p className="text-sm font-medium leading-relaxed">{currentQuestion.question}</p>
               </div>
 
               {/* Answer options */}
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {currentQuestion.options.map((option, idx) => {
                   const isSelected = currentUserAnswer === idx;
                   const isCorrect = idx === currentQuestion.correctIndex;
                   const showResult = isAnswered;
 
-                  let className = 'w-full text-left p-4 rounded-xl border-2 transition-all font-medium ';
+                  let className = 'w-full text-left p-3 rounded-lg border-2 transition-all text-sm ';
                   let icon = '';
 
                   if (showResult) {
                     if (isCorrect) {
-                      className += 'border-green-500 bg-green-50 dark:bg-green-950/30 text-green-900 dark:text-green-100';
+                      className += 'border-[#D9F4E4] bg-[#D9F4E4] text-green-900';
                       icon = '✓';
                     } else if (isSelected) {
-                      className += 'border-red-500 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100';
+                      className += 'border-[#F9A0A0] bg-[#F9A0A0] text-red-900';
                       icon = '✗';
                     } else {
                       className += 'border-border bg-background/50 opacity-60';
                     }
                   } else {
                     className += isSelected
-                      ? 'border-primary bg-primary/10 shadow-sm scale-[1.02]'
+                      ? 'border-primary bg-primary/10 shadow-sm scale-[1.01]'
                       : 'border-border bg-background hover:bg-muted hover:border-primary/50 hover:shadow-sm';
                   }
 
@@ -1251,10 +1331,10 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                       disabled={isAnswered}
                       className={className}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                           showResult
-                            ? (isCorrect ? 'bg-green-500 text-white' : isSelected ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground')
+                            ? (isCorrect ? 'bg-green-600 text-white' : isSelected ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground')
                             : isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                         }`}>
                           {icon || String.fromCharCode(65 + idx)}
@@ -1268,15 +1348,15 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
               {/* Feedback message */}
               {isAnswered && (
-                <div className={`p-4 rounded-lg ${
+                <div className={`p-3 rounded-lg ${
                   currentUserAnswer === currentQuestion.correctIndex
-                    ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800'
-                    : 'bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800'
+                    ? 'bg-[#D9F4E4] border border-green-300'
+                    : 'bg-[#F9A0A0] border border-red-300'
                 }`}>
                   <p className={`text-sm font-medium ${
                     currentUserAnswer === currentQuestion.correctIndex
-                      ? 'text-green-900 dark:text-green-100'
-                      : 'text-orange-900 dark:text-orange-100'
+                      ? 'text-green-900'
+                      : 'text-red-900'
                   }`}>
                     {currentUserAnswer === currentQuestion.correctIndex
                       ? '🎉 Correct! Well done!'
@@ -1287,14 +1367,14 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
             </div>
 
             {/* Navigation buttons */}
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2 pt-2">
               <button
                 onClick={() => {
                   setCurrentQuizIndex(Math.max(0, currentQuizIndex - 1));
                   setSelectedAnswer(userAnswers[currentQuizIndex - 1]);
                 }}
                 disabled={currentQuizIndex === 0}
-                className="flex-1 px-4 py-3 bg-background border-2 border-border rounded-xl hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all"
+                className="flex-1 px-3 py-2 bg-background border-2 border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all"
               >
                 ← Previous
               </button>
@@ -1305,7 +1385,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                     setCurrentQuizIndex(currentQuizIndex + 1);
                     setSelectedAnswer(userAnswers[currentQuizIndex + 1]);
                   }}
-                  className="flex-1 px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 font-medium transition-all shadow-sm"
+                  className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium transition-all shadow-sm"
                 >
                   Next →
                 </button>
@@ -1313,7 +1393,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                 <button
                   onClick={() => setQuizCompleted(true)}
                   disabled={!allAnswered}
-                  className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-sm"
+                  className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all shadow-sm"
                 >
                   {allAnswered ? 'Finish Quiz ✓' : 'Answer All Questions'}
                 </button>
@@ -1323,18 +1403,17 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         );
 
       case 'summary':
-        if (generatingSummary) {
+        if (generatingSummary && !summary) {
           return (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4 mx-auto" />
-                <p className="text-sm text-muted-foreground">Generating summary...</p>
+                <div className="text-sm text-muted-foreground">{summaryThinkingMessage || 'Thinking...'}</div>
               </div>
             </div>
           );
         }
 
-        if (!summary) {
+        if (!summary && !generatingSummary) {
           return (
             <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
               <div className="text-center">
@@ -1387,18 +1466,18 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         }
 
         return (
-          <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+          <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Document Summary</h3>
+              <h3 className="text-sm font-semibold">Document Summary</h3>
               <button
                 onClick={generateSummary}
-                className="text-sm text-primary hover:underline"
+                className="text-xs text-primary hover:underline"
               >
                 Regenerate
               </button>
             </div>
-            <div className="flex-1 bg-muted/30 p-4 rounded-lg">
-              <p className="text-sm whitespace-pre-wrap">{summary}</p>
+            <div className="flex-1 prose prose-sm max-w-none dark:prose-invert" data-summary-content="true">
+              <MarkdownRenderer content={summary} />
             </div>
           </div>
         );
@@ -1500,6 +1579,29 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       {/* Content Area */}
       {renderContent()}
+
+      {/* Summary Text Selection Popup */}
+      {showSummaryPopup && (
+        <div
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          style={{
+            left: `${summaryPopupPosition.x}px`,
+            top: `${summaryPopupPosition.y}px`,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: '#F5F5F5',
+            borderRadius: '0.85rem',
+            borderColor: 'var(--border)',
+          }}
+        >
+          <button
+            onClick={handleAddSummaryToChat}
+            className="flex items-center gap-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+            Ask Mimir
+          </button>
+        </div>
+      )}
     </div>
   );
 });

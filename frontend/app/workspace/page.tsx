@@ -127,7 +127,7 @@ function WorkspaceContent() {
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [pendingChatText, setPendingChatText] = useState<string | null>(null);
+  const [contextText, setContextText] = useState<string | null>(null);
   const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [activePdfTab, setActivePdfTab] = useState<'pdf' | 'flashcards'>('pdf');
@@ -550,7 +550,7 @@ function WorkspaceContent() {
   };
 
   const handleAddToChat = (text: string) => {
-    setPendingChatText(text);
+    setContextText(text);
   };
 
   const getCurrentPageImage = async (): Promise<string | null> => {
@@ -763,8 +763,8 @@ function WorkspaceContent() {
               activeInstance={activeInstance}
               instances={instances}
               folders={folders}
-              pendingChatText={pendingChatText}
-              onChatTextAdded={() => setPendingChatText(null)}
+              contextText={contextText}
+              onContextRemoved={() => setContextText(null)}
               getCurrentPageImage={getCurrentPageImage}
             />
           ) : (
@@ -774,12 +774,12 @@ function WorkspaceContent() {
               instances={instances}
               folders={folders}
               annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
-              pendingChatText={pendingChatText}
-              onChatTextAdded={() => setPendingChatText(null)}
+              contextText={contextText}
+              onContextRemoved={() => setContextText(null)}
             />
           )
         }>
-          <div className={`h-full ${activeInstance?.type === 'code' ? '' : 'p-4'} flex flex-col gap-4`}>
+          <div className="h-full p-4 flex flex-col gap-4">
             {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text') && (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
@@ -807,7 +807,7 @@ function WorkspaceContent() {
                 )}
               </div>
             )}
-            <div className={`flex-1 ${activeInstance?.type === 'code' ? '' : 'rounded-2xl border border-border bg-background'} overflow-hidden`}>
+            <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
               {renderActiveContent()}
             </div>
           </div>

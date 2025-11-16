@@ -7,7 +7,7 @@ import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
 import { ChatTabBar } from './ChatTabBar';
-import { PanelsLeftRight, MessageSquare, Code, Zap } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare } from 'lucide-react';
 import {
   loadUserChats,
   createChat,
@@ -23,16 +23,14 @@ import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { useActiveLearningMode } from '@/lib/learningMode';
 
-type StudyMode = 'chat' | 'code' | 'flappy-bird';
-
 interface AISidePanelProps {
   collapseSidebar?: () => void;
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
   annotationCanvasRef?: RefObject<AnnotateCanvasRef | null>;
-  pendingChatText?: string | null;
-  onChatTextAdded?: () => void;
+  contextText?: string | null;
+  onContextRemoved?: () => void;
 }
 
 export interface AISidePanelRef {
@@ -42,7 +40,7 @@ export interface AISidePanelRef {
 
 /**
  * Main AI sidepanel component
- * Manages chat state and switches between chat and other modes
+ * Manages chat state and conversation branching
  */
 export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
@@ -50,12 +48,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   instances = [],
   folders = [],
   annotationCanvasRef,
-  pendingChatText,
-  onChatTextAdded,
+  contextText,
+  onContextRemoved,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [studyMode, setStudyMode] = useState<StudyMode>('chat');
   const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -67,74 +64,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
-
-  // Empty state view component
-  const EmptyStateView = () => {
-    const studyModes = [
-      {
-        id: 'chat' as StudyMode,
-        label: 'Chat',
-        icon: MessageSquare,
-        action: () => handleNewChat()
-      },
-      {
-        id: 'code' as StudyMode,
-        label: 'Code',
-        icon: Code,
-        action: () => setStudyMode('code'),
-        disabled: true
-      },
-      {
-        id: 'flappy-bird' as StudyMode,
-        label: 'Flappy Bird',
-        icon: Zap,
-        action: () => setStudyMode('flappy-bird'),
-        disabled: true
-      },
-    ];
-
-    return (
-      <>
-        <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
-          <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">Start Working</h2>
-          </div>
-
-          {/* Study Mode Buttons - horizontal layout */}
-          <div className="flex gap-2.5 items-center">
-            {studyModes.map(({ id, label, icon: Icon, action, disabled }) => (
-              <button
-                key={id}
-                onClick={action}
-                disabled={disabled}
-                className={`
-                  flex items-center justify-center gap-2.5 px-4 py-2 rounded-md border transition-all text-sm font-medium
-                  ${disabled
-                    ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
-                    : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50'
-                  }
-                `}
-              >
-                <Icon className={`h-4 w-4 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ChatInput
-          ref={chatInputRef}
-          onSend={handleSendMessage}
-          loading={loading}
-          instances={instances}
-          folders={folders}
-          pendingText={pendingChatText}
-          onTextAdded={onChatTextAdded}
-          learningMode={activeLearningMode}
-        />
-      </>
-    );
-  };
 
   // Load and persist open tabs
   useEffect(() => {
@@ -186,8 +115,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   React.useImperativeHandle(ref, () => ({
     addToChat: (message: string) => {
       if (chatInputRef.current) {
-        chatInputRef.current.setMessage(message);
-        setStudyMode('chat'); // Switch to chat view
+        chatInputRef.current.setContext(message);
       }
     },
     createNewChat: async () => {
@@ -203,7 +131,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       setActiveNodeId(null);
       setChatId(newChat.id);
       localStorage.setItem('mimir.activeChatId', newChat.id);
-      setStudyMode('chat');
       
       // Add new chat to tabs
       setOpenChatTabs(prev => [...prev, {
@@ -577,132 +504,34 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     );
   }
 
-  const renderContent = () => {
-    switch (studyMode) {
-      case 'chat':
-        // Show empty state when no tabs are open
-        if (openChatTabs.length === 0) {
-          return <EmptyStateView />;
-        }
-        return (
-          <>
-            <div className="flex-1 overflow-y-auto">
-              <ChatMessageList
-                messages={activeBranch}
-                workspaceContext={buildWorkspaceContext(
-                  activeInstance,
-                  instances,
-                  folders,
-                  [],
-                  {}
-                )}
-              />
-            </div>
-            <ChatInput
-              ref={chatInputRef}
-              onSend={handleSendMessage}
-              loading={loading}
-              instances={instances}
-              folders={folders}
-              pendingText={pendingChatText}
-              onTextAdded={onChatTextAdded}
-              learningMode={activeLearningMode}
-            />
-          </>
-        );
-      case 'code':
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Code className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Code Mode</h3>
-              <p className="text-sm text-muted-foreground">
-                Interactive code exercises will be available here.
-              </p>
-            </div>
-          </div>
-        );
-      case 'flappy-bird':
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Zap className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Flappy Bird</h3>
-              <p className="text-sm text-muted-foreground">
-                Coming soon!
-              </p>
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
+
 
   return (
     <div className="flex flex-col h-full">
-      {/* Mode Tabs */}
+      {/* Header */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center rounded-lg border border-border bg-background px-2 py-1">
-          {/* Scrollable Tabs Section */}
-          <div className="flex items-center gap-2 flex-1 overflow-x-auto scrollbar-hide-show">
-            {[
-              { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
-              { id: 'code' as StudyMode, label: 'Code', icon: Code },
-              { id: 'flappy-bird' as StudyMode, label: 'Flappy Bird', icon: Zap },
-            ].map(({ id, label, icon: Icon }) => {
-              const active = studyMode === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => setStudyMode(id)}
-                  className={`
-                    flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
-                    focus-visible:outline-none focus-visible:ring-2
-                    ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
-                  `}
-                  style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                  onMouseEnter={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.backgroundColor = '#F5F5F5';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
-                >
-                  <div className="flex items-center gap-2 justify-center">
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="font-medium whitespace-nowrap">{label}</span>
-                  </div>
-                </button>
-              );
-            })}
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
+          <div className="flex items-center gap-2 px-3 h-8">
+            <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-medium text-sm">Chat</span>
           </div>
 
-          {/* Fixed Action Buttons Section */}
-          {(studyMode === 'chat' || collapseSidebar) && (
-            <div className="flex items-center gap-1 flex-shrink-0 pl-2 border-l border-border">
-              {studyMode === 'chat' && <VoiceButton size="sm" />}
+          <VoiceButton size="sm" className="shrink-0 ml-auto" />
 
-              {collapseSidebar && (
-                <button
-                  onClick={collapseSidebar}
-                  className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground"
-                  aria-label="Collapse panel"
-                >
-                  <PanelsLeftRight className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+          {collapseSidebar && (
+            <button
+              onClick={collapseSidebar}
+              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+              aria-label="Collapse panel"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
           )}
         </div>
       </div>
       
-      {/* Chat Tab Bar (only visible in chat mode) */}
-      {studyMode === 'chat' && openChatTabs.length > 0 && (
+      {/* Chat Tab Bar */}
+      {openChatTabs.length > 0 && (
         <ChatTabBar
           openTabs={openChatTabs}
           activeTabId={chatId}
@@ -714,7 +543,36 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         />
       )}
       
-      {renderContent()}
+      {/* Chat Content */}
+      <div className="flex-1 overflow-y-auto">
+        <ChatMessageList
+          messages={activeBranch}
+          workspaceContext={buildWorkspaceContext(
+            activeInstance,
+            instances,
+            folders,
+            [],
+            {}
+          )}
+          onAddToChat={(text) => {
+            if (chatInputRef.current) {
+              chatInputRef.current.setContext(text);
+            }
+          }}
+        />
+      </div>
+      
+      {/* Chat Input */}
+      <ChatInput
+        ref={chatInputRef}
+        onSend={handleSendMessage}
+        loading={loading}
+        instances={instances}
+        folders={folders}
+        contextText={contextText}
+        onContextRemoved={onContextRemoved}
+        learningMode={activeLearningMode}
+      />
     </div>
   );
 });

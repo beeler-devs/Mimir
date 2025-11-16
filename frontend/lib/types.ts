@@ -266,3 +266,159 @@ export interface ManimRenderResponse {
   videoUrl?: string;
   error?: string;
 }
+
+// Study Materials types
+export type StudyMaterialType = 'quiz' | 'flashcard_set' | 'summary';
+
+export interface StudyMaterial {
+  id: string;
+  userId: string;
+  instanceId: string;
+  type: StudyMaterialType;
+  version: number;
+  generatedAt: string;
+  sourceContentHash: string | null;
+  metadata: Record<string, any> | null;
+  isArchived: boolean;
+}
+
+// Summary types
+export interface Summary {
+  id: string;
+  studyMaterialId: string;
+  content: string;
+  wordCount: number | null;
+  createdAt: string;
+}
+
+export interface SummaryWithMaterial extends Summary {
+  studyMaterial: StudyMaterial;
+}
+
+// Flashcard types
+export interface FlashcardSet {
+  id: string;
+  studyMaterialId: string;
+  title: string | null;
+  description: string | null;
+  cardCount: number;
+  createdAt: string;
+}
+
+export interface Flashcard {
+  id: string;
+  flashcardSetId: string;
+  front: string;
+  back: string;
+  position: number;
+  difficultyRating: number | null;
+  createdAt: string;
+}
+
+export interface FlashcardReview {
+  id: string;
+  flashcardId: string;
+  userId: string;
+  qualityRating: number; // 0-5: SM-2 algorithm
+  easeFactor: number;
+  intervalDays: number;
+  repetitions: number;
+  nextReviewDate: string;
+  reviewedAt: string;
+}
+
+export interface FlashcardSetWithCards extends FlashcardSet {
+  flashcards: Flashcard[];
+  studyMaterial?: StudyMaterial;
+}
+
+export interface FlashcardWithReviews extends Flashcard {
+  reviews: FlashcardReview[];
+  latestReview?: FlashcardReview;
+}
+
+// Quiz types
+export interface Quiz {
+  id: string;
+  studyMaterialId: string;
+  title: string | null;
+  description: string | null;
+  questionCount: number;
+  timeLimitSeconds: number | null;
+  passingScorePercent: number;
+  createdAt: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  quizId: string;
+  question: string;
+  options: string[]; // JSONB array
+  correctOptionIndex: number;
+  explanation: string | null;
+  position: number;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  createdAt: string;
+}
+
+export interface QuizAttempt {
+  id: string;
+  quizId: string;
+  userId: string;
+  startedAt: string;
+  completedAt: string | null;
+  score: number | null;
+  totalQuestions: number | null;
+  timeTakenSeconds: number | null;
+  passed: boolean | null;
+  attemptNumber: number;
+}
+
+export interface QuizAnswer {
+  id: string;
+  quizAttemptId: string;
+  quizQuestionId: string;
+  selectedOptionIndex: number;
+  isCorrect: boolean;
+  timeTakenSeconds: number | null;
+  answeredAt: string;
+}
+
+export interface QuizWithQuestions extends Quiz {
+  questions: QuizQuestion[];
+  studyMaterial?: StudyMaterial;
+}
+
+export interface QuizAttemptWithAnswers extends QuizAttempt {
+  answers: QuizAnswer[];
+  quiz?: Quiz;
+}
+
+// Analytics types
+export interface FlashcardStats {
+  totalCards: number;
+  reviewedCards: number;
+  dueForReview: number;
+  averageEaseFactor: number;
+  masteredCards: number; // Cards with ease factor > 2.5
+}
+
+export interface QuizStats {
+  totalAttempts: number;
+  averageScore: number;
+  bestScore: number;
+  passRate: number;
+  averageTimeSeconds: number;
+  weakQuestions: Array<{
+    questionId: string;
+    question: string;
+    incorrectCount: number;
+  }>;
+}
+
+export interface StudyMaterialsOverview {
+  instanceId: string;
+  summaries: SummaryWithMaterial[];
+  flashcardSets: FlashcardSetWithCards[];
+  quizzes: QuizWithQuestions[];
+}

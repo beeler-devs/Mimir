@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, KeyboardEvent, useRef, useEffect } from 'react';
-import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown, X, File } from 'lucide-react';
+import { Send, Loader2, Paperclip, FileText, Code2, PenTool, Folder as FolderIcon, ChevronDown, X, File, CornerDownRight } from 'lucide-react';
 import { WorkspaceInstance, Folder, MentionableItem, LearningMode, PdfAttachment } from '@/lib/types';
 import { findMentionableItems } from '@/lib/mentions';
 import { useActiveLearningMode, getAllLearningModes, getLearningModeConfig } from '@/lib/learningMode';
@@ -13,12 +13,13 @@ interface ChatInputProps {
   instances?: WorkspaceInstance[];
   folders?: Folder[];
   onPdfsChange?: (pdfs: PdfAttachment[]) => void;
-  pendingText?: string | null;
-  onTextAdded?: () => void;
+  contextText?: string | null;
+  onContextRemoved?: () => void;
 }
 
 export interface ChatInputRef {
   setMessage: (message: string) => void;
+  setContext: (context: string) => void;
   focus: () => void;
 }
 
@@ -35,10 +36,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   instances = [],
   folders = [],
   onPdfsChange,
-  pendingText,
-  onTextAdded,
+  contextText: externalContextText,
+  onContextRemoved,
 }, ref) => {
   const [message, setMessage] = useState('');
+  const [contextText, setContextText] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
   const [autocompleteItems, setAutocompleteItems] = useState<MentionableItem[]>([]);
@@ -63,15 +65,23 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   React.useImperativeHandle(ref, () => ({
     setMessage: (msg: string) => {
       setMessage(msg);
-      // Focus the textarea after setting message
-      setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 0);
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    },
+    setContext: (context: string) => {
+      setContextText(context);
+      setTimeout(() => textareaRef.current?.focus(), 0);
     },
     focus: () => {
       textareaRef.current?.focus();
     },
   }));
+
+  // Sync external context text
+  useEffect(() => {
+    if (externalContextText) {
+      setContextText(externalContextText);
+    }
+  }, [externalContextText]);
 
   const adjustTextareaHeight = () => {
     if (!textareaRef.current) return;
@@ -95,38 +105,14 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     }
   }, [autocompleteQuery, showAutocomplete, instances, folders]);
 
-  // Handle pending text from PDF selection
-  useEffect(() => {
-    if (pendingText && pendingText.trim()) {
-      // Format as a quote and add to message
-      const quotedText = `> ${pendingText.replace(/\n/g, '\n> ')}\n\n`;
-      setMessage((prev) => {
-        const newMessage = prev ? `${prev}\n${quotedText}` : quotedText;
-        return newMessage;
-      });
-
-      // Focus textarea and move cursor to end
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        setTimeout(() => {
-          if (textareaRef.current) {
-            const length = textareaRef.current.value.length;
-            textareaRef.current.setSelectionRange(length, length);
-          }
-        }, 0);
-      }
-
-      // Notify parent that text has been added
-      if (onTextAdded) {
-        onTextAdded();
-      }
-    }
-  }, [pendingText, onTextAdded]);
-
   const handleSend = () => {
     if (message.trim() && !loading) {
-      onSend(message.trim(), activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined);
+      const finalMessage = contextText 
+        ? `Context: ${contextText}\n\n${message.trim()}`
+        : message.trim();
+      onSend(finalMessage, activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined);
       setMessage('');
+      setContextText('');
       setShowAutocomplete(false);
       setMentionStart(null);
       setAttachedPdfs([]);
@@ -374,6 +360,29 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Context bubble - displayed above input */}
+      {contextText && (
+        <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-muted/50 border border-border rounded-lg">
+          <CornerDownRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <div className="flex-1 text-sm text-foreground line-clamp-2">
+            {contextText}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setContextText('');
+              if (onContextRemoved) {
+                onContextRemoved();
+              }
+            }}
+            className="p-1 rounded-full hover:bg-muted transition-colors flex-shrink-0"
+            aria-label="Remove context"
+          >
+            <X className="h-4 w-4 text-foreground" />
+          </button>
         </div>
       )}
 

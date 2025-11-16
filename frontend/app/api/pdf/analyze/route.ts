@@ -6,6 +6,10 @@ const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY || '',
 });
 
+// Prefer an env var so we can change models without a deploy; fall back to a stable default.
+const DEFAULT_ANTHROPIC_MODEL = 'claude-4-5-sonnet';
+const anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+
 export const runtime = 'nodejs';
 export const maxDuration = 60; // allow longer parsing for big PDFs
 
@@ -94,7 +98,7 @@ export async function POST(request: NextRequest) {
     if (process.env.CLAUDE_API_KEY) {
       try {
         const message = await anthropic.messages.create({
-          model: 'claude-3-5-sonnet-20241022',
+          model: anthropicModel,
           max_tokens: 1024,
           messages: [
             {

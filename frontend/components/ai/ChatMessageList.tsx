@@ -1,23 +1,27 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ChatNode, WorkspaceContext } from '@/lib/types';
 import { AnimationPanel } from './AnimationPanel';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
-import { File } from 'lucide-react';
+import { File, MessageSquarePlus } from 'lucide-react';
 
 interface ChatMessageListProps {
   messages: ChatNode[];
   workspaceContext?: WorkspaceContext;
+  onAddToChat?: (text: string) => void;
 }
 
 /**
  * Displays a list of chat messages in the active branch
  * Automatically scrolls to the bottom as new messages stream in
  */
-export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, workspaceContext }) => {
+export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, workspaceContext, onAddToChat }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedText, setSelectedText] = useState<string>('');
+  const [showPopup, setShowPopup] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -34,6 +38,58 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
     
     return () => clearTimeout(timeoutId);
   }, [messages]);
+
+  // Text selection handler (only for assistant messages)
+  const handleTextSelection = useCallback((event: MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+
+    // Ignore selections that originate outside of this message list
+    if (!target || !containerRef.current?.contains(target)) {
+      setShowPopup(false);
+      return;
+    }
+
+    if (text && text.length > 0) {
+      // Check if the selection is within an assistant message
+      const assistantMessage = target.closest('[data-role="assistant"]');
+      
+      if (assistantMessage) {
+        setSelectedText(text);
+        const range = selection?.getRangeAt(0);
+        const rect = range?.getBoundingClientRect();
+
+        if (rect) {
+          setPopupPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top - 10,
+          });
+          setShowPopup(true);
+        }
+      } else {
+        setShowPopup(false);
+      }
+    } else {
+      setShowPopup(false);
+    }
+  }, []);
+
+  const handleAddToChatClick = useCallback(() => {
+    if (selectedText && onAddToChat) {
+      onAddToChat(selectedText);
+      setShowPopup(false);
+      setSelectedText('');
+      window.getSelection()?.removeAllRanges();
+    }
+  }, [selectedText, onAddToChat]);
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleTextSelection);
+    return () => {
+      document.removeEventListener('mouseup', handleTextSelection);
+    };
+  }, [handleTextSelection]);
   
   if (messages.length === 0) {
     return (
@@ -76,6 +132,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
               
               {/* Message content */}
               <div
+                data-role={message.role}
                 className={`${
                   message.role === 'user'
                     ? 'rounded-lg px-4 py-2 text-black whitespace-pre-wrap break-words text-sm leading-relaxed'
@@ -107,6 +164,29 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
       
       {/* Invisible element at the end for scrolling */}
       <div ref={messagesEndRef} />
+
+      {/* Text Selection Popup */}
+      {showPopup && (
+        <div
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          style={{
+            left: `${popupPosition.x}px`,
+            top: `${popupPosition.y}px`,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: '#F5F5F5',
+            borderRadius: '0.85rem',
+            borderColor: 'var(--border)',
+          }}
+        >
+          <button
+            onClick={handleAddToChatClick}
+            className="flex items-center gap-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+            Ask Mimir
+          </button>
+        </div>
+      )}
     </div>
   );
 };
