@@ -12,6 +12,8 @@ interface ChatInputProps {
   loading?: boolean;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
+  pendingText?: string | null;
+  onTextAdded?: () => void;
 }
 
 /**
@@ -19,12 +21,14 @@ interface ChatInputProps {
  * Redesigned with bottom action bar separated by a line
  * Supports @ mentions for instances and folders
  */
-export const ChatInput: React.FC<ChatInputProps> = ({ 
-  onSend, 
-  disabled = false, 
+export const ChatInput: React.FC<ChatInputProps> = ({
+  onSend,
+  disabled = false,
   loading = false,
   instances = [],
   folders = [],
+  pendingText,
+  onTextAdded,
 }) => {
   const [message, setMessage] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -62,6 +66,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setAutocompleteItems([]);
     }
   }, [autocompleteQuery, showAutocomplete, instances, folders]);
+
+  // Handle pending text from PDF selection
+  useEffect(() => {
+    if (pendingText && pendingText.trim()) {
+      // Format as a quote and add to message
+      const quotedText = `> ${pendingText.replace(/\n/g, '\n> ')}\n\n`;
+      setMessage((prev) => {
+        const newMessage = prev ? `${prev}\n${quotedText}` : quotedText;
+        return newMessage;
+      });
+
+      // Focus textarea and move cursor to end
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        setTimeout(() => {
+          if (textareaRef.current) {
+            const length = textareaRef.current.value.length;
+            textareaRef.current.setSelectionRange(length, length);
+          }
+        }, 0);
+      }
+
+      // Notify parent that text has been added
+      if (onTextAdded) {
+        onTextAdded();
+      }
+    }
+  }, [pendingText, onTextAdded]);
 
   const handleSend = () => {
     if (message.trim() && !loading) {

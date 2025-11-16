@@ -2,13 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Modal } from '@/components/common';
-import { 
-  FileText, 
-  Code2, 
-  PenTool, 
-  Plus, 
-  Settings2, 
-  MoreVertical, 
+import {
+  FileText,
+  Code2,
+  PenTool,
+  File,
+  Plus,
+  Settings2,
+  MoreVertical,
   PanelsLeftRight,
   Folder as FolderIcon,
   FolderOpen,
@@ -22,6 +23,7 @@ const typeMeta = {
   text: { label: 'Text', icon: FileText },
   code: { label: 'Code', icon: Code2 },
   annotate: { label: 'Annotate', icon: PenTool },
+  pdf: { label: 'PDF', icon: File },
 } as const;
 
 interface InstanceSidebarProps {

@@ -3,12 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Button, Input } from '@/components/common';
 import { InstanceType } from '@/lib/types';
-import { FileText, Code2, PenTool, type LucideIcon } from 'lucide-react';
+import { FileText, Code2, PenTool, File, type LucideIcon } from 'lucide-react';
 
 const typeOptions: { id: InstanceType; label: string; description: string; icon: LucideIcon }[] = [
   { id: 'text', label: 'Text', description: 'Perfect for essays, notes, and solutions.', icon: FileText },
   { id: 'code', label: 'Code', description: 'Run and iterate on programming exercises.', icon: Code2 },
   { id: 'annotate', label: 'Annotate', description: 'Draw and mark up PDFs or whiteboards.', icon: PenTool },
+  { id: 'pdf', label: 'PDF', description: 'Upload and analyze PDF documents with AI.', icon: File },
 ];
 
 interface NewInstanceModalProps {

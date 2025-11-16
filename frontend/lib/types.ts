@@ -135,7 +135,7 @@ export interface Folder {
 }
 
 // Workspace / instance types
-export type InstanceType = 'text' | 'code' | 'annotate';
+export type InstanceType = 'text' | 'code' | 'annotate' | 'pdf';
 
 interface BaseInstance {
   id: string;
@@ -169,7 +169,18 @@ export interface AnnotateInstance extends BaseInstance {
   };
 }
 
-export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance;
+export interface PDFInstance extends BaseInstance {
+  type: 'pdf';
+  data: {
+    pdfUrl?: string;
+    fileName?: string;
+    fileSize?: number;
+    pageCount?: number;
+    summary?: string;
+  };
+}
+
+export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance | PDFInstance;
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
