@@ -131,18 +131,16 @@ def assess_animation_complexity(concept: str, student_context: str | None = None
     
     # Model selection
     if force_model == "haiku":
-        model = "claude-3-5-haiku-20241022"
+        model = "claude-haiku-4-5"
         reasoning = f"Force override to Haiku (score: {score:.2f})"
     elif force_model == "sonnet":
-        # Note: Sonnet models may not be available, will fall back to Haiku if needed
-        model = "claude-3-5-haiku-20241022"  # Using Haiku since Sonnet models return 404
-        reasoning = f"Force override to Sonnet requested, but using Haiku (Sonnet unavailable) (score: {score:.2f})"
+        model = "claude-sonnet-4-5"
+        reasoning = f"Force override to Sonnet (score: {score:.2f})"
     elif score >= threshold:
-        # Note: Sonnet models may not be available, using Haiku instead
-        model = "claude-3-5-haiku-20241022"  # Using Haiku since Sonnet models return 404
-        reasoning = f"Complex animation (score: {score:.2f} >= {threshold}) - using Haiku (Sonnet unavailable)"
+        model = "claude-sonnet-4-5"
+        reasoning = f"Complex animation (score: {score:.2f} >= {threshold}) - using Sonnet"
     else:
-        model = "claude-3-5-haiku-20241022"
+        model = "claude-haiku-4-5"
         reasoning = f"Simple animation (score: {score:.2f} < {threshold}) - using Haiku"
     
     return {
@@ -664,8 +662,8 @@ def call_claude_to_fix_manim_code(previous_code: str, error_output: str) -> str:
     client = Anthropic(api_key=claude_api_key)
     
     # Try to use Sonnet for repairs (better at error fixing), but fall back to Haiku if Sonnet isn't available
-    repair_model = os.getenv("MANIM_REPAIR_MODEL", "claude-3-5-haiku-20241022")
-    fallback_model = "claude-3-5-haiku-20241022"  # Known working model
+    repair_model = os.getenv("MANIM_REPAIR_MODEL", "claude-haiku-4-5")
+    fallback_model = "claude-haiku-4-5"  # Known working model
     
     system_prompt = """You are an expert Manim animator and math teacher specializing in debugging and fixing Manim code.
 

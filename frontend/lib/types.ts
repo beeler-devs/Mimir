@@ -16,6 +16,7 @@ export interface ChatNode {
   content: string;
   createdAt: string;
   suggestedAnimation?: AnimationSuggestion;
+  pdfAttachments?: PdfAttachment[];
 }
 
 export interface Chat {
@@ -50,6 +51,16 @@ export interface Job {
   updatedAt: string;
 }
 
+// Learning Mode types
+export type LearningMode = 'socratic' | 'direct' | 'guided' | 'exploratory' | 'conceptual';
+
+export interface LearningModeConfig {
+  id: LearningMode;
+  name: string;
+  description: string;
+  systemPrompt: string;
+}
+
 // API types
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -68,6 +79,14 @@ export interface MentionableItem {
   id: string;
   name: string;
   icon?: string;
+}
+
+// PDF Attachment types
+export interface PdfAttachment {
+  id: string;
+  filename: string;
+  extractedText: string;
+  status: 'uploading' | 'ready' | 'error';
 }
 
 // Workspace context types
@@ -91,12 +110,14 @@ export interface WorkspaceContext {
   instances: WorkspaceContextInstance[];
   folders: WorkspaceContextFolder[];
   annotationImages: Record<string, string>; // instanceId -> base64 PNG
+  pdfAttachments?: PdfAttachment[]; // PDF files attached to chat
 }
 
 export interface ChatRequest {
   messages: ChatMessage[];
   branchPath: string[];
   workspaceContext?: WorkspaceContext;
+  learningMode?: LearningMode;
 }
 
 export interface ChatResponse {
@@ -124,7 +145,7 @@ export interface Folder {
 }
 
 // Workspace / instance types
-export type InstanceType = 'text' | 'code' | 'annotate';
+export type InstanceType = 'text' | 'code' | 'annotate' | 'pdf';
 
 interface BaseInstance {
   id: string;
@@ -158,7 +179,28 @@ export interface AnnotateInstance extends BaseInstance {
   };
 }
 
-export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance;
+export interface PDFInstance extends BaseInstance {
+  type: 'pdf';
+  data: {
+    pdfUrl?: string;
+    fileName?: string;
+    fileSize?: number;
+    pageCount?: number;
+    summary?: string;
+    storagePath?: string; // Path in Supabase Storage
+    metadata?: {
+      title?: string;
+      author?: string;
+      subject?: string;
+      keywords?: string;
+      creationDate?: string;
+      modificationDate?: string;
+    };
+    fullText?: string; // Extracted text for search
+  };
+}
+
+export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance | PDFInstance;
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 

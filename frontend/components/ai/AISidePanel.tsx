@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, RefObject } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
-import { ChatInput } from './ChatInput';
+import { ChatInput, ChatInputRef } from './ChatInput';
 import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
 import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
@@ -28,20 +28,28 @@ interface AISidePanelProps {
   activeInstance?: WorkspaceInstance | null;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
-  annotationCanvasRef?: RefObject<AnnotateCanvasRef>;
+  annotationCanvasRef?: RefObject<AnnotateCanvasRef | null>;
+  pendingChatText?: string | null;
+  onChatTextAdded?: () => void;
+}
+
+export interface AISidePanelRef {
+  addToChat: (message: string) => void;
 }
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC<AISidePanelProps> = ({ 
+export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
   activeInstance = null,
   instances = [],
   folders = [],
   annotationCanvasRef,
-}) => {
+  pendingChatText,
+  onChatTextAdded,
+}, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
@@ -50,7 +58,18 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
 
+  const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
+
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    addToChat: (message: string) => {
+      if (chatInputRef.current) {
+        chatInputRef.current.setMessage(message);
+        setViewMode('chat'); // Switch to chat view
+      }
+    },
+  }));
 
   // Load or create chat on mount
   useEffect(() => {
@@ -96,7 +115,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
     }
   }, [chatId]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => {
     if (!chatId) {
       console.error('No active chat');
       return;
@@ -164,12 +183,22 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
         resolvedMentions,
         annotationExports
       );
+      
+      // Add PDF attachments to workspace context
+      if (pdfAttachments && pdfAttachments.length > 0) {
+        // Filter out PDFs that are not ready
+        const readyPdfs = pdfAttachments.filter(pdf => pdf.status === 'ready');
+        if (readyPdfs.length > 0) {
+          workspaceContext.pdfAttachments = readyPdfs;
+        }
+      }
 
       // Save user message to database (keep mentions visible in chat)
       savedUserMessage = await saveChatMessage(chatId, {
         parentId: activeNodeId,
         role: 'user',
         content: content, // Keep original content with mentions
+        pdfAttachments: pdfAttachments && pdfAttachments.length > 0 ? pdfAttachments : undefined,
       });
 
       // Update local state
@@ -227,6 +256,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           messages: branchMessages,
           branchPath,
           workspaceContext,
+          learningMode,
         }),
       });
 
@@ -334,8 +364,8 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Header Actions - Single Rounded Card */}
-      <div className="px-4 py-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/40 p-2">
+      <div className="px-4 pt-4 pb-2">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
           {[
             { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
             { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
@@ -346,7 +376,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
                 key={id}
                 onClick={() => setViewMode(id)}
                 className={`
-                  flex-1 group rounded-lg h-9 px-3 text-sm transition-all
+                  flex-1 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
                   ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
                 `}
@@ -375,7 +405,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
-              className="h-9 w-9 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
               aria-label="Collapse AI panel"
             >
               <PanelsLeftRight className="h-4 w-4" />
@@ -409,12 +439,17 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
       {/* Chat Input (only in chat mode) */}
       {viewMode === 'chat' && (
         <ChatInput
+          ref={chatInputRef}
           onSend={handleSendMessage}
           loading={loading}
           instances={instances}
           folders={folders}
+          pendingText={pendingChatText}
+          onTextAdded={onChatTextAdded}
         />
       )}
     </div>
   );
-};
+});
+
+AISidePanel.displayName = 'AISidePanel';

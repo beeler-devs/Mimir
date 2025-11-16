@@ -12,3 +12,5 @@ export type { Tab, TabsProps } from './Tabs';
 
 export { ThemeToggle } from './ThemeToggle';
 export { Modal } from './Modal';
+export { Dropdown } from './Dropdown';
+export type { DropdownOption } from './Dropdown';

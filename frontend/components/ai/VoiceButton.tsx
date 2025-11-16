@@ -31,7 +31,7 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({ size = 'md', className
     }
   };
 
-  const dimension = size === 'sm' ? 'h-9 w-9' : 'h-11 w-11';
+  const dimension = size === 'sm' ? 'h-8 w-8' : 'h-11 w-11';
   const iconSize = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5';
 
   return (

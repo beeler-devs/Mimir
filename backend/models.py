@@ -32,6 +32,12 @@ class Mention(BaseModel):
     id: str
     name: str
 
+class PdfAttachment(BaseModel):
+    id: str
+    filename: str
+    extractedText: str
+    status: Literal["uploading", "ready", "error"] = "ready"
+
 class WorkspaceContextInstance(BaseModel):
     id: str
     title: str
@@ -50,11 +56,13 @@ class WorkspaceContext(BaseModel):
     instances: List[WorkspaceContextInstance]
     folders: List[WorkspaceContextFolder]
     annotationImages: dict[str, str] = {}  # instanceId -> base64 PNG
+    pdfAttachments: List[PdfAttachment] = []  # PDF files attached to chat
 
 class JobRequest(BaseModel):
     description: str
     topic: str = "math"
     workspace_context: Optional[WorkspaceContext] = None
+    planning_context: Optional[str] = None
 
 class JobResponse(BaseModel):
     job_id: str

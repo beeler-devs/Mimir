@@ -267,8 +267,10 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       {/* Excalidraw Canvas */}
       <div className="flex-1 overflow-hidden">
         <Excalidraw
-          ref={excalidrawRef}
-          onChange={(newElements: any[], newAppState: any, newFiles: any) => {
+          excalidrawAPI={(api) => {
+            excalidrawRef.current = api;
+          }}
+          onChange={(newElements: readonly any[], newAppState: any, newFiles: any) => {
             // Sanitize appState to ensure collaborators is always an array
             // Always ensure appState is an object (never null) with collaborators array
             const sanitizedAppState = newAppState ? {
@@ -284,14 +286,14 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             const filesChanged = JSON.stringify(newFiles) !== JSON.stringify(files);
             
             if (elementsChanged || appStateChanged || filesChanged) {
-              setElements(newElements);
+              setElements([...newElements]);
               setAppState(sanitizedAppState);
               setFiles(newFiles || {});
               
               // Notify parent of state change for saving
               if (onStateChange) {
                 onStateChange({
-                  elements: newElements,
+                  elements: [...newElements],
                   appState: sanitizedAppState,
                   files: newFiles || {},
                 });
