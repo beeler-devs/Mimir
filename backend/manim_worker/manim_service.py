@@ -204,24 +204,49 @@ class ManimService:
     
     async def _extract_and_stream_frames(self, job_id: str, video_path: Path, loop: asyncio.AbstractEventLoop):
         """Extract frames from video and stream them via WebSocket"""
+        logger.info("=" * 70)
+        logger.info(f"FRAME EXTRACTION STARTING FOR JOB {job_id}")
+        logger.info("=" * 70)
+        logger.info(f"Video path: {video_path}")
+        logger.info(f"Video exists: {video_path.exists()}")
+        
         ws_manager = get_websocket_manager()
-        if not ws_manager or not ws_manager.has_connections(job_id):
-            # No WebSocket connections, skip frame extraction
+        logger.info(f"WebSocket manager: {ws_manager}")
+        
+        if not ws_manager:
+            logger.warning("WebSocket manager not available, skipping frame extraction")
+            return
+            
+        has_connections = ws_manager.has_connections(job_id)
+        logger.info(f"WebSocket connections active for job {job_id}: {has_connections}")
+        
+        if not has_connections:
+            logger.warning(f"No WebSocket connections for job {job_id}, skipping frame extraction")
             return
         
         try:
             import subprocess
             import cv2
             
+            logger.info("OpenCV imported successfully")
+            
             # Use OpenCV to extract frames
             cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                logger.error(f"Failed to open video file: {video_path}")
+                return
+            
             frame_rate = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
             frame_number = 0
             frame_interval = max(1, int(frame_rate / 30))  # Stream at ~30 fps
             
-            logger.info(f"Extracting frames from video: {total_frames} frames at {frame_rate} fps")
+            logger.info(f"Video opened successfully:")
+            logger.info(f"  Total frames: {total_frames}")
+            logger.info(f"  Frame rate: {frame_rate} fps")
+            logger.info(f"  Frame interval: {frame_interval} (streaming at ~30fps)")
+            logger.info(f"Starting frame extraction and streaming...")
             
             while True:
                 ret, frame = cap.read()
@@ -236,6 +261,10 @@ class ManimService:
                     
                     # Send frame via WebSocket
                     loop.run_until_complete(self._send_frame(job_id, frame_number, frame_data))
+                    
+                    # Log every 30th frame
+                    if frame_number % 30 == 0:
+                        logger.info(f"Sent frame {frame_number}/{total_frames} via WebSocket")
                     
                     # Update progress
                     progress = 80 + int((frame_number / total_frames) * 15)  # 80-95%
@@ -393,6 +422,10 @@ class ManimService:
             logger.info(f"Video file size: {video_path.stat().st_size / (1024*1024):.2f} MB")
             
             # Extract and stream frames from video
+            logger.info(f"About to extract frames from: {video_path}")
+            logger.info(f"File exists: {video_path.exists()}")
+            if video_path.exists():
+                logger.info(f"File size: {video_path.stat().st_size / (1024*1024):.2f} MB")
             loop.run_until_complete(self._extract_and_stream_frames(job_id, video_path, loop))
             
             # Upload to Supabase Storage

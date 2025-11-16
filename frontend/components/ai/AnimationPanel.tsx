@@ -61,9 +61,11 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
     jobId,
     enabled: !usePolling && (status === 'pending' || status === 'running'),
     onFrame: (frameNumber, frameData) => {
+      console.log(`[AnimationPanel] Received frame ${frameNumber}, data length: ${frameData.length}`);
       framesRef.current.set(frameNumber, frameData);
       setCurrentFrame(frameNumber);
       setIsStreaming(true);
+      console.log(`[AnimationPanel] Total frames stored: ${framesRef.current.size}, isStreaming: true`);
     },
     onProgress: (phase, message, percentage) => {
       setProgressMessage(message);
@@ -241,15 +243,18 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
       )}
 
       {/* Streaming Frames */}
-      {isStreaming && framesRef.current.size > 0 && (
-        <div className="mt-3">
-          <ManimFrameStream
-            frames={framesRef.current}
-            currentFrame={currentFrame}
-            isStreaming={isStreaming}
-          />
-        </div>
-      )}
+      {(() => {
+        console.log(`[AnimationPanel] Render check: isStreaming=${isStreaming}, frames.size=${framesRef.current.size}, currentFrame=${currentFrame}`);
+        return isStreaming && framesRef.current.size > 0 && (
+          <div className="mt-3">
+            <ManimFrameStream
+              frames={framesRef.current}
+              currentFrame={currentFrame}
+              isStreaming={isStreaming}
+            />
+          </div>
+        );
+      })()}
 
       {/* Video Player (final video) */}
       {status === 'done' && videoUrl && !isStreaming && (

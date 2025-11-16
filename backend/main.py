@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
@@ -45,6 +45,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request logging middleware to debug WebSocket connections
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Skip logging for WebSocket upgrade requests
+    if request.url.path.startswith("/ws/"):
+        return await call_next(request)
+    
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    response = await call_next(request)
+    return response
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """
@@ -59,6 +71,26 @@ async def websocket_test():
     Test endpoint to verify WebSocket support is available
     """
     return {"message": "WebSocket endpoint available at /ws/manim/{job_id}"}
+
+@app.get("/ws/health")
+async def websocket_health():
+    """Check if WebSocket support is available"""
+    return {
+        "websocket_support": True,
+        "endpoint": "/ws/manim/{job_id}",
+        "status": "ready"
+    }
+
+@app.websocket("/ws/test")
+async def websocket_test_endpoint(websocket: WebSocket):
+    """Minimal WebSocket endpoint for testing connection"""
+    logger.info("WebSocket test connection attempt")
+    await websocket.accept()
+    logger.info("WebSocket test connection accepted")
+    await websocket.send_text("test")
+    logger.info("WebSocket test message sent")
+    await websocket.close()
+    logger.info("WebSocket test connection closed")
 
 @app.post("/jobs", response_model=JobResponse)
 async def create_job(request: JobRequest):
@@ -187,56 +219,67 @@ async def websocket_manim(websocket: WebSocket, job_id: str):
         websocket: WebSocket connection
         job_id: Job identifier for the animation
     """
-    logger.info(f"WebSocket connection attempt for job {job_id}")
+    logger.info(f"[WebSocket] Connection attempt for job {job_id}")
+    logger.info(f"[WebSocket] Client: {websocket.client}")
+    
     try:
-        await websocket_manager.connect(websocket, job_id)
-        logger.info(f"WebSocket accepted for job {job_id}")
+        # Accept the WebSocket connection first
+        await websocket.accept()
+        logger.info(f"[WebSocket] Connection accepted for job {job_id}")
+        
+        # Add to manager after accepting (this just tracks it, doesn't accept again)
+        websocket_manager.active_connections[job_id].add(websocket)
+        logger.info(f"[WebSocket] Registered in manager for job {job_id} (total connections: {len(websocket_manager.active_connections[job_id])})")
         
         # Send initial connection confirmation
-        try:
-            await websocket.send_json({
-                "type": "connected",
-                "job_id": job_id,
-                "message": "WebSocket connected successfully"
-            })
-            logger.info(f"Sent connection confirmation for job {job_id}")
-        except Exception as e:
-            logger.error(f"Failed to send connection confirmation for job {job_id}: {e}")
+        await websocket.send_json({
+            "type": "connected",
+            "job_id": job_id,
+            "message": "WebSocket connected successfully"
+        })
+        logger.info(f"[WebSocket] Sent connection confirmation for job {job_id}")
         
-        # Keep connection alive - wait for disconnect
-        # Use asyncio.wait_for with a long timeout to periodically check connection
-        try:
-            while True:
-                try:
-                    # Wait for either a message or a timeout
-                    # If no message arrives, we'll check again (keeps connection alive)
-                    try:
-                        message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
-                        
-                        if message.get("type") == "websocket.disconnect":
-                            logger.info(f"Client disconnected for job {job_id}")
-                            break
-                        elif message.get("type") == "websocket.receive":
-                            # Handle text messages if client sends any (optional)
-                            if "text" in message:
-                                data = message["text"]
-                                logger.debug(f"Received message from client for job {job_id}: {data}")
-                    except asyncio.TimeoutError:
-                        # No message received, but connection is still alive
-                        # Send a ping to keep connection alive
-                        try:
-                            await websocket.send_json({"type": "ping", "job_id": job_id})
-                        except:
-                            # Connection might be closed
-                            break
-                except WebSocketDisconnect:
-                    logger.info(f"WebSocket disconnected for job {job_id}")
+        # Keep connection alive - wait for disconnect or messages
+        # Use a simple loop that waits for messages or disconnect
+        while True:
+            try:
+                # Wait for a message with a timeout
+                # This keeps the connection alive and allows us to detect disconnects
+                message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"[WebSocket] Client disconnected for job {job_id}")
                     break
-        except Exception as e:
-            # Connection might have been closed or error occurred
-            logger.info(f"WebSocket connection ended for job {job_id}: {e}")
+                elif message.get("type") == "websocket.receive":
+                    # Handle text messages if client sends any (optional)
+                    if "text" in message:
+                        data = message["text"]
+                        logger.debug(f"[WebSocket] Received message from client for job {job_id}: {data}")
+            except asyncio.TimeoutError:
+                # No message received, but connection is still alive
+                # Send a ping to keep connection alive and verify it's still open
+                try:
+                    await websocket.send_json({"type": "ping", "job_id": job_id})
+                    logger.debug(f"[WebSocket] Sent ping to keep connection alive for job {job_id}")
+                except Exception as ping_error:
+                    # Connection is closed
+                    logger.info(f"[WebSocket] Connection closed while sending ping for job {job_id}: {ping_error}")
+                    break
+            except WebSocketDisconnect:
+                logger.info(f"[WebSocket] Disconnected for job {job_id}")
+                break
+            except Exception as receive_error:
+                logger.warning(f"[WebSocket] Error receiving message for job {job_id}: {receive_error}")
+                # Check if connection is still open by trying to send a message
+                try:
+                    await websocket.send_json({"type": "error", "job_id": job_id, "error": "Connection error"})
+                except:
+                    # Connection is closed
+                    break
+    except WebSocketDisconnect:
+        logger.info(f"[WebSocket] Disconnected for job {job_id}")
     except Exception as e:
-        logger.error(f"WebSocket error for job {job_id}: {e}", exc_info=True)
+        logger.error(f"[WebSocket] Error for job {job_id}: {e}", exc_info=True)
         # Try to send error message if connection is still open
         try:
             await websocket.send_json({
@@ -248,7 +291,7 @@ async def websocket_manim(websocket: WebSocket, job_id: str):
             pass
     finally:
         websocket_manager.disconnect(websocket, job_id)
-        logger.info(f"WebSocket cleanup complete for job {job_id}")
+        logger.info(f"[WebSocket] Cleanup complete for job {job_id}")
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -898,5 +941,12 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8001))
     
     logger.info(f"Starting Manim Worker on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        "main:app",  # Use string import path instead of app object
+        host="0.0.0.0", 
+        port=port,
+        ws="auto",  # Auto-detect WebSocket implementation (more compatible)
+        log_level="info",
+        access_log=True  # Enable access logging to see all requests
+    )
 

@@ -28,15 +28,24 @@ backend/manim_worker/
 
 This module is imported by `backend/main.py`. To run the server:
 
+### Option 1: Direct Python execution
 ```bash
 cd backend
 python main.py
 ```
 
-Or with uvicorn:
+### Option 2: Uvicorn CLI (Recommended for WebSocket reliability)
 ```bash
 cd backend
-uvicorn main:app --reload --port 8001
+uvicorn main:app --host 0.0.0.0 --port 8001 --log-level info
+```
+
+**Note**: The uvicorn CLI method is more reliable for WebSocket connections as it automatically handles WebSocket protocol upgrades correctly. Use this method if you experience WebSocket connection issues.
+
+For development with auto-reload:
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload --log-level info
 ```
 
 ## Configuration

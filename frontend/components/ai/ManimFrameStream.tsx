@@ -25,18 +25,26 @@ export const ManimFrameStream: React.FC<ManimFrameStreamProps> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    console.log(`[ManimFrameStream] Rendering frame ${currentFrame}, total frames: ${frames.size}`);
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.log('[ManimFrameStream] No canvas ref');
+      return;
+    }
 
     const frameData = frames.get(currentFrame);
     if (!frameData) {
+      console.log(`[ManimFrameStream] No frame data for frame ${currentFrame}`);
       setIsLoading(true);
       return;
     }
 
+    console.log(`[ManimFrameStream] Loading frame ${currentFrame}, data length: ${frameData.length}`);
+
     // Create image from base64 data
     const img = new Image();
     img.onload = () => {
+      console.log(`[ManimFrameStream] Frame ${currentFrame} image loaded successfully, size: ${img.width}x${img.height}`);
       // Set canvas size to match image
       canvas.width = img.width;
       canvas.height = img.height;
@@ -47,11 +55,12 @@ export const ManimFrameStream: React.FC<ManimFrameStreamProps> = ({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
         setIsLoading(false);
+        console.log(`[ManimFrameStream] Frame ${currentFrame} rendered to canvas`);
       }
     };
     
-    img.onerror = () => {
-      console.error('Error loading frame image');
+    img.onerror = (e) => {
+      console.error(`[ManimFrameStream] Error loading frame ${currentFrame} image:`, e);
       setIsLoading(false);
     };
     

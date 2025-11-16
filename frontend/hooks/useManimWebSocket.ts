@@ -52,6 +52,22 @@ export function useManimWebSocket({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasFallenBackRef = useRef(false);
+  
+  // Use refs for callbacks to prevent unnecessary re-renders
+  const onFrameRef = useRef(onFrame);
+  const onProgressRef = useRef(onProgress);
+  const onErrorRef = useRef(onError);
+  const onCompleteRef = useRef(onComplete);
+  const onFallbackRef = useRef(onFallback);
+  
+  // Update refs when callbacks change
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+    onProgressRef.current = onProgress;
+    onErrorRef.current = onError;
+    onCompleteRef.current = onComplete;
+    onFallbackRef.current = onFallback;
+  }, [onFrame, onProgress, onError, onComplete, onFallback]);
 
   const getWebSocketUrl = useCallback(() => {
     const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
@@ -95,7 +111,7 @@ export function useManimWebSocket({
         if (fallbackToPolling && !hasFallenBackRef.current) {
           hasFallenBackRef.current = true;
           setError('Backend not reachable, using polling mode');
-          onFallback?.();
+          onFallbackRef.current?.();
         }
         return;
       }
@@ -168,28 +184,28 @@ export function useManimWebSocket({
               console.log(`WebSocket connected for job ${message.job_id}`);
               break;
             
-            case 'frame':
-              if (message.frame_number !== undefined && message.data) {
-                onFrame?.(message.frame_number, message.data);
-              }
-              break;
-            
-            case 'progress':
-              if (message.phase && message.message !== undefined && message.percentage !== undefined) {
-                onProgress?.(message.phase, message.message, message.percentage);
-              }
-              break;
-            
-            case 'error':
-              setError(message.error || 'Unknown error');
-              onError?.(message.error || 'Unknown error');
-              break;
-            
-            case 'complete':
-              onComplete?.(message.video_url, message.total_frames);
-              // Keep connection open for a bit, then disconnect
-              setTimeout(() => disconnect(), 1000);
-              break;
+                    case 'frame':
+                      if (message.frame_number !== undefined && message.data) {
+                        onFrameRef.current?.(message.frame_number, message.data);
+                      }
+                      break;
+                    
+                    case 'progress':
+                      if (message.phase && message.message !== undefined && message.percentage !== undefined) {
+                        onProgressRef.current?.(message.phase, message.message, message.percentage);
+                      }
+                      break;
+                    
+                    case 'error':
+                      setError(message.error || 'Unknown error');
+                      onErrorRef.current?.(message.error || 'Unknown error');
+                      break;
+                    
+                    case 'complete':
+                      onCompleteRef.current?.(message.video_url, message.total_frames);
+                      // Keep connection open for a bit, then disconnect
+                      setTimeout(() => disconnect(), 1000);
+                      break;
           }
         } catch (err) {
           console.error('Error parsing WebSocket message:', err);
@@ -260,7 +276,7 @@ export function useManimWebSocket({
         onFallback?.();
       }
     }
-  }, [jobId, enabled, getWebSocketUrl, disconnect, fallbackToPolling, onFallback, onFrame, onProgress, onError, onComplete]);
+  }, [jobId, enabled, getWebSocketUrl, disconnect, fallbackToPolling]);
 
   const reconnect = useCallback(() => {
     hasFallenBackRef.current = false;
@@ -268,14 +284,18 @@ export function useManimWebSocket({
   }, [connect]);
 
   useEffect(() => {
+    console.log('[useEffect] Running with jobId:', jobId, 'enabled:', enabled);
     if (jobId && enabled) {
       connect();
+    } else {
+      disconnect();
     }
 
     return () => {
+      console.log('[useEffect] Cleanup running for jobId:', jobId);
       disconnect();
     };
-  }, [jobId, enabled, connect, disconnect]);
+  }, [jobId, enabled]); // Only re-run when jobId or enabled changes
 
   return {
     connected,

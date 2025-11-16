@@ -15,10 +15,11 @@ class WebSocketManager:
         self.active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
     
     async def connect(self, websocket: WebSocket, job_id: str):
-        """Connect a WebSocket for a specific job"""
-        await websocket.accept()
+        """Connect a WebSocket for a specific job (accepts the connection)"""
+        # Note: websocket.accept() should be called in the endpoint handler
+        # This method just adds it to the tracking
         self.active_connections[job_id].add(websocket)
-        logger.info(f"WebSocket connected for job {job_id} (total connections: {len(self.active_connections[job_id])})")
+        logger.info(f"WebSocket added to manager for job {job_id} (total connections: {len(self.active_connections[job_id])})")
     
     def disconnect(self, websocket: WebSocket, job_id: str):
         """Disconnect a WebSocket for a specific job"""
