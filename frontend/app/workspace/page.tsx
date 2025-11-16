@@ -683,7 +683,7 @@ function WorkspaceContent() {
           <CodeWorkspace
             initialFiles={activeInstance.data.files}
             initialFileTree={activeInstance.data.fileTree}
-            onSave={(files, fileTree) => {
+            onSave={({ files, fileTree, activeFilePath, openFiles }) => {
               if (!activeInstanceId) return;
 
               // Update UI immediately
@@ -696,6 +696,8 @@ function WorkspaceContent() {
                           ...instance.data,
                           files,
                           fileTree,
+                          activeFilePath,
+                          openFiles,
                         },
                       }
                     : instance
@@ -706,8 +708,8 @@ function WorkspaceContent() {
               debouncedSave(activeInstanceId, {
                 files,
                 fileTree,
-                activeFilePath: activeInstance.data.activeFilePath,
-                openFiles: activeInstance.data.openFiles,
+                activeFilePath,
+                openFiles,
               });
             }}
           />

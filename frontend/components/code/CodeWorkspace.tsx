@@ -13,7 +13,12 @@ import { nanoid } from 'nanoid';
 interface CodeWorkspaceProps {
   initialFiles?: CodeFile[];
   initialFileTree?: FileTreeNode[];
-  onSave?: (files: CodeFile[], fileTree: FileTreeNode[]) => void;
+  onSave?: (payload: {
+    files: CodeFile[];
+    fileTree: FileTreeNode[];
+    activeFilePath: string | null;
+    openFiles: string[];
+  }) => void;
 }
 
 /**
@@ -115,16 +120,16 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
     };
   }, []);
 
-  // Auto-save when files change
+  // Auto-save when files or structure changes
   useEffect(() => {
     if (onSave) {
       const timeoutId = setTimeout(() => {
-        onSave(files, fileTree);
+        onSave({ files, fileTree, activeFilePath, openFiles });
       }, 1000);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [files, fileTree, onSave]);
+  }, [files, fileTree, activeFilePath, openFiles, onSave]);
 
   // Get language from file extension
   const getLanguageFromExtension = (filename: string): CodeLanguage => {
@@ -245,20 +250,36 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
       const node = fileTree.find((n) => n.id === id);
       if (!node) return;
 
-      // Remove from tree
-      setFileTree((prev) => prev.filter((n) => n.id !== id));
+      // Collect all descendant ids (including this node)
+      const idsToDelete = new Set<string>();
+      const filePathsToDelete = new Set<string>();
 
-      // If it's a file, remove from files and close it
-      if (node.type === 'file') {
-        const path = node.path!;
-        setFiles((prev) => prev.filter((f) => f.path !== path));
-        setOpenFiles((prev) => prev.filter((p) => p !== path));
+      const collectDescendants = (targetId: string) => {
+        idsToDelete.add(targetId);
+        fileTree.forEach((child) => {
+          if (child.parentId === targetId) {
+            collectDescendants(child.id);
+          }
+        });
+      };
 
-        // Switch to another file if this was active
-        if (activeFilePath === path) {
-          const remainingFiles = files.filter((f) => f.path !== path);
-          setActiveFilePath(remainingFiles.length > 0 ? remainingFiles[0].path : null);
+      collectDescendants(id);
+
+      fileTree.forEach((n) => {
+        if (idsToDelete.has(n.id) && n.type === 'file' && n.path) {
+          filePathsToDelete.add(n.path);
         }
+      });
+
+      // Remove from tree and files
+      setFileTree((prev) => prev.filter((n) => !idsToDelete.has(n.id)));
+      setFiles((prev) => prev.filter((f) => !filePathsToDelete.has(f.path)));
+      setOpenFiles((prev) => prev.filter((p) => !filePathsToDelete.has(p)));
+
+      // Switch to another file if active file was deleted
+      if (activeFilePath && filePathsToDelete.has(activeFilePath)) {
+        const remainingFiles = files.filter((f) => !filePathsToDelete.has(f.path));
+        setActiveFilePath(remainingFiles.length > 0 ? remainingFiles[0].path : null);
       }
     },
     [fileTree, files, activeFilePath]

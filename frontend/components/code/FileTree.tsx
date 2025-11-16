@@ -38,7 +38,10 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onRename,
   onDelete,
 }) => {
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [menuState, setMenuState] = useState<{
+    id: string;
+    position: { top: number; left: number };
+  } | null>(null);
   const menuButtonRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   // Get file icon based on language
@@ -50,7 +53,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
   const Node = ({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) => {
     const isFolder = node.data.type === 'folder';
     const isActive = !isFolder && node.data.path === activeFilePath;
-    const isMenuOpen = menuOpenId === node.data.id;
+    const isMenuOpen = menuState?.id === node.data.id;
 
     const Icon = isFolder
       ? node.isOpen
@@ -123,7 +126,19 @@ export const FileTree: React.FC<FileTreeProps> = ({
           }}
           onClick={(e) => {
             e.stopPropagation();
-            setMenuOpenId(isMenuOpen ? null : node.data.id);
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const menuWidth = 176; // w-44
+            setMenuState((prev) =>
+              prev?.id === node.data.id
+                ? null
+                : {
+                    id: node.data.id,
+                    position: {
+                      top: rect.bottom + 4,
+                      left: rect.right - menuWidth,
+                    },
+                  }
+            );
           }}
           className={`
             p-1 rounded hover:bg-background/80 transition-opacity
@@ -136,15 +151,16 @@ export const FileTree: React.FC<FileTreeProps> = ({
         {/* Context menu */}
         <ContextMenu
           isOpen={isMenuOpen}
-          onClose={() => setMenuOpenId(null)}
+          onClose={() => setMenuState(null)}
           triggerRef={{ current: menuButtonRefs.current.get(node.data.id) || null }}
+          position={menuState?.id === node.data.id ? menuState.position : undefined}
           align="right"
         >
           <button
             onClick={(e) => {
               e.stopPropagation();
               node.edit();
-              setMenuOpenId(null);
+              setMenuState(null);
             }}
             className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
           >
@@ -154,7 +170,7 @@ export const FileTree: React.FC<FileTreeProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               onDelete(node.data.id);
-              setMenuOpenId(null);
+              setMenuState(null);
             }}
             className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
           >
