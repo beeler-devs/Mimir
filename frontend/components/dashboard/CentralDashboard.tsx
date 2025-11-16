@@ -11,7 +11,8 @@ import {
   Loader2,
   Upload,
   ChevronDown,
-  Sparkles
+  Paperclip,
+  X
 } from 'lucide-react';
 import { InstanceType, LearningMode, CodeFile, FileTreeNode, CodeLanguage } from '@/lib/types';
 import { useActiveLearningMode, getAllLearningModes, getLearningModeConfig } from '@/lib/learningMode';
@@ -148,10 +149,11 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
   const [loading, setLoading] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const modeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -196,7 +198,7 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
   }, [showModeDropdown]);
 
   const handleSubmit = async () => {
-    if (!input.trim() && !selectedMode) return;
+    if (isSubmitDisabled()) return;
 
     setLoading(true);
     setUploadProgress('Processing...');
@@ -206,6 +208,76 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
       let detectedType: InstanceType = selectedMode || 'text';
       let title = input.trim() || 'Untitled';
       let additionalData: any = {};
+
+      // Handle code mode with files
+      if (detectedType === 'code' && attachedFiles.length > 0) {
+        const zipFile = attachedFiles.find(f => f.name.toLowerCase().endsWith('.zip'));
+        
+        if (zipFile) {
+          // Extract zip file
+          const { files, fileTree } = await extractZipContents(zipFile);
+          title = zipFile.name.replace('.zip', '');
+          additionalData = {
+            files,
+            fileTree,
+            activeFilePath: files.length > 0 ? files[0].path : null,
+            openFiles: files.slice(0, 3).map(f => f.path),
+          };
+        } else {
+          // Handle individual code files
+          const codeFiles: CodeFile[] = [];
+          const fileTree: FileTreeNode[] = [];
+          
+          for (const file of attachedFiles) {
+            const name = file.name.toLowerCase();
+            if (name.endsWith('.js') || name.endsWith('.py') || name.endsWith('.java') || 
+                name.endsWith('.cpp') || name.endsWith('.ts') || name.endsWith('.jsx') || name.endsWith('.tsx')) {
+              const content = await file.text();
+              const language = detectLanguage(file.name);
+              
+              codeFiles.push({
+                id: file.name,
+                name: file.name,
+                path: file.name,
+                content,
+                language,
+              });
+              
+              fileTree.push({
+                id: file.name,
+                name: file.name,
+                type: 'file',
+                parentId: null,
+                language,
+                path: file.name,
+              });
+            }
+          }
+          
+          if (codeFiles.length > 0) {
+            title = codeFiles[0].name;
+            additionalData = {
+              files: codeFiles,
+              fileTree,
+              activeFilePath: codeFiles[0].path,
+              openFiles: codeFiles.slice(0, 3).map(f => f.path),
+            };
+          }
+        }
+      }
+      
+      // Handle PDF mode with file
+      if (detectedType === 'pdf' && attachedFiles.length > 0) {
+        const pdfFile = attachedFiles.find(f => f.name.toLowerCase().endsWith('.pdf'));
+        if (pdfFile) {
+          title = pdfFile.name.replace('.pdf', '');
+          additionalData = {
+            fileName: pdfFile.name,
+            fileSize: pdfFile.size,
+            processingStatus: 'pending',
+          };
+        }
+      }
 
       // Check for YouTube URL
       if (isYouTubeUrl(input)) {
@@ -226,6 +298,7 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
       // Reset
       setInput('');
       setSelectedMode(null);
+      setAttachedFiles([]);
       setUploadProgress(null);
     } catch (error) {
       console.error('Failed to create instance:', error);
@@ -235,104 +308,92 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
 
-    const file = files[0];
-    setLoading(true);
-    setUploadProgress(`Uploading ${file.name}...`);
-
-    try {
-      // Handle PDF upload
-      if (file.name.toLowerCase().endsWith('.pdf')) {
-        const type: InstanceType = selectedMode === 'annotate' ? 'annotate' : 'pdf';
-
-        // TODO: Upload to Supabase Storage and extract text
-        // For now, just create instance with file info
-        await onCreateInstance(
-          file.name.replace('.pdf', ''),
-          type,
-          {
-            fileName: file.name,
-            fileSize: file.size,
-            processingStatus: 'pending',
-          }
-        );
-      }
-
-      setUploadProgress(null);
-      e.target.value = ''; // Reset input
-    } catch (error) {
-      console.error('Upload error:', error);
-      setUploadProgress('Upload failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      alert('Please upload a .zip file');
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Command+U: open file picker for attachments
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'u') {
+      e.preventDefault();
+      attachmentInputRef.current?.click();
       return;
     }
 
-    setLoading(true);
-    setUploadProgress(`Extracting ${file.name}...`);
-
-    try {
-      // Extract zip contents
-      const { files: codeFiles, fileTree } = await extractZipContents(file);
-
-      // Create code instance with extracted files
-      await onCreateInstance(
-        file.name.replace('.zip', ''),
-        'code',
-        {
-          files: codeFiles,
-          fileTree,
-          activeFilePath: codeFiles.length > 0 ? codeFiles[0].path : null,
-          openFiles: codeFiles.slice(0, 3).map(f => f.path), // Open first 3 files
-        }
-      );
-
-      setUploadProgress(null);
-      e.target.value = ''; // Reset input
-    } catch (error) {
-      console.error('Zip extraction error:', error);
-      setUploadProgress('Failed to extract zip file');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
   };
 
+  const handleAttachmentSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newFiles = Array.from(files);
+    setAttachedFiles(prev => [...prev, ...newFiles]);
+
+    // Auto-detect mode based on file type
+    if (!selectedMode) {
+      const firstFile = newFiles[0];
+      const fileName = firstFile.name.toLowerCase();
+      
+      if (fileName.endsWith('.pdf')) {
+        setSelectedMode('pdf');
+      } else if (fileName.endsWith('.zip') || 
+                 fileName.endsWith('.js') || 
+                 fileName.endsWith('.py') || 
+                 fileName.endsWith('.java') || 
+                 fileName.endsWith('.cpp') || 
+                 fileName.endsWith('.ts')) {
+        setSelectedMode('code');
+      }
+    }
+
+    e.target.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const isSubmitDisabled = () => {
+    // If loading, disable
+    if (loading) return true;
+
+    // Code mode: require files
+    if (selectedMode === 'code') {
+      const hasValidFiles = attachedFiles.some(file => {
+        const name = file.name.toLowerCase();
+        return name.endsWith('.zip') || 
+               name.endsWith('.js') || 
+               name.endsWith('.py') || 
+               name.endsWith('.java') || 
+               name.endsWith('.cpp') ||
+               name.endsWith('.ts') ||
+               name.endsWith('.jsx') ||
+               name.endsWith('.tsx');
+      });
+      return !hasValidFiles;
+    }
+
+    // PDF mode: require PDF file
+    if (selectedMode === 'pdf') {
+      const hasPdf = attachedFiles.some(file => file.name.toLowerCase().endsWith('.pdf'));
+      return !hasPdf;
+    }
+
+    // For other modes or no mode, require text input
+    return !input.trim() && !selectedMode;
+  };
+
   return (
-    <div className="flex-1 flex items-center justify-center bg-background p-8">
+    <div className="flex-1 flex items-start justify-center bg-background p-8 pt-50">
       <div className="w-full max-w-4xl space-y-8">
         {/* Hero Section */}
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-3">
-            <Sparkles className="h-10 w-10 text-primary" />
-            <h1 className="text-4xl font-bold text-foreground">Welcome to Mimir</h1>
-          </div>
-          <p className="text-lg text-muted-foreground">
-            Your AI-powered learning companion for STEM education
-          </p>
+        <div className="text-center">
+          <h1 className="text-4xl font-normal text-foreground">Learn with Mimir</h1>
         </div>
 
         {/* Mode Selection */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-5 gap-3 max-w-2xl mx-auto">
           {modes.map((mode) => {
             const Icon = mode.icon;
             const isSelected = selectedMode === mode.type;
@@ -342,22 +403,17 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
                 key={mode.type}
                 onClick={() => setSelectedMode(isSelected ? null : mode.type)}
                 className={`
-                  p-4 rounded-xl border-2 transition-all
+                  p-3 rounded-xl border-2 transition-all
                   ${isSelected
                     ? 'border-primary bg-primary/10 shadow-md'
                     : 'border-border hover:border-primary/50 hover:bg-muted/50'
                   }
                 `}
               >
-                <div className="flex flex-col items-center gap-2">
-                  <Icon className={`h-8 w-8 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <div className="text-center">
-                    <div className={`font-medium text-sm ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                      {mode.label}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {mode.description}
-                    </div>
+                <div className="flex items-center justify-center gap-2 opacity-70">
+                  <Icon className={`h-5 w-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <div className={`text-xs ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                    {mode.label}
                   </div>
                 </div>
               </button>
@@ -365,47 +421,24 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
           })}
         </div>
 
-        {/* Upload Options (shown when mode is selected) */}
-        {(selectedMode === 'code' || selectedMode === 'pdf' || selectedMode === 'annotate') && (
-          <div className="flex justify-center gap-3">
-            {selectedMode === 'code' && (
-              <>
-                <input
-                  ref={zipInputRef}
-                  type="file"
-                  accept=".zip"
-                  onChange={handleZipUpload}
-                  className="hidden"
-                />
+        {/* Attached Files Display */}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center">
+            {attachedFiles.map((file, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-lg text-sm"
+              >
+                <File className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-foreground">{file.name}</span>
                 <button
-                  onClick={() => zipInputRef.current?.click()}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+                  onClick={() => removeAttachment(index)}
+                  className="text-muted-foreground hover:text-foreground"
                 >
-                  <Upload className="h-4 w-4" />
-                  <span>Upload ZIP file</span>
+                  <X className="h-3.5 w-3.5" />
                 </button>
-              </>
-            )}
-            {(selectedMode === 'pdf' || selectedMode === 'annotate') && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span>Upload PDF</span>
-                </button>
-              </>
-            )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -474,9 +507,29 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
               "
             />
 
+            {/* Hidden file input */}
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.zip,.js,.py,.java,.cpp,.ts,.jsx,.tsx"
+              onChange={handleAttachmentSelect}
+              className="hidden"
+            />
+
             {/* Bottom action bar */}
-            <div className="flex items-center justify-between px-3 py-2 border-t border-border">
+            <div className="flex items-center justify-between px-3 py-2">
               <div className="flex items-center gap-2">
+                {/* Paperclip attachment button */}
+                <button
+                  type="button"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                  aria-label="Attach files (Cmd+U)"
+                >
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                </button>
+
                 {/* Learning mode selector */}
                 <button
                   ref={modeButtonRef}
@@ -498,24 +551,24 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
               {/* Send button */}
               <button
                 onClick={handleSubmit}
-                disabled={loading || (!input.trim() && !selectedMode)}
+                disabled={isSubmitDisabled()}
                 className="
-                  px-4 py-2 rounded-lg
+                  px-3 py-1.5 rounded-lg
                   bg-primary text-primary-foreground
                   hover:bg-primary/90
                   disabled:opacity-50 disabled:cursor-not-allowed
                   transition-colors
-                  flex items-center gap-2
+                  flex items-center gap-1.5 text-sm
                 "
               >
                 {loading ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     <span>Creating...</span>
                   </>
                 ) : (
                   <>
-                    <Send className="h-4 w-4" />
+                    <Send className="h-3.5 w-3.5" />
                     <span>Start Learning</span>
                   </>
                 )}
@@ -524,7 +577,7 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
           </div>
 
           <p className="text-xs text-muted-foreground text-center">
-            Paste a YouTube link for lectures, upload a ZIP for code projects, or just start typing
+            Press ⌘U to attach files, paste a YouTube link for lectures, or just start typing
           </p>
         </div>
       </div>
