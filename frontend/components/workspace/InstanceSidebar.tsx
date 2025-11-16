@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Input, Modal } from '@/components/common';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { Button, Input, Modal, ContextMenu } from '@/components/common';
 import {
   FileText,
   Code2,
@@ -70,6 +70,9 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
+  
+  // Store refs for menu buttons - using useRef to hold a Map of refs
+  const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -260,6 +263,13 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         {!isEditing && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             <button
+              ref={(el) => {
+                if (el) {
+                  menuButtonRefs.current.set(instance.id, el);
+                } else {
+                  menuButtonRefs.current.delete(instance.id);
+                }
+              }}
               type="button"
               data-menu-interactive
               onClick={(event) => {
@@ -276,45 +286,44 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <MoreVertical className="h-4 w-4" />
             </button>
 
-              {isMenuOpen && (
-                <div
-                  data-menu-interactive
-                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
-                  onClick={(event) => event.stopPropagation()}
+            <ContextMenu
+              isOpen={isMenuOpen}
+              onClose={() => setMenuOpenId(null)}
+              triggerRef={{ current: menuButtonRefs.current.get(instance.id) || null }}
+              align="right"
+            >
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  startEditing(instance.id, instance.title, 'instance');
+                }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+              >
+                Rename
+              </button>
+              {onMoveToFolder && (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMoveModalInstance(instance);
+                    setMenuOpenId(null);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
                 >
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      startEditing(instance.id, instance.title, 'instance');
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                  >
-                    Rename
-                  </button>
-                  {onMoveToFolder && (
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setMoveModalInstance(instance);
-                        setMenuOpenId(null);
-                      }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                    >
-                      Move
-                    </button>
-                  )}
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(instance.id);
-                      setMenuOpenId(null);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
+                  Move
+                </button>
               )}
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(instance.id);
+                  setMenuOpenId(null);
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
+              >
+                Delete
+              </button>
+            </ContextMenu>
           </div>
         )}
       </div>
@@ -388,6 +397,13 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           {!isEditing && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
               <button
+                ref={(el) => {
+                  if (el) {
+                    menuButtonRefs.current.set(folder.id, el);
+                  } else {
+                    menuButtonRefs.current.delete(folder.id);
+                  }
+                }}
                 type="button"
                 data-menu-interactive
                 onClick={(event) => {
@@ -404,35 +420,34 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
                 <MoreVertical className="h-4 w-4" />
               </button>
 
-              {isMenuOpen && (
-                <div
-                  data-menu-interactive
-                  className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-lg shadow-lg py-1 z-50"
-                  onClick={(event) => event.stopPropagation()}
+              <ContextMenu
+                isOpen={isMenuOpen}
+                onClose={() => setMenuOpenId(null)}
+                triggerRef={{ current: menuButtonRefs.current.get(folder.id) || null }}
+                align="right"
+              >
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    startEditing(folder.id, folder.name, 'folder');
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
                 >
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      startEditing(folder.id, folder.name, 'folder');
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                  >
-                    Rename
-                  </button>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (onDeleteFolder) {
-                        onDeleteFolder(folder.id);
-                      }
-                      setMenuOpenId(null);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
+                  Rename
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (onDeleteFolder) {
+                      onDeleteFolder(folder.id);
+                    }
+                    setMenuOpenId(null);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
+                >
+                  Delete
+                </button>
+              </ContextMenu>
             </div>
           )}
         </div>
