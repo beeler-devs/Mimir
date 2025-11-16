@@ -79,6 +79,96 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
 
+  // Empty state view component
+  const EmptyStateView = () => {
+    const studyModes = [
+      {
+        id: 'chat' as StudyMode,
+        label: 'Chat',
+        icon: MessageSquare,
+        description: 'Ask questions about your PDF',
+        action: () => handleNewChat()
+      },
+      {
+        id: 'flashcards' as StudyMode,
+        label: 'Flashcards',
+        icon: BookOpen,
+        description: 'Generate flashcards for studying',
+        action: () => setStudyMode('flashcards')
+      },
+      {
+        id: 'quiz' as StudyMode,
+        label: 'Quiz',
+        icon: FileQuestion,
+        description: 'Test your knowledge',
+        action: () => setStudyMode('quiz')
+      },
+      {
+        id: 'summary' as StudyMode,
+        label: 'Summary',
+        icon: FileText,
+        description: 'Get a quick overview',
+        action: () => setStudyMode('summary')
+      },
+      {
+        id: 'podcast' as StudyMode,
+        label: 'Podcast',
+        icon: Podcast,
+        description: 'Listen to AI summary (coming soon)',
+        action: () => setStudyMode('podcast'),
+        disabled: true
+      },
+    ];
+
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+        {/* Header */}
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold mb-2">Study Your PDF</h2>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Choose a study mode to get started with AI-powered learning tools
+          </p>
+        </div>
+
+        {/* Study Mode Grid */}
+        <div className="grid grid-cols-2 gap-3 w-full max-w-md">
+          {studyModes.map(({ id, label, icon: Icon, description, action, disabled }) => (
+            <button
+              key={id}
+              onClick={action}
+              disabled={disabled}
+              className={`
+                flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all
+                ${disabled
+                  ? 'border-border bg-muted/30 opacity-50 cursor-not-allowed'
+                  : 'border-border bg-background hover:border-primary hover:bg-primary/5 hover:shadow-sm'
+                }
+              `}
+            >
+              <div className={`p-3 rounded-lg ${disabled ? 'bg-muted' : 'bg-primary/10'}`}>
+                <Icon className={`h-6 w-6 ${disabled ? 'text-muted-foreground' : 'text-primary'}`} />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-sm mb-1">{label}</p>
+                <p className="text-xs text-muted-foreground">{description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Start Chat CTA */}
+        <div className="mt-2">
+          <button
+            onClick={handleNewChat}
+            className="px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors shadow-sm"
+          >
+            Start New Chat
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Load and persist open tabs
   useEffect(() => {
     const storedTabs = localStorage.getItem('mimir.openChatTabs.pdf');
@@ -95,6 +185,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   useEffect(() => {
     if (openChatTabs.length > 0) {
       localStorage.setItem('mimir.openChatTabs.pdf', JSON.stringify(openChatTabs));
+    } else {
+      localStorage.removeItem('mimir.openChatTabs.pdf');
     }
   }, [openChatTabs]);
 
@@ -194,16 +286,20 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const handleCloseTab = (closedChatId: string) => {
     setOpenChatTabs(prev => {
       const newTabs = prev.filter(tab => tab.id !== closedChatId);
-      
+
       if (closedChatId === chatId) {
         if (newTabs.length > 0) {
           const nextTab = newTabs[newTabs.length - 1];
           handleSelectTab(nextTab.id);
         } else {
-          handleNewChat();
+          // Clear state instead of creating new chat
+          setNodes([]);
+          setActiveNodeId(null);
+          setChatId(null);
+          localStorage.removeItem('mimir.activeChatId');
         }
       }
-      
+
       return newTabs;
     });
   };
@@ -625,6 +721,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const renderContent = () => {
     switch (studyMode) {
       case 'chat':
+        // Show empty state when no tabs are open
+        if (openChatTabs.length === 0) {
+          return <EmptyStateView />;
+        }
+
+        // Normal chat view
         return (
           <>
             <div className="flex-1 overflow-y-auto">
