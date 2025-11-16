@@ -78,8 +78,8 @@ const useThinkingMessage = (active: boolean) => {
 
 
 /**
- * PDF Study Tools Panel
- * Provides chat, flashcards, quizzes, summary, and podcast features for PDF viewing
+ * Study Tools Panel
+ * Provides chat, flashcards, quizzes, summary, and podcast features for PDF and Lecture instances
  */
 export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelProps>(({
   collapseSidebar,
@@ -139,12 +139,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   // Empty state view component
   const EmptyStateView = () => {
+    const contentType = activeInstance?.type === 'lecture' ? 'Lecture' : 'PDF';
     const studyModes = [
       {
         id: 'chat' as StudyMode,
         label: 'Chat',
         icon: MessageSquare,
-        description: 'Ask questions about your PDF',
+        description: `Ask questions about your ${contentType.toLowerCase()}`,
         action: () => handleNewChat()
       },
       {
@@ -183,7 +184,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
           {/* Header */}
           <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">Study Your PDF</h2>
+            <h2 className="text-2xl font-semibold mb-2">Study Your {contentType}</h2>
           </div>
 
           {/* Study Mode Grid - 3-2 layout */}
@@ -441,10 +442,22 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     }
   }, [chatId]);
 
-  // Get full PDF text for context
-  const getPDFContext = (): string => {
+  // Get content text for context (supports both PDF and Lecture instances)
+  const getContentContext = (): string => {
     if (activeInstance?.type === 'pdf' && activeInstance.data.fullText) {
       return activeInstance.data.fullText;
+    }
+    if (activeInstance?.type === 'lecture') {
+      // For lectures, combine transcript with slides text if available
+      let content = '';
+      if (activeInstance.data.transcript) {
+        content += activeInstance.data.transcript;
+      }
+      if (activeInstance.data.slidesFullText) {
+        if (content) content += '\n\n--- Lecture Slides ---\n\n';
+        content += activeInstance.data.slidesFullText;
+      }
+      return content;
     }
     return '';
   };
@@ -472,10 +485,10 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         {}
       );
 
-      // Add PDF full text to context
-      const pdfContext = getPDFContext();
-      if (pdfContext) {
-        workspaceContext.pdfContext = pdfContext;
+      // Add content text to context (PDF or Lecture)
+      const contentContext = getContentContext();
+      if (contentContext) {
+        workspaceContext.pdfContext = contentContext;
       }
 
       // Capture current page image if available
@@ -699,10 +712,10 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     setFlashcardChatNodes([]);
     setFlashcardChatActiveNodeId(null);
     try {
-      const pdfContext = getPDFContext();
-      
-      if (!pdfContext || pdfContext.trim().length === 0) {
-        alert('No PDF content available. Please open a PDF document first.');
+      const contentContext = getContentContext();
+
+      if (!contentContext || contentContext.trim().length === 0) {
+        alert('No content available. Please upload a PDF or lecture first.');
         return;
       }
 
@@ -710,7 +723,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       // Build request body based on focus input
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
-        pdfText: pdfContext,
+        pdfText: contentContext,
         scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
       };
       if (studyModeFocus.trim().length > 0) {
@@ -781,9 +794,9 @@ The user is studying this flashcard and may ask questions about it, need help un
       );
 
       // Add PDF full text to context
-      const pdfContext = getPDFContext();
-      if (pdfContext) {
-        workspaceContext.pdfContext = pdfContext;
+      const contentContext = getContentContext();
+      if (contentContext) {
+        workspaceContext.pdfContext = contentContext;
       }
 
       // Capture current page image if available
@@ -941,10 +954,10 @@ The user is studying this flashcard and may ask questions about it, need help un
   const generateQuiz = async () => {
     setGeneratingQuiz(true);
     try {
-      const pdfContext = getPDFContext();
-      
-      if (!pdfContext || pdfContext.trim().length === 0) {
-        alert('No PDF content available. Please open a PDF document first.');
+      const contentContext = getContentContext();
+
+      if (!contentContext || contentContext.trim().length === 0) {
+        alert('No content available. Please upload a PDF or lecture first.');
         return;
       }
 
@@ -952,7 +965,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       // Build request body based on focus input
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
-        pdfText: pdfContext,
+        pdfText: contentContext,
         scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
       };
       if (studyModeFocus.trim().length > 0) {
@@ -991,10 +1004,10 @@ The user is studying this flashcard and may ask questions about it, need help un
     setGeneratingSummary(true);
     setSummary(''); // Clear previous summary
     try {
-      const pdfContext = getPDFContext();
-      
-      if (!pdfContext || pdfContext.trim().length === 0) {
-        alert('No PDF content available. Please open a PDF document first.');
+      const contentContext = getContentContext();
+
+      if (!contentContext || contentContext.trim().length === 0) {
+        alert('No content available. Please upload a PDF or lecture first.');
         return;
       }
 
@@ -1002,7 +1015,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       // Build request body based on focus input
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
-        pdfText: pdfContext,
+        pdfText: contentContext,
         scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
       };
       if (studyModeFocus.trim().length > 0) {

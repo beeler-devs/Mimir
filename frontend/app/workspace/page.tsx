@@ -26,6 +26,19 @@ const PDFViewer = dynamic(
     )
   }
 );
+
+// Dynamically import LectureViewer with SSR disabled
+const LectureViewer = dynamic(
+  () => import('@/components/tabs/LectureViewer').then((mod) => ({ default: mod.LectureViewer })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center">
+        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+);
 import type {
   WorkspaceInstance,
   InstanceType,
@@ -92,6 +105,28 @@ const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
       storagePath: undefined,
       metadata: undefined,
       fullText: undefined,
+    };
+  }
+  if (type === 'lecture') {
+    return {
+      sourceType: undefined,
+      videoUrl: undefined,
+      youtubeId: undefined,
+      transcript: undefined,
+      transcriptSegments: undefined,
+      slidesUrl: undefined,
+      slidesFileName: undefined,
+      slidesPageCount: undefined,
+      slidesFullText: undefined,
+      audioUrl: undefined,
+      audioDuration: undefined,
+      fileName: undefined,
+      fileSize: undefined,
+      duration: undefined,
+      summary: undefined,
+      metadata: undefined,
+      processingStatus: undefined,
+      processingError: undefined,
     };
   }
   return {};
@@ -549,6 +584,55 @@ function WorkspaceContent() {
     }
   };
 
+  const handleLectureUpload = async (data: {
+    sourceType: string;
+    videoUrl?: string;
+    youtubeId?: string;
+    transcript?: string;
+    transcriptSegments?: any[];
+    slidesUrl?: string;
+    slidesFileName?: string;
+    slidesPageCount?: number;
+    slidesFullText?: string;
+    audioUrl?: string;
+    duration?: number;
+    metadata?: any;
+  }) => {
+    if (!activeInstanceId) return;
+
+    const currentInstance = instances.find((i) => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'lecture') return;
+
+    // Update UI immediately with lecture data
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'lecture'
+          ? {
+              ...instance,
+              data: {
+                ...instance.data,
+                ...data,
+                processingStatus: 'ready',
+              },
+            }
+          : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: {
+          ...currentInstance.data,
+          ...data,
+          processingStatus: 'ready',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save lecture upload:', error);
+    }
+  };
+
   const handleAddToChat = (text: string) => {
     setContextText(text);
   };
@@ -563,7 +647,7 @@ function WorkspaceContent() {
   const handleCreateNewChat = async () => {
     try {
       // Use the ref to create a new chat without reloading the page
-      if (activeInstance?.type === 'pdf' && pdfStudyPanelRef.current) {
+      if ((activeInstance?.type === 'pdf' || activeInstance?.type === 'lecture') && pdfStudyPanelRef.current) {
         await pdfStudyPanelRef.current.createNewChat();
       } else if (aiSidePanelRef.current) {
         await aiSidePanelRef.current.createNewChat();
@@ -669,6 +753,30 @@ function WorkspaceContent() {
             </div>
           </div>
         );
+      case 'lecture':
+        return (
+          <div className="h-full flex flex-col">
+            <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center justify-between">
+              <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <LectureViewer
+                sourceType={activeInstance.data.sourceType}
+                videoUrl={activeInstance.data.videoUrl}
+                youtubeId={activeInstance.data.youtubeId}
+                transcript={activeInstance.data.transcript}
+                transcriptSegments={activeInstance.data.transcriptSegments}
+                slidesUrl={activeInstance.data.slidesUrl}
+                slidesFileName={activeInstance.data.slidesFileName}
+                slidesPageCount={activeInstance.data.slidesPageCount}
+                audioUrl={activeInstance.data.audioUrl}
+                metadata={activeInstance.data.metadata}
+                onUpload={handleLectureUpload}
+                onAddToChat={handleAddToChat}
+              />
+            </div>
+          </div>
+        );
       case 'annotate':
       default:
         return (
@@ -757,7 +865,7 @@ function WorkspaceContent() {
 
       <div className="flex-1 h-full overflow-hidden">
         <WorkspaceLayout sidebar={
-          activeInstance?.type === 'pdf' ? (
+          (activeInstance?.type === 'pdf' || activeInstance?.type === 'lecture') ? (
             <PDFStudyPanel
               ref={pdfStudyPanelRef}
               activeInstance={activeInstance}
