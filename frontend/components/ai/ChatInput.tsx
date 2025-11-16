@@ -17,12 +17,18 @@ interface ChatInputProps {
   onTextAdded?: () => void;
 }
 
+export interface ChatInputRef {
+  setMessage: (message: string) => void;
+  focus: () => void;
+}
+
 /**
  * Input component for sending chat messages
  * Redesigned with bottom action bar separated by a line
  * Supports @ mentions for instances and folders
+ * Supports PDF attachments with text extraction
  */
-export const ChatInput: React.FC<ChatInputProps> = ({
+export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   onSend,
   disabled = false,
   loading = false,
@@ -31,7 +37,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onPdfsChange,
   pendingText,
   onTextAdded,
-}) => {
+}, ref) => {
   const [message, setMessage] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
@@ -52,6 +58,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // PDF attachment state
   const [attachedPdfs, setAttachedPdfs] = useState<PdfAttachment[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    setMessage: (msg: string) => {
+      setMessage(msg);
+      // Focus the textarea after setting message
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
+    },
+    focus: () => {
+      textareaRef.current?.focus();
+    },
+  }));
+
   const adjustTextareaHeight = () => {
     if (!textareaRef.current) return;
     const textarea = textareaRef.current;
@@ -505,4 +526,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ChatInput.displayName = 'ChatInput';

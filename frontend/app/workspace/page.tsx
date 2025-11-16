@@ -3,8 +3,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
-import { AISidePanel } from '@/components/ai/AISidePanel';
-import { TextEditor, CodeEditor, AnnotateCanvas } from '@/components/tabs';
+import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
+import { TextEditor, AnnotateCanvas } from '@/components/tabs';
+import { CodeEditorEnhanced } from '@/components/tabs/CodeEditorEnhanced';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
@@ -103,6 +104,7 @@ function WorkspaceContent() {
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [pendingChatText, setPendingChatText] = useState<string | null>(null);
   const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
+  const aiSidePanelRef = useRef<AISidePanelRef>(null);
 
   // Load instances and folders from database on mount
   useEffect(() => {
@@ -461,11 +463,16 @@ function WorkspaceContent() {
         );
       case 'code':
         return (
-          <CodeEditor
+          <CodeEditorEnhanced
             language={activeInstance.data.language}
             code={activeInstance.data.code}
             onCodeChange={updateCode}
             onLanguageChange={updateLanguage}
+            onAddToChat={(message) => {
+              if (aiSidePanelRef.current) {
+                aiSidePanelRef.current.addToChat(message);
+              }
+            }}
           />
         );
       case 'pdf':
@@ -569,6 +576,7 @@ function WorkspaceContent() {
       <div className="flex-1 h-full overflow-hidden">
         <WorkspaceLayout sidebar={
           <AISidePanel
+            ref={aiSidePanelRef}
             activeInstance={activeInstance}
             instances={instances}
             folders={folders}

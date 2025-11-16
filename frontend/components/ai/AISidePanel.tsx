@@ -4,7 +4,7 @@ import React, { useState, useEffect, RefObject } from 'react';
 import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
-import { ChatInput } from './ChatInput';
+import { ChatInput, ChatInputRef } from './ChatInput';
 import { ChatTreeView } from './ChatTreeView';
 import { VoiceButton } from './VoiceButton';
 import { MessageSquare, GitBranch, PanelsLeftRight } from 'lucide-react';
@@ -33,11 +33,15 @@ interface AISidePanelProps {
   onChatTextAdded?: () => void;
 }
 
+export interface AISidePanelRef {
+  addToChat: (message: string) => void;
+}
+
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC<AISidePanelProps> = ({
+export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   collapseSidebar,
   activeInstance = null,
   instances = [],
@@ -45,7 +49,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
   annotationCanvasRef,
   pendingChatText,
   onChatTextAdded,
-}) => {
+}, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
@@ -54,7 +58,18 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
 
+  const chatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
+
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    addToChat: (message: string) => {
+      if (chatInputRef.current) {
+        chatInputRef.current.setMessage(message);
+        setViewMode('chat'); // Switch to chat view
+      }
+    },
+  }));
 
   // Load or create chat on mount
   useEffect(() => {
@@ -424,6 +439,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
       {/* Chat Input (only in chat mode) */}
       {viewMode === 'chat' && (
         <ChatInput
+          ref={chatInputRef}
           onSend={handleSendMessage}
           loading={loading}
           instances={instances}
@@ -434,4 +450,6 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
       )}
     </div>
   );
-};
+});
+
+AISidePanel.displayName = 'AISidePanel';
