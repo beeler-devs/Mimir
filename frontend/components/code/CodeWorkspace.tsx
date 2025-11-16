@@ -72,6 +72,9 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
 
   // Initialize Pyodide worker
   useEffect(() => {
+    // Only initialize worker in browser environment
+    if (typeof window === 'undefined') return;
+
     workerRef.current = new Worker(
       new URL('../../workers/python.worker.ts', import.meta.url)
     );
