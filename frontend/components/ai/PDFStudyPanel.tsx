@@ -135,7 +135,6 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [summaryPopupPosition, setSummaryPopupPosition] = useState({ x: 0, y: 0 });
 
   // Study mode customization options
-  const [studyModeScope, setStudyModeScope] = useState<'entire' | 'current-page' | 'custom'>('entire');
   const [studyModeFocus, setStudyModeFocus] = useState<string>('');
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
@@ -713,14 +712,19 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
+      // Build request body based on focus input
+      const requestBody: { pdfText: string; scope: string; focus?: string } = {
+        pdfText: pdfContext,
+        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+      };
+      if (studyModeFocus.trim().length > 0) {
+        requestBody.focus = studyModeFocus;
+      }
+
       const response = await fetch(`${backendUrl}/study-tools/flashcards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pdfText: pdfContext,
-          scope: studyModeScope,
-          focus: studyModeFocus || undefined
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -733,7 +737,6 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setCurrentFlashcardIndex(0);
       setShowFlashcardAnswer(false);
       // Reset customization options for next generation
-      setStudyModeScope('entire');
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating flashcards:', error);
@@ -768,14 +771,19 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
+      // Build request body based on focus input
+      const requestBody: { pdfText: string; scope: string; focus?: string } = {
+        pdfText: pdfContext,
+        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+      };
+      if (studyModeFocus.trim().length > 0) {
+        requestBody.focus = studyModeFocus;
+      }
+
       const response = await fetch(`${backendUrl}/study-tools/quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pdfText: pdfContext,
-          scope: studyModeScope,
-          focus: studyModeFocus || undefined
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -791,7 +799,6 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setUserAnswers(new Array(questions.length).fill(null));
       setQuizCompleted(false);
       // Reset customization options for next generation
-      setStudyModeScope('entire');
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating quiz:', error);
@@ -814,14 +821,19 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
+      // Build request body based on focus input
+      const requestBody: { pdfText: string; scope: string; focus?: string } = {
+        pdfText: pdfContext,
+        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+      };
+      if (studyModeFocus.trim().length > 0) {
+        requestBody.focus = studyModeFocus;
+      }
+
       const response = await fetch(`${backendUrl}/study-tools/summary/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pdfText: pdfContext,
-          scope: studyModeScope,
-          focus: studyModeFocus || undefined
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -869,7 +881,6 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       }
 
       // Reset customization options for next generation
-      setStudyModeScope('entire');
       setStudyModeFocus('');
     } catch (error) {
       console.error('Error generating summary:', error);
@@ -995,44 +1006,25 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               <div className="text-center">
                 <BookOpen className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="text-lg font-semibold mb-2">Generate Flashcards</h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  Create flashcards from your PDF to help you study and memorize key concepts
-                </p>
               </div>
 
               <div className="w-full max-w-md space-y-4">
-                {/* Scope Selector */}
+                {/* Focus Area Input */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Scope</label>
-                  <select
-                    value={studyModeScope}
-                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="entire">Entire PDF</option>
-                    <option value="current-page">Current Page Only</option>
-                    <option value="custom">Custom Focus</option>
-                  </select>
+                  <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                  <textarea
+                    value={studyModeFocus}
+                    onChange={(e) => setStudyModeFocus(e.target.value)}
+                    placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                  />
                 </div>
-
-                {/* Custom Focus Input */}
-                {studyModeScope === 'custom' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
-                    <textarea
-                      value={studyModeFocus}
-                      onChange={(e) => setStudyModeFocus(e.target.value)}
-                      placeholder="e.g., Focus on key definitions, formulas, or specific concepts..."
-                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
-                    />
-                  </div>
-                )}
 
                 {/* Generate Button */}
                 <button
                   onClick={generateFlashcards}
                   disabled={generatingFlashcards}
-                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
                 >
                   {generatingFlashcards ? 'Generating...' : 'Generate Flashcards'}
                 </button>
@@ -1131,44 +1123,25 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               <div className="text-center">
                 <FileQuestion className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="text-lg font-semibold mb-2">Generate Quiz</h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  Test your knowledge with multiple-choice questions generated from your PDF
-                </p>
               </div>
 
               <div className="w-full max-w-md space-y-4">
-                {/* Scope Selector */}
+                {/* Focus Area Input */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Scope</label>
-                  <select
-                    value={studyModeScope}
-                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="entire">Entire PDF</option>
-                    <option value="current-page">Current Page Only</option>
-                    <option value="custom">Custom Focus</option>
-                  </select>
+                  <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                  <textarea
+                    value={studyModeFocus}
+                    onChange={(e) => setStudyModeFocus(e.target.value)}
+                    placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                  />
                 </div>
-
-                {/* Custom Focus Input */}
-                {studyModeScope === 'custom' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
-                    <textarea
-                      value={studyModeFocus}
-                      onChange={(e) => setStudyModeFocus(e.target.value)}
-                      placeholder="e.g., Focus on specific topics, difficulty level, or question types..."
-                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
-                    />
-                  </div>
-                )}
 
                 {/* Generate Button */}
                 <button
                   onClick={generateQuiz}
                   disabled={generatingQuiz}
-                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
                 >
                   {generatingQuiz ? 'Generating...' : 'Generate Quiz'}
                 </button>
@@ -1419,44 +1392,25 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
               <div className="text-center">
                 <FileText className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="text-lg font-semibold mb-2">Generate Summary</h3>
-                <p className="text-sm text-muted-foreground max-w-md">
-                  Get a concise overview of your PDF's main points and key takeaways
-                </p>
               </div>
 
               <div className="w-full max-w-md space-y-4">
-                {/* Scope Selector */}
+                {/* Focus Area Input */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Scope</label>
-                  <select
-                    value={studyModeScope}
-                    onChange={(e) => setStudyModeScope(e.target.value as 'entire' | 'current-page' | 'custom')}
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="entire">Entire PDF</option>
-                    <option value="current-page">Current Page Only</option>
-                    <option value="custom">Custom Focus</option>
-                  </select>
+                  <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
+                  <textarea
+                    value={studyModeFocus}
+                    onChange={(e) => setStudyModeFocus(e.target.value)}
+                    placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
+                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                  />
                 </div>
-
-                {/* Custom Focus Input */}
-                {studyModeScope === 'custom' && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Focus Area (optional)</label>
-                    <textarea
-                      value={studyModeFocus}
-                      onChange={(e) => setStudyModeFocus(e.target.value)}
-                      placeholder="e.g., Focus on methodology, results, or specific sections..."
-                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
-                    />
-                  </div>
-                )}
 
                 {/* Generate Button */}
                 <button
                   onClick={generateSummary}
                   disabled={generatingSummary}
-                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
                 >
                   {generatingSummary ? 'Generating...' : 'Generate Summary'}
                 </button>
