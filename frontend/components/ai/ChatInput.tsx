@@ -12,6 +12,13 @@ interface ChatInputProps {
   loading?: boolean;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
+  initialMessage?: string;
+  onMessageSet?: () => void;
+}
+
+export interface ChatInputRef {
+  setMessage: (message: string) => void;
+  focus: () => void;
 }
 
 /**
@@ -19,13 +26,15 @@ interface ChatInputProps {
  * Redesigned with bottom action bar separated by a line
  * Supports @ mentions for instances and folders
  */
-export const ChatInput: React.FC<ChatInputProps> = ({ 
-  onSend, 
-  disabled = false, 
+export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
+  onSend,
+  disabled = false,
   loading = false,
   instances = [],
   folders = [],
-}) => {
+  initialMessage,
+  onMessageSet,
+}, ref) => {
   const [message, setMessage] = useState('');
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
@@ -41,6 +50,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const modeButtonRef = useRef<HTMLButtonElement>(null);
   const allModes = getAllLearningModes();
+
+  // Expose methods via ref
+  React.useImperativeHandle(ref, () => ({
+    setMessage: (msg: string) => {
+      setMessage(msg);
+      if (onMessageSet) onMessageSet();
+      // Focus the textarea after setting message
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
+    },
+    focus: () => {
+      textareaRef.current?.focus();
+    },
+  }));
+
+  // Handle initial message
+  useEffect(() => {
+    if (initialMessage) {
+      setMessage(initialMessage);
+      if (onMessageSet) onMessageSet();
+    }
+  }, [initialMessage, onMessageSet]);
+
   const adjustTextareaHeight = () => {
     if (!textareaRef.current) return;
     const textarea = textareaRef.current;
@@ -312,4 +345,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ChatInput.displayName = 'ChatInput';
