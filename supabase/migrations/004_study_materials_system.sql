@@ -37,7 +37,8 @@ CREATE POLICY "Users can create their own study materials"
 
 CREATE POLICY "Users can update their own study materials"
   ON study_materials FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own study materials"
   ON study_materials FOR DELETE
@@ -83,6 +84,13 @@ CREATE POLICY "Users can create summaries for their own study materials"
 CREATE POLICY "Users can update summaries from their own study materials"
   ON summaries FOR UPDATE
   USING (
+    EXISTS (
+      SELECT 1 FROM study_materials
+      WHERE study_materials.id = summaries.study_material_id
+      AND study_materials.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM study_materials
       WHERE study_materials.id = summaries.study_material_id
@@ -141,6 +149,13 @@ CREATE POLICY "Users can create flashcard sets for their own study materials"
 CREATE POLICY "Users can update flashcard sets from their own study materials"
   ON flashcard_sets FOR UPDATE
   USING (
+    EXISTS (
+      SELECT 1 FROM study_materials
+      WHERE study_materials.id = flashcard_sets.study_material_id
+      AND study_materials.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM study_materials
       WHERE study_materials.id = flashcard_sets.study_material_id
@@ -209,6 +224,14 @@ CREATE POLICY "Users can update flashcards from their own flashcard sets"
       WHERE flashcard_sets.id = flashcards.flashcard_set_id
       AND study_materials.user_id = auth.uid()
     )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM flashcard_sets
+      JOIN study_materials ON study_materials.id = flashcard_sets.study_material_id
+      WHERE flashcard_sets.id = flashcards.flashcard_set_id
+      AND study_materials.user_id = auth.uid()
+    )
   );
 
 CREATE POLICY "Users can delete flashcards from their own flashcard sets"
@@ -255,7 +278,8 @@ CREATE POLICY "Users can create their own flashcard reviews"
 
 CREATE POLICY "Users can update their own flashcard reviews"
   ON flashcard_reviews FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own flashcard reviews"
   ON flashcard_reviews FOR DELETE
@@ -304,6 +328,13 @@ CREATE POLICY "Users can create quizzes for their own study materials"
 CREATE POLICY "Users can update quizzes from their own study materials"
   ON quizzes FOR UPDATE
   USING (
+    EXISTS (
+      SELECT 1 FROM study_materials
+      WHERE study_materials.id = quizzes.study_material_id
+      AND study_materials.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM study_materials
       WHERE study_materials.id = quizzes.study_material_id
@@ -374,6 +405,14 @@ CREATE POLICY "Users can update quiz questions from their own quizzes"
       WHERE quizzes.id = quiz_questions.quiz_id
       AND study_materials.user_id = auth.uid()
     )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM quizzes
+      JOIN study_materials ON study_materials.id = quizzes.study_material_id
+      WHERE quizzes.id = quiz_questions.quiz_id
+      AND study_materials.user_id = auth.uid()
+    )
   );
 
 CREATE POLICY "Users can delete quiz questions from their own quizzes"
@@ -421,7 +460,8 @@ CREATE POLICY "Users can create their own quiz attempts"
 
 CREATE POLICY "Users can update their own quiz attempts"
   ON quiz_attempts FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own quiz attempts"
   ON quiz_attempts FOR DELETE
@@ -470,6 +510,13 @@ CREATE POLICY "Users can create answers for their own quiz attempts"
 CREATE POLICY "Users can update answers from their own quiz attempts"
   ON quiz_answers FOR UPDATE
   USING (
+    EXISTS (
+      SELECT 1 FROM quiz_attempts
+      WHERE quiz_attempts.id = quiz_answers.quiz_attempt_id
+      AND quiz_attempts.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM quiz_attempts
       WHERE quiz_attempts.id = quiz_answers.quiz_attempt_id
