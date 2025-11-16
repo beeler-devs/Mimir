@@ -4,18 +4,20 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
+import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
 import { TextEditor, AnnotateCanvas } from '@/components/tabs';
 import { CodeEditorEnhanced } from '@/components/tabs/CodeEditorEnhanced';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
+import { PDFViewerRef } from '@/components/tabs/PDFViewer';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { Upload, Download } from 'lucide-react';
+import { Upload, Download, MessageSquare, File, FileText, Code2, PenTool } from 'lucide-react';
 
 // Dynamically import PDFViewer with SSR disabled to avoid DOMMatrix issues
 const PDFViewer = dynamic(
   () => import('@/components/tabs/PDFViewer').then((mod) => ({ default: mod.PDFViewer })),
-  { 
+  {
     ssr: false,
     loading: () => (
       <div className="h-full flex items-center justify-center">
@@ -41,6 +43,7 @@ import {
   updateFolder as updateFolderDB,
   deleteFolder as deleteFolderDB,
 } from '@/lib/db/instances';
+import { createChat } from '@/lib/db/chats';
 
 const STORAGE_KEYS = {
   active: 'mimir.activeInstance',
@@ -103,8 +106,12 @@ function WorkspaceContent() {
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [pendingChatText, setPendingChatText] = useState<string | null>(null);
+  const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
+  const pdfStudyPanelRef = useRef<PDFStudyPanelRef>(null);
+  const pdfViewerRef = useRef<PDFViewerRef>(null);
 
   // Load instances and folders from database on mount
   useEffect(() => {
@@ -171,6 +178,41 @@ function WorkspaceContent() {
     media.addEventListener('change', handleMedia);
     return () => media.removeEventListener('change', handleMedia);
   }, [themePreference]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      // Command+K: Search instances and folders
+      if (cmdOrCtrl && e.key === 'k' && !e.shiftKey) {
+        e.preventDefault();
+        setInstanceSearchOpen(true);
+        return;
+      }
+
+      // Command+Shift+K: Search chats (only when chat panel is open)
+      if (cmdOrCtrl && e.key === 'K' && e.shiftKey) {
+        e.preventDefault();
+        // Only open if we're NOT in PDF mode (PDF has its own panel)
+        if (activeInstance?.type !== 'pdf') {
+          setChatSearchOpen(true);
+        }
+        return;
+      }
+
+      // Command+Shift+O: New chat
+      if (cmdOrCtrl && e.key === 'O' && e.shiftKey) {
+        e.preventDefault();
+        handleCreateNewChat();
+        return;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeInstance]);
 
   const activeInstance = useMemo(
     () => instances.find((instance) => instance.id === activeInstanceId) ?? null,
@@ -439,6 +481,25 @@ function WorkspaceContent() {
     setPendingChatText(text);
   };
 
+  const getCurrentPageImage = async (): Promise<string | null> => {
+    if (pdfViewerRef.current) {
+      return await pdfViewerRef.current.getCurrentPageImage();
+    }
+    return null;
+  };
+
+  const handleCreateNewChat = async () => {
+    try {
+      const newChat = await createChat();
+      localStorage.setItem('mimir.activeChatId', newChat.id);
+      // Force refresh of the chat panel by triggering a re-render
+      // The AI panel will pick up the new chat ID from localStorage
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to create new chat:', error);
+    }
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -469,7 +530,9 @@ function WorkspaceContent() {
             onCodeChange={updateCode}
             onLanguageChange={updateLanguage}
             onAddToChat={(message) => {
-              if (aiSidePanelRef.current) {
+              if (activeInstance?.type === 'pdf' && pdfStudyPanelRef.current) {
+                pdfStudyPanelRef.current.addToChat(message);
+              } else if (aiSidePanelRef.current) {
                 aiSidePanelRef.current.addToChat(message);
               }
             }}
@@ -478,6 +541,7 @@ function WorkspaceContent() {
       case 'pdf':
         return (
           <PDFViewer
+            ref={pdfViewerRef}
             pdfUrl={activeInstance.data.pdfUrl}
             fileName={activeInstance.data.fileName}
             metadata={activeInstance.data.metadata}
@@ -575,15 +639,27 @@ function WorkspaceContent() {
 
       <div className="flex-1 h-full overflow-hidden">
         <WorkspaceLayout sidebar={
-          <AISidePanel
-            ref={aiSidePanelRef}
-            activeInstance={activeInstance}
-            instances={instances}
-            folders={folders}
-            annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
-            pendingChatText={pendingChatText}
-            onChatTextAdded={() => setPendingChatText(null)}
-          />
+          activeInstance?.type === 'pdf' ? (
+            <PDFStudyPanel
+              ref={pdfStudyPanelRef}
+              activeInstance={activeInstance}
+              instances={instances}
+              folders={folders}
+              pendingChatText={pendingChatText}
+              onChatTextAdded={() => setPendingChatText(null)}
+              getCurrentPageImage={getCurrentPageImage}
+            />
+          ) : (
+            <AISidePanel
+              ref={aiSidePanelRef}
+              activeInstance={activeInstance}
+              instances={instances}
+              folders={folders}
+              annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
+              pendingChatText={pendingChatText}
+              onChatTextAdded={() => setPendingChatText(null)}
+            />
+          )
         }>
           <div className="h-full p-4 flex flex-col gap-4">
             {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text' || activeInstance?.type === 'code') && (
@@ -632,9 +708,216 @@ function WorkspaceContent() {
         onClose={() => setNewInstanceOpen(false)}
         onCreate={handleCreateInstance}
       />
+
+      {/* Search Modals */}
+      <SearchInstancesModal
+        open={instanceSearchOpen}
+        instances={instances}
+        onClose={() => setInstanceSearchOpen(false)}
+        onSelect={(id) => {
+          setActiveInstanceId(id);
+          setInstanceSearchOpen(false);
+        }}
+      />
+
+      <ChatSearchModal
+        open={chatSearchOpen}
+        onClose={() => setChatSearchOpen(false)}
+      />
     </div>
   );
 }
+
+// Search Instances Modal (reused from InstanceSidebar)
+const typeMeta = {
+  text: { label: 'Text', icon: FileText },
+  code: { label: 'Code', icon: Code2 },
+  annotate: { label: 'Annotate', icon: PenTool },
+  pdf: { label: 'PDF', icon: File },
+} as const;
+
+interface SearchInstancesModalProps {
+  open: boolean;
+  instances: WorkspaceInstance[];
+  onClose: () => void;
+  onSelect: (id: string) => void;
+}
+
+const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
+  open,
+  instances,
+  onClose,
+  onSelect,
+}) => {
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => setQuery(''));
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  if (!open) return null;
+
+  const filteredInstances = instances.filter(instance =>
+    instance.title.toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative z-10 w-full max-w-xl bg-card border border-border rounded-3xl shadow-2xl overflow-hidden">
+        <div className="flex flex-col max-h-[70vh] bg-[#F5F5F5]">
+          <input
+            value={query}
+            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search instances..."
+            className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-[#F5F5F5] focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                onClose();
+              } else if (e.key === 'Enter' && filteredInstances.length > 0) {
+                onSelect(filteredInstances[0].id);
+              }
+            }}
+          />
+          <div className="flex-1 overflow-y-auto p-2">
+            {filteredInstances.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                {query ? 'No instances found' : 'Start typing to search'}
+              </div>
+            ) : (
+              filteredInstances.map((instance) => {
+                const meta = typeMeta[instance.type];
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={instance.id}
+                    onClick={() => onSelect(instance.id)}
+                    className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[#FAFAFA]"
+                  >
+                    <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <Icon className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{instance.title}</p>
+                      <p className="text-xs text-muted-foreground">{meta.label}</p>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Chat Search Modal
+interface ChatSearchModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const ChatSearchModal: React.FC<ChatSearchModalProps> = ({ open, onClose }) => {
+  const [query, setQuery] = useState('');
+  const [chats, setChats] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    loadChats();
+  }, [open]);
+
+  const loadChats = async () => {
+    setLoading(true);
+    try {
+      const { loadUserChats } = await import('@/lib/db/chats');
+      const userChats = await loadUserChats();
+      setChats(userChats);
+    } catch (error) {
+      console.error('Failed to load chats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const filteredChats = chats.filter(chat =>
+    (chat.title || 'New Chat').toLowerCase().includes(query.toLowerCase())
+  );
+
+  const handleSelectChat = (chatId: string) => {
+    localStorage.setItem('mimir.activeChatId', chatId);
+    window.location.reload();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-10">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative z-10 w-full max-w-xl bg-card border border-border rounded-3xl shadow-2xl overflow-hidden">
+        <div className="flex flex-col max-h-[70vh] bg-[#F5F5F5]">
+          <input
+            value={query}
+            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search chats..."
+            className="rounded-t-lg rounded-b-none border-0 border-b border-border px-5 py-6 text-base bg-[#F5F5F5] focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                onClose();
+              } else if (e.key === 'Enter' && filteredChats.length > 0) {
+                handleSelectChat(filteredChats[0].id);
+              }
+            }}
+          />
+          <div className="flex-1 overflow-y-auto p-2">
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+              </div>
+            ) : filteredChats.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                {query ? 'No chats found' : chats.length === 0 ? 'No chats yet' : 'Start typing to search'}
+              </div>
+            ) : (
+              filteredChats.map((chat) => {
+                const displayTitle = chat.title || 'New Chat';
+                const createdDate = new Date(chat.created_at).toLocaleDateString();
+                return (
+                  <button
+                    key={chat.id}
+                    onClick={() => handleSelectChat(chat.id)}
+                    className="w-full px-3 py-2.5 flex items-center gap-3 text-left rounded-lg text-sm transition-colors hover:bg-[#FAFAFA]"
+                  >
+                    <span className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <MessageSquare className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{displayTitle}</p>
+                      <p className="text-xs text-muted-foreground">{createdDate}</p>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function WorkspacePage() {
   return (
