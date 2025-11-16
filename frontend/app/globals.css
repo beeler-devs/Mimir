@@ -104,6 +104,35 @@ body {
   background: var(--foreground);
 }
 
+/* Hide scrollbar by default, show on hover */
+.scrollbar-hide-show {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide-show:hover {
+  scrollbar-color: var(--border) transparent;
+}
+
+.scrollbar-hide-show::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.scrollbar-hide-show::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-hide-show::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.scrollbar-hide-show:hover::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
 /* React-PDF styles */
 .react-pdf__Document {
   display: flex;

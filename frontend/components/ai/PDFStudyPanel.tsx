@@ -1017,7 +1017,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     <div className="flex flex-col h-full">
       {/* Header with Study Mode Tabs */}
       <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1 overflow-x-auto scrollbar-hide-show">
           {[
             { id: 'chat' as StudyMode, label: 'Chat', icon: MessageSquare },
             { id: 'flashcards' as StudyMode, label: 'Flashcards', icon: BookOpen },
