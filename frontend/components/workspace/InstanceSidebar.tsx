@@ -15,7 +15,8 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
-  Search
+  Search,
+  Video
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
 
@@ -24,6 +25,7 @@ const typeMeta = {
   code: { label: 'Code', icon: Code2 },
   annotate: { label: 'Annotate', icon: PenTool },
   pdf: { label: 'PDF', icon: File },
+  lecture: { label: 'Lecture', icon: Video },
 } as const;
 
 interface InstanceSidebarProps {

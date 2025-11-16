@@ -192,7 +192,7 @@ export interface Folder {
 }
 
 // Workspace / instance types
-export type InstanceType = 'text' | 'code' | 'annotate' | 'pdf';
+export type InstanceType = 'text' | 'code' | 'annotate' | 'pdf' | 'lecture';
 
 interface BaseInstance {
   id: string;
@@ -249,7 +249,49 @@ export interface PDFInstance extends BaseInstance {
   };
 }
 
-export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance | PDFInstance;
+export type LectureSourceType = 'youtube' | 'recording' | 'slides' | 'upload' | 'slides-recording';
+
+export interface LectureInstance extends BaseInstance {
+  type: 'lecture';
+  data: {
+    sourceType?: LectureSourceType;
+    // Video/YouTube
+    videoUrl?: string;
+    youtubeId?: string;
+    // Transcript
+    transcript?: string;
+    transcriptSegments?: Array<{
+      text: string;
+      timestamp: number;
+      duration?: number;
+    }>;
+    // Slides (PDF)
+    slidesUrl?: string;
+    slidesFileName?: string;
+    slidesPageCount?: number;
+    slidesFullText?: string;
+    // Audio recording
+    audioUrl?: string;
+    audioDuration?: number;
+    // General metadata
+    fileName?: string;
+    fileSize?: number;
+    duration?: number; // in seconds
+    summary?: string;
+    metadata?: {
+      title?: string;
+      speaker?: string;
+      date?: string;
+      subject?: string;
+      keywords?: string;
+    };
+    // Processing status
+    processingStatus?: 'pending' | 'processing' | 'ready' | 'error';
+    processingError?: string;
+  };
+}
+
+export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance | PDFInstance | LectureInstance;
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
