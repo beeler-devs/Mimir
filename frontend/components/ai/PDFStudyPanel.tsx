@@ -21,6 +21,7 @@ import {
 } from '@/lib/db/chats';
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
+import { useActiveLearningMode } from '@/lib/learningMode';
 
 type StudyMode = 'chat' | 'flashcards' | 'quiz' | 'summary' | 'podcast';
 
@@ -75,19 +76,6 @@ const useThinkingMessage = (active: boolean) => {
   return active ? message : '';
 };
 
-const buildHintFromCard = (front: string, back: string) => {
-  const fallback = 'Think about the key concept the question is pointing to, not the exact wording.';
-  if (!back) return fallback;
-
-  const sentences = back.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
-  const source = sentences[0] || back;
-  const words = source.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return fallback;
-
-  const visibleCount = Math.max(4, Math.ceil(words.length * 0.35));
-  const hintSnippet = words.slice(0, visibleCount).join(' ');
-  return `Hint: it involves ${hintSnippet}... Reflect on how that connects to "${front}".`;
-};
 
 /**
  * PDF Study Tools Panel
@@ -126,8 +114,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [flashcardHint, setFlashcardHint] = useState<string>('');
-  const [hintLoading, setHintLoading] = useState(false);
+  
+  // Flashcard chat state (separate from main chat)
+  const [flashcardChatNodes, setFlashcardChatNodes] = useState<ChatNode[]>([]);
+  const [flashcardChatActiveNodeId, setFlashcardChatActiveNodeId] = useState<string | null>(null);
+  const [flashcardChatLoading, setFlashcardChatLoading] = useState(false);
 
   // Text selection state for summary
   const [selectedSummaryText, setSelectedSummaryText] = useState<string>('');
@@ -138,10 +129,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [studyModeFocus, setStudyModeFocus] = useState<string>('');
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
+  const flashcardChatInputRef = React.useRef<ChatInputRef>(null);
   const activeBranch = activeNodeId ? getActiveBranch(nodes, activeNodeId) : [];
+  const flashcardChatActiveBranch = flashcardChatActiveNodeId ? getActiveBranch(flashcardChatNodes, flashcardChatActiveNodeId) : [];
   const flashcardThinkingMessage = useThinkingMessage(generatingFlashcards);
   const quizThinkingMessage = useThinkingMessage(generatingQuiz);
   const summaryThinkingMessage = useThinkingMessage(generatingSummary);
+  const [activeLearningMode] = useActiveLearningMode();
 
   // Empty state view component
   const EmptyStateView = () => {
@@ -701,7 +695,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   const generateFlashcards = async () => {
     setGeneratingFlashcards(true);
-    setFlashcardHint('');
+    // Clear flashcard chat when generating new flashcards
+    setFlashcardChatNodes([]);
+    setFlashcardChatActiveNodeId(null);
     try {
       const pdfContext = getPDFContext();
       
@@ -746,16 +742,199 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     }
   };
 
-  const handleAskFlashcardHint = () => {
-    if (!flashcards.length) return;
-    setHintLoading(true);
+  // Handler for flashcard chat messages
+  const handleFlashcardChatMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => {
+    if (!flashcards.length) {
+      console.error('No flashcards available');
+      return;
+    }
+
+    setFlashcardChatLoading(true);
+    let savedUserMessage: ChatNode | null = null;
+
     try {
       const currentCard = flashcards[currentFlashcardIndex];
-      const hint = buildHintFromCard(currentCard.front, currentCard.back);
-      setFlashcardHint(hint);
-      setShowFlashcardAnswer(false);
+      
+      // Build flashcard context message
+      const flashcardContext = `Context: You are helping the user with a flashcard from their PDF study session.
+
+Current Flashcard:
+Front: ${currentCard.front}
+Back: ${currentCard.back}
+
+The user is studying this flashcard and may ask questions about it, need help understanding the concept, or want guidance on how to remember it.`;
+
+      // Combine context with user's question
+      const fullMessage = `${flashcardContext}\n\n${content}`;
+
+      // Parse mentions from message
+      const rawMentions = parseMentions(fullMessage);
+      const resolvedMentions = resolveMentions(rawMentions, instances, folders);
+
+      // Build workspace context
+      const workspaceContext = buildWorkspaceContext(
+        activeInstance,
+        instances,
+        folders,
+        resolvedMentions,
+        {}
+      );
+
+      // Add PDF full text to context
+      const pdfContext = getPDFContext();
+      if (pdfContext) {
+        workspaceContext.pdfContext = pdfContext;
+      }
+
+      // Capture current page image if available
+      if (getCurrentPageImage) {
+        try {
+          const pageImage = await getCurrentPageImage();
+          if (pageImage) {
+            workspaceContext.currentPageImage = pageImage;
+          }
+        } catch (error) {
+          console.error('Failed to capture page image:', error);
+        }
+      }
+
+      // Create a temporary user message node (we don't save flashcard chat to database)
+      const userMessageId = `flashcard-user-${Date.now()}`;
+      const userMessage: ChatNode = {
+        id: userMessageId,
+        parentId: flashcardChatActiveNodeId,
+        role: 'user',
+        content: content, // Store only the user's question, not the context
+        createdAt: new Date().toISOString(),
+      };
+
+      // Update local state
+      const updatedNodes = [...flashcardChatNodes, userMessage];
+      setFlashcardChatNodes(updatedNodes);
+      setFlashcardChatActiveNodeId(userMessageId);
+
+      // Create a temporary streaming message node
+      const streamingMessageId = `flashcard-streaming-${Date.now()}`;
+      const streamingMessage: ChatNode = {
+        id: streamingMessageId,
+        parentId: userMessageId,
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+      };
+
+      // Add streaming message to state
+      const nodesWithStreaming = [...updatedNodes, streamingMessage];
+      setFlashcardChatNodes(nodesWithStreaming);
+      setFlashcardChatActiveNodeId(streamingMessageId);
+
+      // Stream the response
+      const branchMessages = getActiveBranch(updatedNodes, userMessageId)
+        .map(n => ({
+          role: n.role,
+          content: n.role === 'user' ? fullMessage : (n.content || ''), // Include context for user messages
+        }))
+        .filter((msg, idx, arr) => {
+          const isFinalAssistant = idx === arr.length - 1 && msg.role === 'assistant';
+          const hasContent = msg.content && msg.content.trim().length > 0;
+          return hasContent || isFinalAssistant;
+        });
+
+      const branchPath = buildBranchPath(updatedNodes, userMessageId);
+      const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
+
+      const response = await fetch(`${backendUrl}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: branchMessages,
+          branchPath,
+          workspaceContext,
+          learningMode: learningMode || activeLearningMode,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      let suggestedAnimation: AnimationSuggestion | undefined = undefined;
+
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'chunk') {
+                fullContent += data.content;
+                setFlashcardChatNodes(prev => prev.map(node =>
+                  node.id === streamingMessageId
+                    ? { ...node, content: fullContent }
+                    : node
+                ));
+              } else if (data.type === 'done') {
+                fullContent = data.content;
+                suggestedAnimation = data.suggestedAnimation;
+
+                // Replace streaming message with final message
+                const finalMessage: ChatNode = {
+                  id: streamingMessageId,
+                  parentId: userMessageId,
+                  role: 'assistant',
+                  content: fullContent,
+                  suggestedAnimation,
+                  createdAt: new Date().toISOString(),
+                };
+
+                setFlashcardChatNodes(prev => prev.map(node =>
+                  node.id === streamingMessageId
+                    ? finalMessage
+                    : node
+                ));
+                setFlashcardChatActiveNodeId(streamingMessageId);
+              } else if (data.type === 'error') {
+                throw new Error(data.content);
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error sending flashcard chat message:', error);
+
+      // Remove streaming message if it exists
+      setFlashcardChatNodes(prev => prev.filter(node => !node.id.startsWith('flashcard-streaming-')));
+
+      // Add error message
+      const errorMessage: ChatNode = {
+        id: `flashcard-error-${Date.now()}`,
+        parentId: flashcardChatActiveNodeId,
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.',
+        createdAt: new Date().toISOString(),
+      };
+      setFlashcardChatNodes(prev => [...prev, errorMessage]);
+      setFlashcardChatActiveNodeId(errorMessage.id);
     } finally {
-      setHintLoading(false);
+      setFlashcardChatLoading(false);
     }
   };
 
@@ -1035,7 +1214,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
         const currentCard = flashcards[currentFlashcardIndex];
         return (
-          <div className="flex-1 flex flex-col p-4 gap-4">
+          <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
               <div className="flex items-center gap-4">
@@ -1047,13 +1226,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                 </button>
               </div>
             </div>
-            <div className="flex flex-col items-center gap-4 flex-1">
+            <div className="flex flex-col items-center gap-4 flex-1 min-h-0 w-full max-w-3xl mx-auto">
               <div
-                className="relative w-full max-w-4xl aspect-[16/9] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm"
+                className="relative w-full h-[300px] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm"
                 onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
               >
-                <div className="text-center mx-auto max-w-3xl">
-                  <p className="text-xl font-semibold mb-4">
+                <div className="text-center mx-auto max-w-full">
+                  <p className="text-xl font-semibold mb-4 break-words">
                     {showFlashcardAnswer ? currentCard.back : currentCard.front}
                   </p>
                   <p className="text-sm text-muted-foreground">
@@ -1061,12 +1240,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2 w-full max-w-3xl">
+              <div className="flex gap-2 w-full">
                 <button
                   onClick={() => {
                     setCurrentFlashcardIndex(Math.max(0, currentFlashcardIndex - 1));
                     setShowFlashcardAnswer(false);
-                    setFlashcardHint('');
+                    // Keep flashcard chat when navigating - it's context-aware
                   }}
                   disabled={currentFlashcardIndex === 0}
                   className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
@@ -1077,7 +1256,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                   onClick={() => {
                     setCurrentFlashcardIndex(Math.min(flashcards.length - 1, currentFlashcardIndex + 1));
                     setShowFlashcardAnswer(false);
-                    setFlashcardHint('');
+                    // Keep flashcard chat when navigating - it's context-aware
                   }}
                   disabled={currentFlashcardIndex === flashcards.length - 1}
                   className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
@@ -1085,22 +1264,38 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                   Next
                 </button>
               </div>
-              <div className="w-full max-w-3xl border-t border-border pt-4 flex flex-col gap-2">
+              
+              {/* Flashcard Chat Interface */}
+              <div className="w-full flex flex-col gap-3 flex-1 min-h-0">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">Need a nudge? Ask for a hint without revealing the answer.</p>
-                  <button
-                    onClick={handleAskFlashcardHint}
-                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors disabled:opacity-60"
-                    disabled={hintLoading}
-                  >
-                    {hintLoading ? 'Thinking...' : 'Ask AI for a hint'}
-                  </button>
+                  <p className="text-sm font-medium text-foreground">Ask questions about this flashcard</p>
                 </div>
-                {flashcardHint && (
-                  <div className="p-3 bg-muted/40 border border-border rounded-lg text-sm text-muted-foreground">
-                    {flashcardHint}
-                  </div>
-                )}
+                <div className="flex-1 min-h-[200px] overflow-y-auto border border-border rounded-lg bg-background">
+                  <ChatMessageList
+                    messages={flashcardChatActiveBranch}
+                    workspaceContext={buildWorkspaceContext(
+                      activeInstance,
+                      instances,
+                      folders,
+                      [],
+                      {}
+                    )}
+                    onAddToChat={(text) => {
+                      if (flashcardChatInputRef.current) {
+                        flashcardChatInputRef.current.setContext(text);
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex-shrink-0 w-full">
+                  <ChatInput
+                    ref={flashcardChatInputRef}
+                    onSend={handleFlashcardChatMessage}
+                    loading={flashcardChatLoading}
+                    instances={instances}
+                    folders={folders}
+                  />
+                </div>
               </div>
             </div>
           </div>
