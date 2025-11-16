@@ -115,6 +115,7 @@ export interface WorkspaceContextInstance {
   content?: string; // For text instances
   code?: string; // For code instances
   language?: CodeLanguage; // For code instances
+  fullText?: string; // For PDF and lecture instances
 }
 
 export interface WorkspaceContextFolder {

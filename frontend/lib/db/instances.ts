@@ -163,6 +163,12 @@ export async function loadUserInstances(): Promise<WorkspaceInstance[]> {
           type: 'pdf' as const,
           data: instance.data,
         };
+      case 'lecture':
+        return {
+          ...baseInstance,
+          type: 'lecture' as const,
+          data: instance.data,
+        };
       default:
         throw new Error(`Unknown instance type: ${instance.type}`);
     }
@@ -237,6 +243,8 @@ export async function createInstance(
       return { ...baseInstance, type: 'annotate' as const, data: data.data };
     case 'pdf':
       return { ...baseInstance, type: 'pdf' as const, data: data.data };
+    case 'lecture':
+      return { ...baseInstance, type: 'lecture' as const, data: data.data };
     default:
       throw new Error(`Unknown instance type: ${data.type}`);
   }

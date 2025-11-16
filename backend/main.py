@@ -586,7 +586,10 @@ async def chat_stream(request: Request):
                 f"  - pdfAttachments: {len(ws_ctx.get('pdfAttachments', []))}")
             logger.info(
                 f"  - attachments: {ws_ctx.get('attachments', 'NOT_PRESENT')}")
-            logger.info(f"  - pdfContext: {bool(ws_ctx.get('pdfContext'))}")
+            pdf_context = ws_ctx.get('pdfContext', '')
+            logger.info(f"  - pdfContext: {bool(pdf_context)}")
+            if pdf_context:
+                logger.info(f"  - pdfContext length: {len(pdf_context)}")
             logger.info(
                 f"  - currentPageImage: {bool(ws_ctx.get('currentPageImage'))}")
 
@@ -701,6 +704,17 @@ async def chat_stream(request: Request):
                                 text_preview += f"\n... (truncated, showing first {max_pdf_length} characters of {len(pdf.extractedText)} total)"
                             context_parts.append(f"\n[PDF: {pdf.filename}]")
                             context_parts.append(text_preview)
+
+                # Add PDF context (full text from active PDF/Lecture instance)
+                if chat_request.workspaceContext.pdfContext:
+                    pdf_context = chat_request.workspaceContext.pdfContext
+                    # Truncate very long PDF text to avoid token limits
+                    max_pdf_length = 10000  # ~10KB
+                    text_preview = pdf_context[:max_pdf_length]
+                    if len(pdf_context) > max_pdf_length:
+                        text_preview += f"\n... (truncated, showing first {max_pdf_length} characters of {len(pdf_context)} total)"
+                    context_parts.append("\n[PDF Document Content:]")
+                    context_parts.append(text_preview)
 
                 if context_parts:
                     context_description = "\n".join(context_parts) + "\n"
