@@ -6,6 +6,24 @@ Mimir is a personal AI professor for college students, especially in STEM fields
 
 ---
 
+## 🎤 Short Pitch
+
+**Mimir: Your Personal AI Professor**
+
+Imagine having a professor available 24/7 who doesn't just give you answers—they guide you step-by-step through problems, explain complex concepts with visual animations, and help you truly understand the material. That's Mimir.
+
+Built for STEM students, Mimir combines AI-powered tutoring with interactive workspaces for text, code, and PDF annotations. Whether you're stuck on a calculus problem, debugging code, or trying to understand a research paper, Mimir provides personalized, stepwise guidance that adapts to your learning style.
+
+**Key Differentiators:**
+- 🧠 **Stepwise Learning**: Get guided help, not just answers
+- 🎬 **Visual Explanations**: Auto-generated animations for complex concepts
+- 🌳 **Conversation Branching**: Explore multiple solution paths simultaneously
+- 📝 **Multi-Modal Workspaces**: Text, code, and PDF annotation in one platform
+
+Stop memorizing. Start understanding.
+
+---
+
 ## 🎯 Product Vision
 
 Mimir serves as an intelligent teaching assistant that helps students:

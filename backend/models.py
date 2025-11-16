@@ -55,6 +55,7 @@ class JobRequest(BaseModel):
     description: str
     topic: str = "math"
     workspace_context: Optional[WorkspaceContext] = None
+    planning_context: Optional[str] = None
 
 class JobResponse(BaseModel):
     job_id: str

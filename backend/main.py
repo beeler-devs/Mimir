@@ -99,10 +99,18 @@ async def create_job(request: JobRequest):
             if context_parts:
                 student_context = "\n".join(context_parts)
         
+        # Combine student_context with planning_context if both exist
+        final_context = student_context
+        if request.planning_context:
+            if final_context:
+                final_context = f"{request.planning_context}\n\n--- Workspace Context ---\n{final_context}"
+            else:
+                final_context = request.planning_context
+        
         job_id = manim_service.create_job(
             description=request.description,
             topic=request.topic,
-            student_context=student_context
+            student_context=final_context
         )
         
         return JobResponse(
@@ -149,6 +157,143 @@ async def get_job_status(job_id: str):
         video_url=job_status.get("video_url"),
         error=job_status.get("error"),
     )
+
+@app.post("/jobs/plan")
+async def plan_animation(request: JobRequest):
+    """
+    Generate a detailed animation plan using Claude Sonnet
+    Streams planning content as Server-Sent Events (SSE)
+    
+    This endpoint is called before animation generation to create
+    a comprehensive plan that will guide Manim code generation.
+    
+    Args:
+        request: Job request with description, topic, and optional workspace context
+    
+    Returns:
+        StreamingResponse with SSE format containing planning chunks
+    """
+    def generate():
+        try:
+            # Get Claude API key from environment
+            claude_api_key = os.getenv("CLAUDE_API_KEY")
+            
+            if not claude_api_key:
+                logger.warning("CLAUDE_API_KEY not set, returning error")
+                error_response = {
+                    "type": "error",
+                    "content": "CLAUDE_API_KEY not configured. Please add it to backend/.env"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+            
+            # Initialize Anthropic client
+            client = Anthropic(api_key=claude_api_key)
+            
+            # Build context description from workspace context
+            context_description = ""
+            if request.workspace_context:
+                context_parts = []
+                
+                # Add folder information
+                if request.workspace_context.folders:
+                    folder_names = [f.name for f in request.workspace_context.folders]
+                    context_parts.append(f"User is working in folder(s): {', '.join(folder_names)}")
+                
+                # Add instance information
+                if request.workspace_context.instances:
+                    context_parts.append("\nCurrent workspace context includes:")
+                    for idx, inst in enumerate(request.workspace_context.instances):
+                        is_active = idx == 0
+                        active_marker = " (CURRENTLY OPEN)" if is_active else ""
+                        context_parts.append(f"\n- {inst.title} ({inst.type}){active_marker}:")
+                        
+                        if inst.type == "text" and inst.content:
+                            context_parts.append(f"  Content: {inst.content[:500]}{'...' if len(inst.content) > 500 else ''}")
+                        elif inst.type == "code" and inst.code:
+                            context_parts.append(f"  Language: {inst.language}")
+                            context_parts.append(f"  Code: {inst.code[:500]}{'...' if len(inst.code) > 500 else ''}")
+                
+                if context_parts:
+                    context_description = "\n".join(context_parts) + "\n"
+            
+            # System prompt for animation planning
+            system_prompt = f"""You are an expert educational animator planning a Manim animation for a student.
+
+Your role: Create a detailed animation plan that will help generate high-quality Manim code.
+
+Context: Manim is a mathematical animation library created by 3Blue1Brown. The generated code will visualize concepts using:
+- Mathematical objects: Axes, graphs, equations (MathTex), number lines
+- Geometric shapes: Circle, Square, Rectangle, Polygon, Arrow, Dot
+- Transformations: Create, Transform, MoveAlongPath, Rotate, Scale
+- Layouts: to_edge(), next_to(), move_to(), arrange()
+- Colors: RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE, etc.
+
+{context_description if context_description else ""}
+
+Plan requirements:
+1. Break down the concept into clear visual components
+2. Suggest specific Manim objects to use (e.g., "Use Axes with range [-5, 5]", "Create Dot at origin", "Use Arrow for vector")
+3. Outline animation sequence in phases:
+   - Phase 1: Title/Introduction (1-2 seconds)
+   - Phase 2: Setup with axes/labels/initial objects (2-3 seconds)
+   - Phase 3: Main demonstration/animation (5-10 seconds)
+   - Phase 4: Conclusion with key insight (1-2 seconds)
+4. Recommend specific colors for different elements (e.g., "particle in RED", "path in YELLOW")
+5. Suggest labels, annotations, and text that enhance understanding
+6. Consider educational clarity - what sequence helps students understand best?
+7. Think about pacing - where to use self.wait(), how long animations should run
+
+Output format: A detailed, structured plan (300-600 words) that guides code generation.
+Include specific Manim method names, colors, positioning, and timing recommendations.
+
+Remember: You are creating a plan, not writing code. Focus on WHAT to visualize and HOW to sequence it for maximum educational impact."""
+            
+            # User prompt with the concept to visualize
+            user_prompt = f"""Create a detailed animation plan for the following concept:
+
+Concept: {request.description}
+Topic: {request.topic}
+
+Provide a comprehensive plan that will guide the creation of an educational Manim animation.
+Focus on clarity, visual hierarchy, and step-by-step understanding."""
+            
+            # Stream from Claude API using Sonnet for high-quality planning
+            planning_model = "claude-sonnet-4-5"
+            full_content = ""
+            
+            with client.messages.stream(
+                model=planning_model,
+                max_tokens=2048,  # Allow longer planning responses
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            ) as stream:
+                for text_block in stream.text_stream:
+                    full_content += text_block
+                    # Send each chunk as it arrives
+                    chunk_response = {
+                        "type": "chunk",
+                        "content": text_block
+                    }
+                    yield f"data: {json.dumps(chunk_response)}\n\n"
+            
+            # Send final complete message
+            logger.info(f"Planning complete for '{request.description}' - {len(full_content)} characters")
+            final_response = {
+                "type": "done",
+                "content": full_content
+            }
+            yield f"data: {json.dumps(final_response)}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error in planning endpoint: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
