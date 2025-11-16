@@ -385,7 +385,7 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
   };
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-background p-8">
+    <div className="flex-1 flex items-start justify-center bg-background p-8 pt-50">
       <div className="w-full max-w-4xl space-y-8">
         {/* Hero Section */}
         <div className="text-center">
