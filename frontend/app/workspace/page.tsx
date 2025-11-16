@@ -179,6 +179,12 @@ function WorkspaceContent() {
     return () => media.removeEventListener('change', handleMedia);
   }, [themePreference]);
 
+  // Compute active instance before using it in effects
+  const activeInstance = useMemo(
+    () => instances.find((instance) => instance.id === activeInstanceId) ?? null,
+    [instances, activeInstanceId]
+  );
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -213,11 +219,6 @@ function WorkspaceContent() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [activeInstance]);
-
-  const activeInstance = useMemo(
-    () => instances.find((instance) => instance.id === activeInstanceId) ?? null,
-    [instances, activeInstanceId]
-  );
 
   const handleRename = async (id: string, title: string) => {
     const nextTitle = title.trim();
