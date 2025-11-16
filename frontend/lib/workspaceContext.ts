@@ -157,6 +157,17 @@ function buildInstanceContext(
     const code = instance.data.code || '';
     // Only truncate if not prioritized
     base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+  } else if (instance.type === 'pdf') {
+    const fullText = instance.data.fullText || '';
+    // Only truncate if not prioritized
+    base.fullText = isPrioritized ? fullText : truncateText(fullText, MAX_TEXT_LENGTH);
+  } else if (instance.type === 'lecture') {
+    // Combine transcript and slides text for lecture instances
+    const transcript = instance.data.transcript || '';
+    const slidesText = instance.data.slidesFullText || '';
+    const combinedText = [transcript, slidesText].filter(Boolean).join('\n\n--- Slides ---\n\n');
+    // Only truncate if not prioritized
+    base.fullText = isPrioritized ? combinedText : truncateText(combinedText, MAX_TEXT_LENGTH);
   }
 
   return base;
