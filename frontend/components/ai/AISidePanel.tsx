@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, RefObject } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
@@ -96,7 +96,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
     }
   }, [chatId]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, learningMode?: LearningMode) => {
     if (!chatId) {
       console.error('No active chat');
       return;
@@ -227,6 +227,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           messages: branchMessages,
           branchPath,
           workspaceContext,
+          learningMode,
         }),
       });
 
@@ -334,8 +335,8 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Header Actions - Single Rounded Card */}
-      <div className="px-4 py-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/40 p-2">
+      <div className="px-4 pt-4 pb-2">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1">
           {[
             { id: 'chat' as ViewMode, label: 'Chat', icon: MessageSquare },
             { id: 'tree' as ViewMode, label: 'Tree', icon: GitBranch },
@@ -346,7 +347,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
                 key={id}
                 onClick={() => setViewMode(id)}
                 className={`
-                  flex-1 group rounded-lg h-9 px-3 text-sm transition-all
+                  flex-1 group rounded-lg h-8 px-3 text-sm transition-all
                   focus-visible:outline-none focus-visible:ring-2
                   ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
                 `}
@@ -375,7 +376,7 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
-              className="h-9 w-9 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
+              className="h-8 w-8 rounded-lg hover:bg-muted/40 transition-colors flex items-center justify-center text-muted-foreground hover:text-foreground shrink-0"
               aria-label="Collapse AI panel"
             >
               <PanelsLeftRight className="h-4 w-4" />

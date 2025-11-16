@@ -3,6 +3,7 @@
 import React from 'react';
 import { ChatNode, WorkspaceContext } from '@/lib/types';
 import { AnimationPanel } from './AnimationPanel';
+import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 
 interface ChatMessageListProps {
   messages: ChatNode[];
@@ -31,16 +32,24 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
           <div
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div
-              className={`max-w-[85%] whitespace-pre-wrap break-words text-sm leading-relaxed ${
-                message.role === 'user'
-                  ? 'rounded-lg px-4 py-2 text-white'
-                  : 'text-foreground py-1.5'
-              }`}
-              style={message.role === 'user' ? { backgroundColor: '#C5ADFC' } : undefined}
-            >
-              {message.content}
-            </div>
+          <div
+            className={`max-w-[85%] ${
+              message.role === 'user'
+                ? 'rounded-lg px-4 py-2 text-white whitespace-pre-wrap break-words text-sm leading-relaxed'
+                : 'text-foreground py-1.5'
+            }`}
+            style={message.role === 'user' ? { backgroundColor: '#C5ADFC' } : undefined}
+          >
+            {message.role === 'user' ? (
+              // User messages: plain text with whitespace preservation
+              <div className="text-sm whitespace-pre-wrap break-words">
+                {message.content}
+              </div>
+            ) : (
+              // AI assistant messages: markdown rendered
+              <MarkdownRenderer content={message.content} />
+            )}
+          </div>
           </div>
 
           {/* Show animation panel if message has a suggestion */}

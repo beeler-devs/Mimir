@@ -50,6 +50,16 @@ export interface Job {
   updatedAt: string;
 }
 
+// Learning Mode types
+export type LearningMode = 'socratic' | 'direct' | 'guided' | 'exploratory' | 'conceptual';
+
+export interface LearningModeConfig {
+  id: LearningMode;
+  name: string;
+  description: string;
+  systemPrompt: string;
+}
+
 // API types
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -97,6 +107,7 @@ export interface ChatRequest {
   messages: ChatMessage[];
   branchPath: string[];
   workspaceContext?: WorkspaceContext;
+  learningMode?: LearningMode;
 }
 
 export interface ChatResponse {
