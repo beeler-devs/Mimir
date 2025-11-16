@@ -6,7 +6,7 @@ import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
 import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
 import { TextEditor, AnnotateCanvas, FlashcardTab } from '@/components/tabs';
-import { CodeEditorEnhanced } from '@/components/tabs/CodeEditorEnhanced';
+import { CodeWorkspace } from '@/components/code/CodeWorkspace';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { PDFViewerRef } from '@/components/tabs/PDFViewer';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
@@ -31,8 +31,11 @@ import type {
   InstanceType,
   ThemePreference,
   CodeLanguage,
+  CodeFile,
+  FileTreeNode,
   Folder,
 } from '@/lib/types';
+import { nanoid } from 'nanoid';
 import {
   loadUserFolders,
   loadUserInstances,
@@ -54,9 +57,29 @@ const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
     return { content: '' };
   }
   if (type === 'code') {
+    const fileId = nanoid();
+    const defaultFile: CodeFile = {
+      id: fileId,
+      name: 'main.py',
+      path: 'main.py',
+      content: '# Write your code here\nprint("Hello, Mimir!")\n',
+      language: 'python',
+    };
+
+    const defaultTreeNode: FileTreeNode = {
+      id: fileId,
+      name: 'main.py',
+      type: 'file',
+      parentId: null,
+      language: 'python',
+      path: 'main.py',
+    };
+
     return {
-      language: 'python' as CodeLanguage,
-      code: '# Write your code here\n',
+      files: [defaultFile],
+      activeFilePath: 'main.py',
+      openFiles: ['main.py'],
+      fileTree: [defaultTreeNode],
     };
   }
   if (type === 'pdf') {
@@ -574,17 +597,35 @@ function WorkspaceContent() {
         );
       case 'code':
         return (
-          <CodeEditorEnhanced
-            language={activeInstance.data.language}
-            code={activeInstance.data.code}
-            onCodeChange={updateCode}
-            onLanguageChange={updateLanguage}
-            onAddToChat={(message) => {
-              if (activeInstance?.type === 'pdf' && pdfStudyPanelRef.current) {
-                pdfStudyPanelRef.current.addToChat(message);
-              } else if (aiSidePanelRef.current) {
-                aiSidePanelRef.current.addToChat(message);
-              }
+          <CodeWorkspace
+            initialFiles={activeInstance.data.files}
+            initialFileTree={activeInstance.data.fileTree}
+            onSave={(files, fileTree) => {
+              if (!activeInstanceId) return;
+
+              // Update UI immediately
+              setInstances((prev) =>
+                prev.map((instance) =>
+                  instance.id === activeInstanceId && instance.type === 'code'
+                    ? {
+                        ...instance,
+                        data: {
+                          ...instance.data,
+                          files,
+                          fileTree,
+                        },
+                      }
+                    : instance
+                )
+              );
+
+              // Debounced save to database
+              debouncedSave(activeInstanceId, {
+                files,
+                fileTree,
+                activeFilePath: activeInstance.data.activeFilePath,
+                openFiles: activeInstance.data.openFiles,
+              });
             }}
           />
         );
@@ -738,8 +779,8 @@ function WorkspaceContent() {
             />
           )
         }>
-          <div className="h-full p-4 flex flex-col gap-4">
-            {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text' || activeInstance?.type === 'code') && (
+          <div className={`h-full ${activeInstance?.type === 'code' ? '' : 'p-4'} flex flex-col gap-4`}>
+            {(activeInstance?.type === 'annotate' || activeInstance?.type === 'text') && (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
                 {activeInstance?.type === 'annotate' && (
@@ -766,7 +807,7 @@ function WorkspaceContent() {
                 )}
               </div>
             )}
-            <div className="flex-1 rounded-2xl border border-border bg-background overflow-hidden">
+            <div className={`flex-1 ${activeInstance?.type === 'code' ? '' : 'rounded-2xl border border-border bg-background'} overflow-hidden`}>
               {renderActiveContent()}
             </div>
           </div>

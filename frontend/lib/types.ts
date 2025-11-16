@@ -154,6 +154,33 @@ export interface CodeEditorState {
   code: string;
 }
 
+// Multi-file code editor types
+export interface CodeFile {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  language: CodeLanguage;
+}
+
+export interface FileTreeNode {
+  id: string;
+  name: string;
+  type: 'file' | 'folder';
+  parentId: string | null;
+  children?: FileTreeNode[];
+  // For files only
+  language?: CodeLanguage;
+  path?: string;
+}
+
+export interface CodeExecutionResult {
+  status: 'success' | 'error';
+  output?: string;
+  error?: string;
+  executionTime?: number;
+}
+
 // Folder types
 export interface Folder {
   id: string;
@@ -183,8 +210,10 @@ export interface TextInstance extends BaseInstance {
 export interface CodeInstance extends BaseInstance {
   type: 'code';
   data: {
-    language: CodeLanguage;
-    code: string;
+    files: CodeFile[];
+    activeFilePath: string | null;
+    openFiles: string[]; // Paths of files that are open in tabs
+    fileTree: FileTreeNode[];
   };
 }
 
