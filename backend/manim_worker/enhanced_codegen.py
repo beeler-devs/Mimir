@@ -10,7 +10,7 @@ import sys
 import re
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 # Add Math-To-Manim to Python path
 # Path from backend/manim_worker to manim-to-code/Math-To-Manim/src
@@ -169,6 +169,7 @@ class GeneratedScene(Scene):
 def generate_and_validate_manim_scene(
     concept: str,
     student_context: str | None = None,
+    progress_callback: Optional[Callable[[str, str, int], None]] = None,
 ) -> str:
     """
     Generate Manim code using Math-To-Manim's Reverse Knowledge Tree pipeline.
@@ -186,6 +187,7 @@ def generate_and_validate_manim_scene(
     Args:
         concept: The concept to visualize (e.g., "explain quantum mechanics")
         student_context: Optional context about the student's current work
+        progress_callback: Optional callback function(phase, message, percentage) for progress updates
     
     Returns:
         Validated Python code string for Manim
@@ -193,6 +195,14 @@ def generate_and_validate_manim_scene(
     Raises:
         RuntimeError: If code generation/validation fails after max attempts
     """
+    # Helper to call progress callback if provided
+    def report_progress(phase: str, message: str, percentage: int):
+        if progress_callback:
+            try:
+                progress_callback(phase, message, percentage)
+            except Exception as e:
+                logger.warning(f"Progress callback error: {e}")
+    
     # Check if orchestrator should be used
     use_advanced = os.getenv("USE_MATH_TO_MANIM", "true").lower() == "true"
     max_depth = int(os.getenv("MATH_TO_MANIM_MAX_DEPTH", "3"))
@@ -210,6 +220,8 @@ def generate_and_validate_manim_scene(
         # Ensure API key is available
         _ensure_api_key()
         
+        report_progress("code_generation", "Initializing orchestrator...", 5)
+        
         logger.info("=" * 70)
         logger.info("🚀 USING MATH-TO-MANIM ORCHESTRATOR (Full Pipeline)")
         logger.info(f"   Concept: {concept}")
@@ -222,7 +234,10 @@ def generate_and_validate_manim_scene(
             user_prompt = f"{concept}\n\nStudent context: {student_context}"
         
         # Initialize orchestrator
-        model_name = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+        report_progress("code_generation", "Initializing orchestrator...", 10)
+        # Use the same model as the orchestrator agents (claude-sonnet-4-5)
+        # Allow override via CLAUDE_MODEL env var
+        model_name = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
         logger.info(f"Using Claude model: {model_name}")
         orchestrator = ReverseKnowledgeTreeOrchestrator(
             model=model_name,
@@ -231,12 +246,17 @@ def generate_and_validate_manim_scene(
             enable_atlas=False
         )
         
+        report_progress("code_generation", "Building knowledge tree...", 20)
+        
         # Process through the full pipeline
         # Use a temporary output directory
         temp_output_dir = Path(tempfile.gettempdir()) / "manim_orchestrator_output"
         temp_output_dir.mkdir(exist_ok=True)
         
+        report_progress("code_generation", "Processing through orchestrator pipeline...", 30)
         result: AnimationResult = orchestrator.process(user_prompt, output_dir=str(temp_output_dir))
+        
+        report_progress("code_generation", "Code generation complete, validating...", 40)
         
         # Extract Manim code
         if not result.manim_code:

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import json
+import asyncio
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
@@ -25,6 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import WebSocket manager
+from websocket_manager import websocket_manager
+
 app = FastAPI(
     title="Mimir Manim Worker",
     description="Job-based animation rendering service using Manim",
@@ -32,9 +36,10 @@ app = FastAPI(
 )
 
 # CORS middleware to allow requests from frontend
+# Note: CORSMiddleware in FastAPI also handles WebSocket connections
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3003"],  # Frontend URLs
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3003", "http://localhost:3002"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -47,6 +52,13 @@ async def health_check():
     Returns the service status
     """
     return HealthResponse(status="ok", version="0.2.0")
+
+@app.get("/ws/test")
+async def websocket_test():
+    """
+    Test endpoint to verify WebSocket support is available
+    """
+    return {"message": "WebSocket endpoint available at /ws/manim/{job_id}"}
 
 @app.post("/jobs", response_model=JobResponse)
 async def create_job(request: JobRequest):
@@ -165,6 +177,78 @@ async def get_job_status(job_id: str):
     logger.info("=" * 70)
     
     return response
+
+@app.websocket("/ws/manim/{job_id}")
+async def websocket_manim(websocket: WebSocket, job_id: str):
+    """
+    WebSocket endpoint for streaming Manim animation frames
+    
+    Args:
+        websocket: WebSocket connection
+        job_id: Job identifier for the animation
+    """
+    logger.info(f"WebSocket connection attempt for job {job_id}")
+    try:
+        await websocket_manager.connect(websocket, job_id)
+        logger.info(f"WebSocket accepted for job {job_id}")
+        
+        # Send initial connection confirmation
+        try:
+            await websocket.send_json({
+                "type": "connected",
+                "job_id": job_id,
+                "message": "WebSocket connected successfully"
+            })
+            logger.info(f"Sent connection confirmation for job {job_id}")
+        except Exception as e:
+            logger.error(f"Failed to send connection confirmation for job {job_id}: {e}")
+        
+        # Keep connection alive - wait for disconnect
+        # Use asyncio.wait_for with a long timeout to periodically check connection
+        try:
+            while True:
+                try:
+                    # Wait for either a message or a timeout
+                    # If no message arrives, we'll check again (keeps connection alive)
+                    try:
+                        message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+                        
+                        if message.get("type") == "websocket.disconnect":
+                            logger.info(f"Client disconnected for job {job_id}")
+                            break
+                        elif message.get("type") == "websocket.receive":
+                            # Handle text messages if client sends any (optional)
+                            if "text" in message:
+                                data = message["text"]
+                                logger.debug(f"Received message from client for job {job_id}: {data}")
+                    except asyncio.TimeoutError:
+                        # No message received, but connection is still alive
+                        # Send a ping to keep connection alive
+                        try:
+                            await websocket.send_json({"type": "ping", "job_id": job_id})
+                        except:
+                            # Connection might be closed
+                            break
+                except WebSocketDisconnect:
+                    logger.info(f"WebSocket disconnected for job {job_id}")
+                    break
+        except Exception as e:
+            # Connection might have been closed or error occurred
+            logger.info(f"WebSocket connection ended for job {job_id}: {e}")
+    except Exception as e:
+        logger.error(f"WebSocket error for job {job_id}: {e}", exc_info=True)
+        # Try to send error message if connection is still open
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "job_id": job_id,
+                "error": str(e)
+            })
+        except:
+            pass
+    finally:
+        websocket_manager.disconnect(websocket, job_id)
+        logger.info(f"WebSocket cleanup complete for job {job_id}")
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):

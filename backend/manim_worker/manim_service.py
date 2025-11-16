@@ -17,6 +17,10 @@ from models import JobStatus
 from manim_worker.scenes import select_scene  # Keep for future use
 from manim_worker.enhanced_codegen import generate_and_validate_manim_scene
 from dotenv import load_dotenv
+import base64
+import time
+from PIL import Image
+import io
 
 # Load environment variables from .env file
 # Load from backend directory (parent of manim_worker)
@@ -41,6 +45,15 @@ else:
             print(f.read(), file=sys.stderr)
 
 logger = logging.getLogger(__name__)
+
+# Import websocket manager (lazy import to avoid circular dependencies)
+def get_websocket_manager():
+    """Get the websocket manager instance"""
+    try:
+        from websocket_manager import websocket_manager
+        return websocket_manager
+    except ImportError:
+        return None
 
 class ManimService:
     def __init__(self):
@@ -163,6 +176,105 @@ class ManimService:
         
         return self.jobs[job_id]
     
+    async def _send_progress(self, job_id: str, phase: str, message: str, percentage: int):
+        """Send progress update via WebSocket"""
+        ws_manager = get_websocket_manager()
+        if ws_manager and ws_manager.has_connections(job_id):
+            await ws_manager.send_message(job_id, {
+                "type": "progress",
+                "job_id": job_id,
+                "phase": phase,
+                "message": message,
+                "percentage": percentage
+            })
+    
+    async def _send_frame(self, job_id: str, frame_number: int, frame_data: bytes):
+        """Send a frame via WebSocket"""
+        ws_manager = get_websocket_manager()
+        if ws_manager and ws_manager.has_connections(job_id):
+            # Encode frame as base64
+            frame_base64 = base64.b64encode(frame_data).decode('utf-8')
+            await ws_manager.send_message(job_id, {
+                "type": "frame",
+                "job_id": job_id,
+                "frame_number": frame_number,
+                "data": frame_base64,
+                "timestamp": int(time.time() * 1000)
+            })
+    
+    async def _extract_and_stream_frames(self, job_id: str, video_path: Path, loop: asyncio.AbstractEventLoop):
+        """Extract frames from video and stream them via WebSocket"""
+        ws_manager = get_websocket_manager()
+        if not ws_manager or not ws_manager.has_connections(job_id):
+            # No WebSocket connections, skip frame extraction
+            return
+        
+        try:
+            import subprocess
+            import cv2
+            
+            # Use OpenCV to extract frames
+            cap = cv2.VideoCapture(str(video_path))
+            frame_rate = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            frame_number = 0
+            frame_interval = max(1, int(frame_rate / 30))  # Stream at ~30 fps
+            
+            logger.info(f"Extracting frames from video: {total_frames} frames at {frame_rate} fps")
+            
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Only send every Nth frame to maintain ~30 fps streaming
+                if frame_number % frame_interval == 0:
+                    # Encode frame as JPEG (smaller than PNG)
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    frame_data = buffer.tobytes()
+                    
+                    # Send frame via WebSocket
+                    loop.run_until_complete(self._send_frame(job_id, frame_number, frame_data))
+                    
+                    # Update progress
+                    progress = 80 + int((frame_number / total_frames) * 15)  # 80-95%
+                    if frame_number % 10 == 0:  # Update every 10 frames
+                        loop.run_until_complete(self._send_progress(job_id, "rendering", f"Streaming frame {frame_number}/{total_frames}", progress))
+                
+                frame_number += 1
+            
+            cap.release()
+            
+            # Send completion message
+            loop.run_until_complete(ws_manager.send_message(job_id, {
+                "type": "complete",
+                "job_id": job_id,
+                "total_frames": frame_number
+            }))
+            
+            logger.info(f"Finished streaming {frame_number} frames for job {job_id}")
+            
+        except ImportError:
+            # OpenCV not available, try using ffmpeg
+            logger.warning("OpenCV not available, trying ffmpeg for frame extraction")
+            loop.run_until_complete(self._extract_frames_ffmpeg(job_id, video_path, loop))
+        except Exception as e:
+            logger.error(f"Error extracting frames: {e}", exc_info=True)
+    
+    async def _extract_frames_ffmpeg(self, job_id: str, video_path: Path, loop: asyncio.AbstractEventLoop):
+        """Extract frames using ffmpeg (fallback if OpenCV not available)"""
+        try:
+            import subprocess
+            
+            # Use ffmpeg to extract frames
+            # This is a simplified version - in production, you'd want more robust frame extraction
+            logger.warning("FFmpeg frame extraction not fully implemented, skipping frame streaming")
+            # TODO: Implement ffmpeg-based frame extraction if needed
+            
+        except Exception as e:
+            logger.error(f"Error in ffmpeg frame extraction: {e}", exc_info=True)
+    
     def _render_job(self, job_id: str, description: str, topic: str, student_context: str | None = None):
         """
         Render a Manim animation job (runs in thread pool)
@@ -173,10 +285,17 @@ class ManimService:
             topic: Topic category
             student_context: Optional context about the student's current work
         """
+        # Create async wrapper for progress updates
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         try:
             # Update status to running
             self.jobs[job_id]["status"] = JobStatus.RUNNING
             logger.info(f"Starting render for job {job_id}")
+            
+            # Send initial progress
+            loop.run_until_complete(self._send_progress(job_id, "code_generation", "Starting code generation...", 0))
             
             # Create job-specific directory
             job_dir = self.output_dir / job_id
@@ -184,7 +303,17 @@ class ManimService:
             
             # Generate and validate Manim code using Claude
             logger.info(f"Generating Manim code for job {job_id}")
-            validated_code = generate_and_validate_manim_scene(description, student_context)
+            
+            # Create progress callback for code generation
+            def progress_callback(phase: str, message: str, percentage: int):
+                loop.run_until_complete(self._send_progress(job_id, phase, message, percentage))
+            
+            validated_code = generate_and_validate_manim_scene(
+                description, 
+                student_context,
+                progress_callback=progress_callback
+            )
+            loop.run_until_complete(self._send_progress(job_id, "code_generation", "Code generation complete", 50))
             
             # Write validated code to file
             scene_path = job_dir / "generated_scene.py"
@@ -233,20 +362,25 @@ class ManimService:
             # Old code (commented for reference):
             # scene_class = select_scene(description, topic)
             
-            # Configure Manim
+            # Send progress: starting rendering
+            loop.run_until_complete(self._send_progress(job_id, "rendering", "Starting animation rendering...", 50))
+            
+            # Configure Manim with high quality settings
             with tempconfig({
-                "quality": "medium_quality",
+                "quality": "high_quality",  # Changed from medium_quality to high_quality
                 "preview": False,
                 "output_file": "out",
                 "media_dir": str(job_dir),
                 "video_dir": str(job_dir),
-                "pixel_height": 720,
-                "pixel_width": 1280,
+                "pixel_height": 1080,  # Changed from 720 to 1080 (Full HD)
+                "pixel_width": 1920,   # Changed from 1280 to 1920 (Full HD)
                 "frame_rate": 30,
             }):
                 # Render the scene
                 scene = scene_class()
                 scene.render()
+            
+            loop.run_until_complete(self._send_progress(job_id, "rendering", "Rendering complete, extracting frames...", 80))
             
             # Find the output video
             video_path = self._find_output_video(job_dir)
@@ -257,6 +391,9 @@ class ManimService:
             logger.info(f"Render complete for job {job_id}: {video_path}")
             logger.info(f"Video file exists: {video_path.exists()}")
             logger.info(f"Video file size: {video_path.stat().st_size / (1024*1024):.2f} MB")
+            
+            # Extract and stream frames from video
+            loop.run_until_complete(self._extract_and_stream_frames(job_id, video_path, loop))
             
             # Upload to Supabase Storage
             logger.info("=" * 70)
@@ -280,12 +417,34 @@ class ManimService:
             
             # Update status to done
             self.jobs[job_id]["status"] = JobStatus.DONE
+            
+            # Send completion message via WebSocket
+            ws_manager = get_websocket_manager()
+            if ws_manager and ws_manager.has_connections(job_id):
+                loop.run_until_complete(ws_manager.send_message(job_id, {
+                    "type": "complete",
+                    "job_id": job_id,
+                    "video_url": self.jobs[job_id].get("video_url"),
+                }))
+            
             logger.info(f"Job {job_id} completed successfully")
             
         except Exception as e:
             logger.error(f"Error rendering job {job_id}: {e}", exc_info=True)
             self.jobs[job_id]["status"] = JobStatus.ERROR
             self.jobs[job_id]["error"] = str(e)
+            
+            # Send error message via WebSocket
+            ws_manager = get_websocket_manager()
+            if ws_manager:
+                loop.run_until_complete(ws_manager.send_message(job_id, {
+                    "type": "error",
+                    "job_id": job_id,
+                    "error": str(e)
+                }))
+        finally:
+            # Clean up event loop
+            loop.close()
     
     def _find_output_video(self, job_dir: Path) -> Path:
         """

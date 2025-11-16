@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Loader2, CheckCircle, XCircle, Film } from 'lucide-react';
+import { Play, Loader2, CheckCircle, XCircle, Film, Wifi, WifiOff } from 'lucide-react';
 import { WorkspaceContext } from '@/lib/types';
+import { useManimWebSocket } from '@/hooks/useManimWebSocket';
+import { ManimFrameStream } from './ManimFrameStream';
 
 interface AnimationSuggestion {
   description: string;
@@ -34,6 +36,15 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [usePolling, setUsePolling] = useState(false);
+  const [progressMessage, setProgressMessage] = useState<string>('');
+  const [progressPercentage, setProgressPercentage] = useState<number>(0);
+  
+  // Frame streaming state
+  const framesRef = useRef<Map<number, string>>(new Map());
+  const [currentFrame, setCurrentFrame] = useState<number>(0);
+  const [isStreaming, setIsStreaming] = useState(false);
+  
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup polling on unmount
@@ -45,14 +56,44 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
     };
   }, []);
 
-  // Start polling when job is created
+  // WebSocket connection
+  const { connected, error: wsError, reconnect } = useManimWebSocket({
+    jobId,
+    enabled: !usePolling && (status === 'pending' || status === 'running'),
+    onFrame: (frameNumber, frameData) => {
+      framesRef.current.set(frameNumber, frameData);
+      setCurrentFrame(frameNumber);
+      setIsStreaming(true);
+    },
+    onProgress: (phase, message, percentage) => {
+      setProgressMessage(message);
+      setProgressPercentage(percentage);
+    },
+    onError: (errorMsg) => {
+      setError(errorMsg);
+    },
+    onComplete: (finalVideoUrl, totalFrames) => {
+      if (finalVideoUrl) {
+        setVideoUrl(finalVideoUrl);
+      }
+      setStatus('done');
+      setIsStreaming(false);
+    },
+    fallbackToPolling: true,
+    onFallback: () => {
+      setUsePolling(true);
+      startPolling();
+    },
+  });
+
+  // Start polling when job is created (fallback mode)
   useEffect(() => {
-    if (jobId && (status === 'pending' || status === 'running')) {
+    if (usePolling && jobId && (status === 'pending' || status === 'running')) {
       startPolling();
     } else {
       stopPolling();
     }
-  }, [jobId, status]);
+  }, [usePolling, jobId, status]);
 
   const startPolling = () => {
     if (pollingInterval.current) return;
@@ -199,8 +240,19 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
         </button>
       )}
 
-      {/* Video Player */}
-      {status === 'done' && videoUrl && (
+      {/* Streaming Frames */}
+      {isStreaming && framesRef.current.size > 0 && (
+        <div className="mt-3">
+          <ManimFrameStream
+            frames={framesRef.current}
+            currentFrame={currentFrame}
+            isStreaming={isStreaming}
+          />
+        </div>
+      )}
+
+      {/* Video Player (final video) */}
+      {status === 'done' && videoUrl && !isStreaming && (
         <div className="mt-3">
           <video
             controls
@@ -232,11 +284,54 @@ export const AnimationPanel: React.FC<AnimationPanelProps> = ({ suggestion, work
 
       {/* Progress Info */}
       {(status === 'pending' || status === 'running') && jobId && (
-        <div className="mt-3 text-xs text-muted-foreground">
-          <p>Job ID: {jobId.substring(0, 8)}...</p>
-          <p className="mt-1">
-            This may take 30-60 seconds. The video will appear automatically when ready.
-          </p>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {usePolling ? (
+              <>
+                <WifiOff className="h-3 w-3" />
+                <span>Using polling mode</span>
+              </>
+            ) : connected ? (
+              <>
+                <Wifi className="h-3 w-3 text-green-500" />
+                <span>WebSocket connected - streaming frames</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-3 w-3" />
+                <span>Connecting to WebSocket...</span>
+              </>
+            )}
+          </div>
+          
+          {progressMessage && (
+            <div className="text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-muted-foreground">{progressMessage}</span>
+                <span className="text-muted-foreground">{progressPercentage}%</span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5">
+                <div
+                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+            </div>
+          )}
+          
+          <div className="text-xs text-muted-foreground">
+            <p>Job ID: {jobId.substring(0, 8)}...</p>
+            {!usePolling && (
+              <p className="mt-1">
+                Frames are streaming in real-time. The final video will appear when complete.
+              </p>
+            )}
+            {usePolling && (
+              <p className="mt-1">
+                This may take 30-60 seconds. The video will appear automatically when ready.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
