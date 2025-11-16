@@ -29,18 +29,22 @@ interface AISidePanelProps {
   instances?: WorkspaceInstance[];
   folders?: Folder[];
   annotationCanvasRef?: RefObject<AnnotateCanvasRef>;
+  pendingChatText?: string | null;
+  onChatTextAdded?: () => void;
 }
 
 /**
  * Main AI sidepanel component
  * Manages chat state and switches between chat and tree views
  */
-export const AISidePanel: React.FC<AISidePanelProps> = ({ 
+export const AISidePanel: React.FC<AISidePanelProps> = ({
   collapseSidebar,
   activeInstance = null,
   instances = [],
   folders = [],
   annotationCanvasRef,
+  pendingChatText,
+  onChatTextAdded,
 }) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -424,6 +428,8 @@ export const AISidePanel: React.FC<AISidePanelProps> = ({
           loading={loading}
           instances={instances}
           folders={folders}
+          pendingText={pendingChatText}
+          onTextAdded={onChatTextAdded}
         />
       )}
     </div>

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel } from '@/components/ai/AISidePanel';
-import { TextEditor, CodeEditor, AnnotateCanvas } from '@/components/tabs';
+import { TextEditor, CodeEditor, AnnotateCanvas, PDFViewer } from '@/components/tabs';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { InstanceSidebar, SettingsModal, NewInstanceModal } from '@/components/workspace';
 import { Button } from '@/components/common';
@@ -42,6 +42,18 @@ const createInstanceData = (type: InstanceType): WorkspaceInstance['data'] => {
       code: '# Write your code here\n',
     };
   }
+  if (type === 'pdf') {
+    return {
+      pdfUrl: undefined,
+      fileName: undefined,
+      fileSize: undefined,
+      pageCount: undefined,
+      summary: undefined,
+      storagePath: undefined,
+      metadata: undefined,
+      fullText: undefined,
+    };
+  }
   return {};
 };
 
@@ -75,6 +87,7 @@ function WorkspaceContent() {
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const [loading, setLoading] = useState(true);
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [pendingChatText, setPendingChatText] = useState<string | null>(null);
   const annotationCanvasRef = useRef<AnnotateCanvasRef>(null);
 
   // Load instances and folders from database on mount
@@ -319,6 +332,97 @@ function WorkspaceContent() {
     annotationCanvasRef.current?.exportAnnotatedPdf();
   };
 
+  const handlePDFUpload = async (
+    file: File,
+    url: string,
+    metadata: {
+      size: number;
+      pageCount: number;
+      summary: string;
+      metadata: {
+        title?: string;
+        author?: string;
+        subject?: string;
+        keywords?: string;
+        creationDate?: string;
+        modificationDate?: string;
+      };
+      fullText: string;
+    }
+  ) => {
+    if (!activeInstanceId) return;
+
+    const currentInstance = instances.find((i) => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'pdf') return;
+
+    // Update UI immediately with PDF data
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'pdf'
+          ? {
+              ...instance,
+              data: {
+                ...instance.data,
+                pdfUrl: url,
+                fileName: file.name,
+                fileSize: file.size,
+                pageCount: metadata.pageCount,
+                summary: metadata.summary,
+                metadata: metadata.metadata,
+                fullText: metadata.fullText,
+              },
+            }
+          : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: {
+          pdfUrl: url,
+          fileName: file.name,
+          fileSize: file.size,
+          pageCount: metadata.pageCount,
+          summary: metadata.summary,
+          metadata: metadata.metadata,
+          fullText: metadata.fullText,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save PDF upload:', error);
+    }
+  };
+
+  const handlePDFSummaryReady = async (summary: string) => {
+    if (!activeInstanceId) return;
+
+    const currentInstance = instances.find(i => i.id === activeInstanceId);
+    if (!currentInstance || currentInstance.type !== 'pdf') return;
+
+    // Update UI immediately
+    setInstances((prev) =>
+      prev.map((instance) =>
+        instance.id === activeInstanceId && instance.type === 'pdf'
+          ? { ...instance, data: { ...instance.data, summary } }
+          : instance
+      )
+    );
+
+    // Save to database
+    try {
+      await updateInstanceDB(activeInstanceId, {
+        data: { ...currentInstance.data, summary },
+      });
+    } catch (error) {
+      console.error('Failed to save PDF summary:', error);
+    }
+  };
+
+  const handleAddToChat = (text: string) => {
+    setPendingChatText(text);
+  };
+
   const renderActiveContent = () => {
     if (loading) {
       return (
@@ -348,6 +452,18 @@ function WorkspaceContent() {
             code={activeInstance.data.code}
             onCodeChange={updateCode}
             onLanguageChange={updateLanguage}
+          />
+        );
+      case 'pdf':
+        return (
+          <PDFViewer
+            pdfUrl={activeInstance.data.pdfUrl}
+            fileName={activeInstance.data.fileName}
+            metadata={activeInstance.data.metadata}
+            fullText={activeInstance.data.fullText}
+            onUpload={handlePDFUpload}
+            onSummaryReady={handlePDFSummaryReady}
+            onAddToChat={handleAddToChat}
           />
         );
       case 'annotate':
@@ -438,11 +554,13 @@ function WorkspaceContent() {
 
       <div className="flex-1 h-full overflow-hidden">
         <WorkspaceLayout sidebar={
-          <AISidePanel 
+          <AISidePanel
             activeInstance={activeInstance}
             instances={instances}
             folders={folders}
             annotationCanvasRef={activeInstance?.type === 'annotate' ? annotationCanvasRef : undefined}
+            pendingChatText={pendingChatText}
+            onChatTextAdded={() => setPendingChatText(null)}
           />
         }>
           <div className="h-full p-4 flex flex-col gap-4">
