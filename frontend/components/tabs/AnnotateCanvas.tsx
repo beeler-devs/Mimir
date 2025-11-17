@@ -4,6 +4,9 @@ import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect, us
 import dynamic from 'next/dynamic';
 import '@excalidraw/excalidraw/index.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { LaserPointerOverlay, PointerPosition } from '../ai/LaserPointerOverlay';
+import { VoiceOrchestrator, VoiceExplanationSegment } from '../ai/VoiceOrchestrator';
+import { Volume2, VolumeX } from 'lucide-react';
 
 // Dynamically import Excalidraw to avoid SSR issues
 const Excalidraw = dynamic(
@@ -20,6 +23,7 @@ export interface AnnotateCanvasRef {
   exportAnnotatedPdf: () => void;
   setPdfFileUrl: (url: string | null) => void;
   setPdfPageNum: (pageNum: number) => void;
+  startVoiceExplanation: () => Promise<void>;
 }
 
 interface AnnotateCanvasProps {
@@ -37,9 +41,10 @@ interface AnnotateCanvasProps {
 export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>((props, ref) => {
   const { initialData, onStateChange } = props;
   const excalidrawRef = useRef<any>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<any[]>(initialData?.elements || []);
   const [appState, setAppState] = useState<any>(
-    initialData?.appState 
+    initialData?.appState
       ? {
           ...initialData.appState,
           collaborators: Array.isArray(initialData.appState.collaborators)
@@ -55,6 +60,12 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pdfPageNum, setPdfPageNum] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0);
+
+  // Voice AI state
+  const [voiceSegments, setVoiceSegments] = useState<VoiceExplanationSegment[]>([]);
+  const [laserPosition, setLaserPosition] = useState<PointerPosition | null>(null);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
 
   // Function to load PDF document
   const loadPdfDocument = useCallback(async (url: string) => {
@@ -382,6 +393,55 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     return exportCanvasFromState({ elements, appState, files });
   };
 
+  // Start voice explanation with laser pointer
+  const startVoiceExplanation = async () => {
+    try {
+      setIsLoadingExplanation(true);
+
+      // Export canvas as screenshot
+      const screenshot = await exportCanvasAsImage();
+
+      // Prepare element data
+      const elementData = elements
+        .filter((el: any) => !el.isDeleted)
+        .map((el: any) => ({
+          id: el.id,
+          type: el.type,
+          x: el.x,
+          y: el.y,
+          width: el.width || 0,
+          height: el.height || 0,
+          text: el.text || undefined,
+        }));
+
+      // Call API to get voice explanation with positional encoding
+      const response = await fetch('/api/voice-explain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          screenshot,
+          elements: elementData,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate voice explanation');
+      }
+
+      const data = await response.json();
+      setVoiceSegments(data.segments);
+      setIsVoiceActive(true);
+
+    } catch (error) {
+      console.error('Error generating voice explanation:', error);
+      alert('Failed to generate voice explanation. Please try again.');
+    } finally {
+      setIsLoadingExplanation(false);
+    }
+  };
+
   // Expose export functions via ref
   useImperativeHandle(ref, () => ({
     exportCanvasAsImage,
@@ -390,10 +450,27 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     exportAnnotatedPdf: handleExportPDF,
     setPdfFileUrl,
     setPdfPageNum,
+    startVoiceExplanation,
   }));
 
   return (
     <div className="h-full flex flex-col bg-background">
+      {/* Voice AI Controls */}
+      {isVoiceActive && voiceSegments.length > 0 && (
+        <div className="p-3 border-b border-border bg-background/95 backdrop-blur-sm">
+          <VoiceOrchestrator
+            segments={voiceSegments}
+            onPositionChange={setLaserPosition}
+            onComplete={() => {
+              setIsVoiceActive(false);
+              setLaserPosition(null);
+            }}
+            autoStart={true}
+          />
+        </div>
+      )}
+
+      {/* PDF Navigation */}
       {pdfDoc && (
         <div className="flex items-center justify-center gap-4 p-2 border-b border-border">
           <button
@@ -415,8 +492,34 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
           </button>
         </div>
       )}
+
+      {/* Voice AI Trigger Button */}
+      <div className="absolute top-4 right-4 z-40">
+        <button
+          onClick={startVoiceExplanation}
+          disabled={isLoadingExplanation || isVoiceActive || elements.length === 0}
+          className="p-3 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          title="Start voice explanation with laser pointer"
+        >
+          {isLoadingExplanation ? (
+            <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : isVoiceActive ? (
+            <Volume2 className="w-6 h-6" />
+          ) : (
+            <VolumeX className="w-6 h-6" />
+          )}
+        </button>
+      </div>
+
       {/* Excalidraw Canvas */}
-      <div className="flex-1 overflow-hidden">
+      <div ref={canvasContainerRef} className="flex-1 overflow-hidden relative">
+        {/* Laser Pointer Overlay */}
+        <LaserPointerOverlay
+          position={laserPosition}
+          isActive={isVoiceActive}
+          canvasRef={canvasContainerRef}
+        />
+
         <Excalidraw
           excalidrawAPI={(api) => {
             excalidrawRef.current = api;
