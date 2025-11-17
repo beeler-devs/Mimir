@@ -6,6 +6,7 @@ import { VoiceInputListener } from './VoiceInputListener';
 import { getConversationStateManager } from '../../lib/conversationState';
 import { detectHelpRequest, extractIntent } from '../../lib/semanticAnalyzer';
 import { AI_COACH_CONFIG } from '../../lib/aiCoachConfig';
+import { retryAICoachingRequest } from '../../lib/retryFetch';
 import type { VoiceSynthesisController } from './EnhancedLiveVoiceSynthesis';
 
 interface AIIntervention {
@@ -60,7 +61,15 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   const laserTimerRef = useRef<NodeJS.Timeout | null>(null);
   const interventionInProgressRef = useRef(false);
   const isMountedRef = useRef(true);
-  const lastElementCountRef = useRef(0);
+
+  // Canvas version tracking (increments on any change)
+  const canvasVersionRef = useRef(0);
+  const lastCanvasVersionRef = useRef(0);
+
+  // Interrupt storm protection
+  const recentInterruptsRef = useRef<number[]>([]); // Timestamps
+  const inCooldownRef = useRef(false);
+  const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Export canvas as screenshot
   const captureCanvasScreenshot = useCallback(async (): Promise<string | null> => {
@@ -163,7 +172,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         if (!isMountedRef.current) return;
 
         if (!screenshot) {
-          console.warn('Failed to capture screenshot');
+          console.warn('⚠️ Failed to capture screenshot, cannot proceed with intervention');
           return;
         }
 
@@ -179,34 +188,45 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
             text: el.text || undefined,
           }));
 
-        const response = await fetch('/api/ai-coach-conversational', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            screenshot,
-            elements: elementData,
-            conversationContext: {
-              ...conversationState,
-              trigger: context.trigger,
-              userSpeech: context.userSpeech,
+        // Use retry logic for robustness
+        const intervention: AIIntervention = await retryAICoachingRequest(
+          screenshot,
+          elementData,
+          {
+            ...conversationState,
+            trigger: context.trigger,
+            userSpeech: context.userSpeech,
+          },
+          {
+            onRetry: (attempt, error) => {
+              if (isMountedRef.current) {
+                console.log(`🔄 Retrying AI intervention (attempt ${attempt}):`, error.message);
+              }
             },
-          }),
-        });
-
-        if (!isMountedRef.current) return;
-
-        if (!response.ok) {
-          throw new Error(`AI coaching request failed: ${response.status}`);
-        }
-
-        const intervention: AIIntervention = await response.json();
+          }
+        );
 
         if (!isMountedRef.current) return;
 
         executeIntervention(intervention);
       } catch (error) {
         if (isMountedRef.current) {
-          console.error('❌ AI intervention failed:', error);
+          console.error('❌ AI intervention failed after retries:', error);
+
+          // Provide fallback voice feedback to user
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error occurred';
+
+          const fallbackIntervention: AIIntervention = {
+            type: 'voice',
+            voiceText: `I'm having trouble right now. ${
+              errorMessage.includes('timeout')
+                ? 'The request timed out.'
+                : 'There was a network issue.'
+            } Please try again in a moment.`,
+          };
+
+          executeIntervention(fallbackIntervention);
         }
       } finally {
         if (isMountedRef.current) {
@@ -216,6 +236,40 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
     },
     [elements, conversationManager, captureCanvasScreenshot, executeIntervention]
   );
+
+  // Check for interrupt storm
+  const checkInterruptStorm = useCallback((): boolean => {
+    const now = Date.now();
+    const windowMs = 10_000; // 10 second window
+
+    // Clean up old interrupts outside the window
+    recentInterruptsRef.current = recentInterruptsRef.current.filter(
+      (timestamp) => now - timestamp < windowMs
+    );
+
+    // Add current interrupt
+    recentInterruptsRef.current.push(now);
+
+    // Check if we've exceeded the limit
+    if (recentInterruptsRef.current.length > AI_COACH_CONFIG.maxRapidInterrupts) {
+      if (!inCooldownRef.current) {
+        console.warn('🚨 Interrupt storm detected! Entering cooldown...');
+        inCooldownRef.current = true;
+
+        // Clear cooldown after timeout
+        if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = setTimeout(() => {
+          console.log('✅ Cooldown period ended');
+          inCooldownRef.current = false;
+          recentInterruptsRef.current = [];
+        }, AI_COACH_CONFIG.interruptCooldownMs);
+
+        return true; // Storm detected
+      }
+    }
+
+    return inCooldownRef.current; // Return current cooldown status
+  }, []);
 
   // Handle user voice input (transcription)
   const handleTranscription = useCallback(
@@ -246,6 +300,16 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
           const progress = voiceSynthesisRef.current?.getProgress() || 0.5;
           conversationManager.markAIUtteranceInterrupted(progress);
 
+          // Check for interrupt storm
+          const isStorm = checkInterruptStorm();
+
+          if (isStorm) {
+            console.warn('⚠️ Too many rapid interrupts - in cooldown, not re-evaluating yet');
+            // Don't call AI, just keep paused
+            // User can resume by saying affirmation or waiting for cooldown to end
+            return;
+          }
+
           // Re-evaluate with interrupt context
           await callAIForIntervention({
             trigger: 'interrupt',
@@ -272,7 +336,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         console.log('💬 User statement noted:', text);
       }
     },
-    [voiceSynthesisRef, conversationManager, callAIForIntervention]
+    [voiceSynthesisRef, conversationManager, callAIForIntervention, checkInterruptStorm]
   );
 
   // Handle voice activity start (user started speaking)
@@ -293,16 +357,23 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
     setIsUserSpeaking(false);
   }, []);
 
-  // Track canvas changes (idle detection)
+  // Track canvas changes (idle detection with version tracking)
   useEffect(() => {
     if (!isEnabled || !isMountedRef.current) return;
 
-    const currentElementCount = elements.filter((el: any) => !el.isDeleted).length;
-    const elementCountChanged = currentElementCount !== lastElementCountRef.current;
+    // Increment canvas version on any change
+    canvasVersionRef.current += 1;
+    const currentVersion = canvasVersionRef.current;
 
-    // Only reset timers if element count actually changed (user made a change)
-    if (elementCountChanged) {
-      lastElementCountRef.current = currentElementCount;
+    // Check if this is a real change (not just a re-render)
+    const hasChanged = currentVersion !== lastCanvasVersionRef.current;
+
+    if (hasChanged) {
+      lastCanvasVersionRef.current = currentVersion;
+
+      const visibleElementCount = elements.filter((el: any) => !el.isDeleted).length;
+
+      console.log(`📊 Canvas changed (v${currentVersion}), ${visibleElementCount} elements`);
 
       // Clear existing timers
       if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
@@ -315,11 +386,11 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         }
       }, AI_COACH_CONFIG.canvasDebounceMs);
 
-      // Idle timer
+      // Idle timer - triggers after student stops making changes
       idleTimerRef.current = setTimeout(() => {
         if (!isMountedRef.current) return;
 
-        console.log('💤 User is idle on canvas');
+        console.log(`💤 User is idle (no canvas changes for ${AI_COACH_CONFIG.idleThresholdMs}ms)`);
 
         // Only intervene if user is not speaking and hasn't intervened recently
         const timeSinceLastIntervention =
@@ -328,7 +399,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         if (
           !isUserSpeaking &&
           timeSinceLastIntervention > AI_COACH_CONFIG.minInterventionIntervalMs &&
-          currentElementCount > 0
+          visibleElementCount > 0
         ) {
           callAIForIntervention({ trigger: 'idle' });
         }
@@ -348,6 +419,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (laserTimerRef.current) clearTimeout(laserTimerRef.current);
+      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
     };
   }, []);
 
