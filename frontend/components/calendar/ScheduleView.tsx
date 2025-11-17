@@ -27,6 +27,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
   preferences,
 }) => {
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<string | null>(null);
 
   // Convert scheduled blocks to calendar events
   const events = useMemo((): CalendarEvent[] => {
@@ -50,7 +51,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
   // Get the days to display based on view mode
   const displayDays = useMemo((): Date[] => {
     if (viewMode === 'day') {
-      return [currentDate];
+      return [new Date(currentDate)];
     } else if (viewMode === 'week') {
       const weekStart = getWeekStart(currentDate);
       return Array.from({ length: 7 }, (_, i) => {
@@ -77,8 +78,10 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
   const getWeekStart = (date: Date): Date => {
     const d = new Date(date);
     const day = d.getDay();
-    const diff = d.getDate() - day;
-    return new Date(d.setDate(diff));
+    const diff = day === 0 ? -6 : 1 - day; // Monday as week start
+    const result = new Date(d);
+    result.setDate(d.getDate() + diff);
+    return result;
   };
 
   const getPriorityColor = (priority: string): string => {
@@ -112,6 +115,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 
   const handleDragEnd = () => {
     setDraggedBlock(null);
+    setDragOverCell(null);
   };
 
   const handleDrop = (day: Date, hour: number) => {
@@ -129,6 +133,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 
     onBlockMove(draggedBlock, newStart, newEnd);
     setDraggedBlock(null);
+    setDragOverCell(null);
   };
 
   if (viewMode === 'month') {
@@ -154,7 +159,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
             return (
               <div
                 key={index}
-                className={`min-h-[120px] border rounded-lg p-2 ${
+                className={`min-h-[120px] border rounded-lg p-2 transition-colors ${
                   isCurrentMonth ? 'bg-background' : 'bg-muted/20'
                 } ${isToday ? 'ring-2 ring-primary' : ''}`}
               >
@@ -165,8 +170,8 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                   {dayEvents.slice(0, 3).map(event => (
                     <div
                       key={event.id}
-                      className={`text-xs px-2 py-1 rounded ${event.color} text-white truncate cursor-pointer opacity-90 hover:opacity-100`}
-                      title={event.title}
+                      className={`text-xs px-2 py-1 rounded ${event.color} text-white truncate cursor-pointer opacity-90 hover:opacity-100 transition-opacity`}
+                      title={`${event.title}\n${formatTime(event.startTime)} - ${formatTime(event.endTime)}`}
                     >
                       {formatTime(event.startTime)} {event.title}
                     </div>
@@ -195,6 +200,9 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 
   const displayHours = HOURS.slice(workHoursStart, workHoursEnd + 1);
 
+  // Fix: Use proper grid class instead of template literal
+  const gridClassName = viewMode === 'day' ? 'grid grid-cols-1' : 'grid grid-cols-7';
+
   return (
     <div className="h-full overflow-auto">
       <div className="flex">
@@ -210,7 +218,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 
         {/* Days columns */}
         <div className="flex-1 overflow-x-auto">
-          <div className={`grid grid-cols-${viewMode === 'day' ? '1' : '7'} min-w-full`}>
+          <div className={`${gridClassName} min-w-full`}>
             {displayDays.map((day, dayIndex) => {
               const dayEvents = getEventsForDay(day);
               const isToday =
@@ -221,7 +229,7 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
               return (
                 <div key={dayIndex} className="border-r border-border last:border-r-0">
                   {/* Day header */}
-                  <div className={`h-12 border-b border-border flex flex-col items-center justify-center ${
+                  <div className={`h-12 border-b border-border flex flex-col items-center justify-center transition-colors ${
                     isToday ? 'bg-primary/5' : ''
                   }`}>
                     <div className="text-xs text-muted-foreground">
@@ -234,14 +242,27 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
 
                   {/* Hour cells */}
                   <div className="relative">
-                    {displayHours.map((hour, hourIndex) => (
-                      <div
-                        key={hour}
-                        className="h-16 border-t border-border hover:bg-muted/30 transition-colors"
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => handleDrop(day, hour)}
-                      />
-                    ))}
+                    {displayHours.map((hour) => {
+                      const cellKey = `${day.toDateString()}-${hour}`;
+                      const isDragOver = dragOverCell === cellKey;
+
+                      return (
+                        <div
+                          key={hour}
+                          className={`h-16 border-t border-border transition-colors ${
+                            isDragOver ? 'bg-primary/10' : 'hover:bg-muted/30'
+                          }`}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDragOverCell(cellKey);
+                          }}
+                          onDragLeave={() => {
+                            setDragOverCell(null);
+                          }}
+                          onDrop={() => handleDrop(day, hour)}
+                        />
+                      );
+                    })}
 
                     {/* Events overlay */}
                     {dayEvents.map(event => {
@@ -250,25 +271,37 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({
                       const endHour = event.endTime.getHours();
                       const endMinute = event.endTime.getMinutes();
 
+                      // Calculate position
                       const top = ((startHour - workHoursStart) * 64) + (startMinute / 60 * 64);
                       const height = (((endHour - startHour) * 60 + (endMinute - startMinute)) / 60) * 64;
+
+                      // Skip if event is outside work hours
+                      if (top < 0 || height <= 0) return null;
+
+                      const isDragging = draggedBlock === event.id;
 
                       return (
                         <div
                           key={event.id}
                           draggable
-                          onDragStart={() => handleDragStart(event.id)}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            handleDragStart(event.id);
+                          }}
                           onDragEnd={handleDragEnd}
-                          className={`absolute left-1 right-1 ${event.color} text-white rounded-lg p-2 cursor-move shadow-sm hover:shadow-md transition-shadow ${
-                            event.isCompleted ? 'opacity-50' : 'opacity-90 hover:opacity-100'
+                          className={`absolute left-1 right-1 ${event.color} text-white rounded-lg p-2 cursor-move shadow-sm hover:shadow-md transition-all ${
+                            isDragging ? 'opacity-50 scale-95' : event.isCompleted ? 'opacity-50' : 'opacity-90 hover:opacity-100'
                           }`}
-                          style={{ top: `${top}px`, height: `${height}px` }}
+                          style={{ top: `${top}px`, height: `${Math.max(height, 24)}px`, minHeight: '24px' }}
+                          title={`${event.title}\n${formatTime(event.startTime)} - ${formatTime(event.endTime)}${event.description ? `\n${event.description}` : ''}`}
                         >
                           <div className="text-xs font-semibold truncate">{event.title}</div>
-                          <div className="text-xs opacity-90">
-                            {formatTime(event.startTime)} - {formatTime(event.endTime)}
-                          </div>
-                          {event.isAutoScheduled && (
+                          {height > 40 && (
+                            <div className="text-xs opacity-90">
+                              {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                            </div>
+                          )}
+                          {height > 60 && event.isAutoScheduled && (
                             <div className="text-xs opacity-75 mt-1">✨ Auto-scheduled</div>
                           )}
                         </div>

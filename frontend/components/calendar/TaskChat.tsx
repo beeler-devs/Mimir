@@ -1,27 +1,43 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Task, CalendarPreferences, TaskPriority } from '@/lib/types';
-import { Send, Sparkles } from 'lucide-react';
-import { nanoid } from 'nanoid';
+import { Send, Sparkles, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/common';
+import { createClient } from '@/lib/supabaseClient';
 
 interface TaskChatProps {
   onTaskCreated: (task: Task) => void;
   preferences: CalendarPreferences | null;
 }
 
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const MAX_MESSAGES = 20; // Prevent memory leak
+
 /**
  * Chat interface for adding tasks with natural language input
  */
 export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }) => {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
+  const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
       content: "Hi! I'll help you schedule your work. Tell me about a task, including:\n\n• What you need to do\n• How long you think it'll take\n• When it's due\n\nFor example: \"Finish math homework, should take 2 hours, due Friday\"",
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const supabase = createClient();
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,48 +45,91 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
 
     const userMessage = input.trim();
     setInput('');
-    setMessages([...messages, { role: 'user', content: userMessage }]);
+    setError(null);
+
+    // Add user message
+    setMessages(prev => {
+      const newMessages = [...prev, { role: 'user' as const, content: userMessage }];
+      // Keep only last MAX_MESSAGES to prevent memory leak
+      return newMessages.slice(-MAX_MESSAGES);
+    });
+
     setIsProcessing(true);
 
     try {
+      // Get current user
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('You must be logged in to create tasks');
+      }
+
       // Parse the task from natural language
       const parsedTask = await parseTaskFromNaturalLanguage(userMessage);
 
-      // Create the task
-      const newTask: Task = {
-        id: nanoid(),
-        userId: 'current-user', // TODO: Get from auth
+      // Create the task in database
+      const taskData = {
+        user_id: user.id,
         title: parsedTask.title,
         description: parsedTask.description,
-        estimatedDurationMinutes: parsedTask.estimatedDurationMinutes,
-        dueDate: parsedTask.dueDate,
+        estimated_duration_minutes: parsedTask.estimatedDurationMinutes,
+        due_date: parsedTask.dueDate,
         priority: parsedTask.priority,
         status: 'todo',
-        taskCategory: parsedTask.category,
-        tags: parsedTask.tags,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        task_category: parsedTask.category,
+        tags: parsedTask.tags || [],
       };
 
-      onTaskCreated(newTask);
+      const { data: newTask, error: insertError } = await supabase
+        .from('tasks')
+        .insert(taskData)
+        .select()
+        .single();
 
-      const confirmationMessage = `Great! I've added "${newTask.title}" to your calendar${
-        newTask.estimatedDurationMinutes ? ` (${newTask.estimatedDurationMinutes} minutes)` : ''
-      }${newTask.dueDate ? `, due ${new Date(newTask.dueDate).toLocaleDateString()}` : ''}. I'll find the best time to schedule it!`;
+      if (insertError) throw insertError;
 
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: confirmationMessage },
-      ]);
+      const task: Task = {
+        id: newTask.id,
+        userId: newTask.user_id,
+        title: newTask.title,
+        description: newTask.description,
+        estimatedDurationMinutes: newTask.estimated_duration_minutes,
+        actualDurationMinutes: newTask.actual_duration_minutes,
+        dueDate: newTask.due_date,
+        priority: newTask.priority,
+        status: newTask.status,
+        taskCategory: newTask.task_category,
+        tags: newTask.tags,
+        instanceId: newTask.instance_id,
+        completedAt: newTask.completed_at,
+        createdAt: newTask.created_at,
+        updatedAt: newTask.updated_at,
+      };
+
+      onTaskCreated(task);
+
+      const confirmationMessage = `Great! I've added "${task.title}" to your calendar${
+        task.estimatedDurationMinutes ? ` (${task.estimatedDurationMinutes} minutes)` : ''
+      }${task.dueDate ? `, due ${new Date(task.dueDate).toLocaleDateString()}` : ''}. I'm finding the best time to schedule it!`;
+
+      setMessages(prev => {
+        const newMessages = [...prev, { role: 'assistant' as const, content: confirmationMessage }];
+        return newMessages.slice(-MAX_MESSAGES);
+      });
     } catch (error) {
-      console.error('Error parsing task:', error);
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: "I had trouble understanding that. Could you try again? Include what you need to do, how long it'll take, and when it's due.",
-        },
-      ]);
+      console.error('Error creating task:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create task';
+      setError(errorMessage);
+
+      setMessages(prev => {
+        const newMessages = [
+          ...prev,
+          {
+            role: 'assistant' as const,
+            content: "I had trouble creating that task. Could you try again? Make sure to include what you need to do, how long it'll take, and when it's due.",
+          },
+        ];
+        return newMessages.slice(-MAX_MESSAGES);
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -85,9 +144,6 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
     category?: string;
     tags?: string[];
   }> => {
-    // TODO: Replace with actual Claude API call
-    // For now, using simple regex-based parsing
-
     // Extract duration (look for patterns like "2 hours", "30 minutes", "1.5 hrs")
     const durationMatch = text.match(/(\d+\.?\d*)\s*(hour|hr|minute|min|h|m)s?/i);
     let estimatedDurationMinutes: number | undefined;
@@ -123,7 +179,15 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
       category = 'project';
     } else if (text.match(/reading|read/i)) {
       category = 'reading';
+    } else if (text.match(/exam|test|quiz/i)) {
+      category = 'study';
     }
+
+    // Extract tags
+    const tags: string[] = [];
+    if (text.match(/math/i)) tags.push('math');
+    if (text.match(/code|programming|coding/i)) tags.push('coding');
+    if (text.match(/write|writing|essay/i)) tags.push('writing');
 
     // Use the original text as title (clean it up a bit)
     let title = text
@@ -149,6 +213,7 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
       dueDate,
       priority,
       category,
+      tags: tags.length > 0 ? tags : undefined,
     };
   };
 
@@ -188,7 +253,24 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
   };
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Error banner */}
+      {error && (
+        <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message, index) => (
@@ -213,6 +295,7 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
             </div>
           </div>
         ))}
+
         {isProcessing && (
           <div className="flex justify-start">
             <div className="bg-muted rounded-lg px-4 py-2.5">
@@ -226,27 +309,30 @@ export const TaskChat: React.FC<TaskChatProps> = ({ onTaskCreated, preferences }
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-border">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-border flex-shrink-0">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Describe your task..."
-            className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="flex-1 px-4 py-2.5 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isProcessing}
+            maxLength={500}
           />
-          <button
+          <Button
             type="submit"
             disabled={!input.trim() || isProcessing}
-            className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            className="px-4 py-2.5"
             aria-label="Send message"
           >
             <Send className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
       </form>
     </div>
