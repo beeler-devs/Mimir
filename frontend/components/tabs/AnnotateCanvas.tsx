@@ -5,16 +5,15 @@ import dynamic from 'next/dynamic';
 import '@excalidraw/excalidraw/index.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { LaserPointerOverlay, PointerPosition } from '../ai/LaserPointerOverlay';
-import { VoiceOrchestrator, VoiceExplanationSegment } from '../ai/VoiceOrchestrator';
-import { Volume2, VolumeX } from 'lucide-react';
+import { LiveAICoachingSystem } from '../ai/LiveAICoachingSystem';
+import { LiveVoiceSynthesis } from '../ai/LiveVoiceSynthesis';
+import { Bot, BotOff } from 'lucide-react';
 
 // Dynamically import Excalidraw to avoid SSR issues
 const Excalidraw = dynamic(
   async () => (await import('@excalidraw/excalidraw')).Excalidraw,
   { ssr: false }
 );
-
-// We'll dynamically import exportToCanvas when needed
 
 export interface AnnotateCanvasRef {
   exportCanvasAsImage: () => Promise<string>;
@@ -23,7 +22,6 @@ export interface AnnotateCanvasRef {
   exportAnnotatedPdf: () => void;
   setPdfFileUrl: (url: string | null) => void;
   setPdfPageNum: (pageNum: number) => void;
-  startVoiceExplanation: () => Promise<void>;
 }
 
 interface AnnotateCanvasProps {
@@ -36,7 +34,10 @@ interface AnnotateCanvasProps {
 }
 
 /**
- * Annotation canvas using Excalidraw for PDF annotations and drawing
+ * Enhanced Excalidraw canvas with live AI coaching
+ * - Real-time monitoring of user activity
+ * - Proactive AI assistance via voice, laser pointer, and canvas annotations
+ * - AI can write LaTeX and markdown directly on the canvas
  */
 export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>((props, ref) => {
   const { initialData, onStateChange } = props;
@@ -61,11 +62,10 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   const [pdfPageNum, setPdfPageNum] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0);
 
-  // Voice AI state
-  const [voiceSegments, setVoiceSegments] = useState<VoiceExplanationSegment[]>([]);
+  // Live AI Coach state
+  const [isAICoachEnabled, setIsAICoachEnabled] = useState(true);
   const [laserPosition, setLaserPosition] = useState<PointerPosition | null>(null);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [voiceText, setVoiceText] = useState<string | null>(null);
 
   // Function to load PDF document
   const loadPdfDocument = useCallback(async (url: string) => {
@@ -74,7 +74,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       const doc = await loadingTask.promise;
       setPdfDoc(doc);
       setPdfPageCount(doc.numPages);
-      setPdfPageNum(1); // Always reset to page 1 when a new PDF is loaded
+      setPdfPageNum(1);
     } catch (error) {
       console.error("Error loading PDF:", error);
       setPdfDoc(null);
@@ -89,7 +89,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 
     try {
       const page = await pdfDoc.getPage(pdfPageNum);
-      const viewport = page.getViewport({ scale: 1.5 }); // Adjust scale as needed
+      const viewport = page.getViewport({ scale: 1.5 });
 
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -107,31 +107,25 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 
       await page.render(renderContext as any).promise;
 
-      // Convert canvas to data URL
       const imageDataUrl = canvas.toDataURL('image/png');
 
-      // Add image to Excalidraw
       const excalidrawAPI = excalidrawRef.current;
       const { elements: currentElements } = excalidrawAPI.getSceneElements();
 
-      // Remove existing PDF background image if any
       const newElements = currentElements.filter(
         (el: any) => !(el.type === 'image' && el.customData?.isPdfBackground)
       );
 
-      // Add new PDF page as background image
       const newImageElement = {
         type: 'image',
         x: 0,
         y: 0,
         width: viewport.width,
         height: viewport.height,
-        fileId: null, // Excalidraw will generate this
+        fileId: null,
         customData: { isPdfBackground: true, pageNum: pdfPageNum },
-        // Other properties as needed for Excalidraw image element
       };
 
-      // Excalidraw requires files to be added separately
       const newFiles = {
         ...files,
         [`pdf-page-${pdfPageNum}`]: {
@@ -139,7 +133,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
           mimeType: 'image/png',
           dataURL: imageDataUrl,
           created: Date.now(),
-          is(id: string) { return id === `pdf-page-${pdfPageNum}`; } // Helper for Excalidraw
+          is(id: string) { return id === `pdf-page-${pdfPageNum}`; }
         }
       };
 
@@ -148,11 +142,9 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         files: newFiles,
       });
 
-      // Update local state to reflect changes
       setElements([...newElements, newImageElement]);
       setFiles(newFiles);
 
-      // Notify parent of state change
       if (onStateChange) {
         onStateChange({
           elements: [...newElements, newImageElement],
@@ -167,7 +159,6 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   }, [pdfDoc, pdfPageNum, excalidrawRef, files, onStateChange]);
 
   const handleUploadPDF = () => {
-    // Stub - will be implemented with file upload
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/pdf';
@@ -176,7 +167,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       if (file) {
         const url = URL.createObjectURL(file);
         setPdfFileUrl(url);
-        setPdfPageNum(1); // Reset to first page on new upload
+        setPdfPageNum(1);
         console.log('PDF uploaded:', file.name);
       }
     };
@@ -184,25 +175,21 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   };
 
   const handleExportPDF = () => {
-    // Stub - will be implemented with export functionality
     console.log('Exporting annotated PDF');
     alert('PDF export will be implemented in a future update!');
   };
 
-  // Load initial data when it changes (e.g., when switching instances)
+  // Load initial data when it changes
   useEffect(() => {
     if (initialData) {
       try {
-        // Validate state structure
         if (initialData.elements && !Array.isArray(initialData.elements)) {
           console.warn('Invalid excalidrawState: elements must be an array');
           setElements([]);
         } else {
           setElements(initialData.elements || []);
         }
-        
-        // Sanitize appState to ensure collaborators is always an array
-        // Always ensure appState is an object (never null) with collaborators array
+
         const sanitizedAppState = initialData.appState ? {
           ...initialData.appState,
           collaborators: Array.isArray(initialData.appState.collaborators)
@@ -211,8 +198,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         } : { collaborators: [] };
         setAppState(sanitizedAppState);
         setFiles(initialData.files || {});
-        
-        // Update Excalidraw with initial state if API is available
+
         if (excalidrawRef.current?.updateScene) {
           try {
             const safeAppState = initialData.appState ? {
@@ -223,7 +209,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             } : {
               collaborators: [],
             };
-            
+
             excalidrawRef.current.updateScene({
               elements: initialData.elements || [],
               appState: safeAppState,
@@ -234,20 +220,18 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         }
       } catch (error) {
         console.error('Error loading excalidrawState:', error);
-        // Reset to empty state on error
         setElements([]);
         setAppState(null);
         setFiles({});
       }
     } else {
-      // Reset to empty state if no initial data
       setElements([]);
       setAppState(null);
       setFiles({});
     }
   }, [initialData]);
 
-  // Effect to load PDF document when pdfFileUrl changes
+  // Effect to load PDF document
   useEffect(() => {
     if (pdfFileUrl) {
       loadPdfDocument(pdfFileUrl);
@@ -258,26 +242,24 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     }
   }, [pdfFileUrl, loadPdfDocument]);
 
-  // Effect to render PDF page to Excalidraw when pdfDoc or pdfPageNum changes
+  // Effect to render PDF page
   useEffect(() => {
     if (pdfDoc) {
       renderPdfPageToExcalidraw();
     }
   }, [pdfDoc, pdfPageNum, renderPdfPageToExcalidraw]);
 
-  // Helper function to export canvas from state
+  // Helper to export canvas from state
   const exportCanvasFromState = async (state: { elements: any[]; appState: any; files: any }): Promise<string> => {
     try {
-      // Dynamically import Excalidraw utilities
       const excalidrawModule = await import('@excalidraw/excalidraw');
       const { exportToCanvas } = excalidrawModule;
-      
+
       if (!exportToCanvas) {
         throw new Error('exportToCanvas not available');
       }
-      
+
       if (!state.elements || state.elements.length === 0) {
-        // Return empty canvas if no elements (with padding)
         const padding = 40;
         const canvas = document.createElement('canvas');
         canvas.width = 800 + (padding * 2);
@@ -289,18 +271,15 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         }
         return canvas.toDataURL('image/png');
       }
-      
-      // Filter out deleted elements before exporting
-      // Excalidraw marks deleted elements with isDeleted: true
+
       const visibleElements = state.elements.filter((element: any) => !element.isDeleted);
       const deletedCount = state.elements.length - visibleElements.length;
-      
+
       if (deletedCount > 0) {
         console.log(`🗑️ Filtered out ${deletedCount} deleted element(s) before export`);
       }
-      
+
       if (visibleElements.length === 0) {
-        // Return empty canvas if all elements are deleted (with padding)
         const padding = 40;
         const canvas = document.createElement('canvas');
         canvas.width = 800 + (padding * 2);
@@ -312,38 +291,32 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         }
         return canvas.toDataURL('image/png');
       }
-      
-      // Export to canvas at native resolution
+
       const scale = 1;
       const canvas = await exportToCanvas({
         elements: visibleElements,
         appState: state.appState || {},
         files: state.files || {},
-        getDimensions: (width: number, height: number) => ({ 
-          width: width * scale, 
-          height: height * scale 
+        getDimensions: (width: number, height: number) => ({
+          width: width * scale,
+          height: height * scale
         }),
       });
 
-      // Add padding around the canvas
-      const padding = 40; // pixels on each side
+      const padding = 40;
       const paddedCanvas = document.createElement('canvas');
       paddedCanvas.width = canvas.width + (padding * 2);
       paddedCanvas.height = canvas.height + (padding * 2);
-      
+
       const ctx = paddedCanvas.getContext('2d');
       if (!ctx) {
         throw new Error('Failed to get canvas context');
       }
-      
-      // Fill with white background
+
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height);
-      
-      // Draw the original canvas with padding offset
       ctx.drawImage(canvas, padding, padding);
 
-      // Convert padded canvas to base64 PNG
       return new Promise((resolve, reject) => {
         paddedCanvas.toBlob(
           (blob: Blob | null) => {
@@ -354,26 +327,11 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64 = reader.result as string;
-              
-              // Debug: Log image info
               console.log('📸 Exported Canvas Image:', {
                 size: base64.length,
                 sizeKB: Math.round(base64.length / 1024),
-                originalDimensions: `${canvas.width}x${canvas.height}`,
                 paddedDimensions: `${paddedCanvas.width}x${paddedCanvas.height}`,
-                padding: padding,
-                scale: scale,
               });
-              
-              // Debug: Store full image in global variable for easy access
-              (window as any).__lastExportedCanvasImage = base64;
-              
-              // Debug: Log image data URL for viewing
-              console.log('🔗 Image Data URL preview:', base64.substring(0, 100) + '...');
-              console.log('💡 To view the image, run in console:');
-              console.log('   const img = document.createElement("img"); img.src = window.__lastExportedCanvasImage; img.style.maxWidth = "100%"; document.body.appendChild(img);');
-              console.log('   Or copy window.__lastExportedCanvasImage and paste in browser address bar');
-              
               resolve(base64);
             };
             reader.onerror = reject;
@@ -393,56 +351,67 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     return exportCanvasFromState({ elements, appState, files });
   };
 
-  // Start voice explanation with laser pointer
-  const startVoiceExplanation = async () => {
-    try {
-      setIsLoadingExplanation(true);
+  // AI Coach callback: Add annotation to canvas
+  const handleAddAnnotation = useCallback((annotation: {
+    text: string;
+    x: number;
+    y: number;
+    type: string;
+  }) => {
+    if (!excalidrawRef.current) return;
 
-      // Export canvas as screenshot
-      const screenshot = await exportCanvasAsImage();
+    const api = excalidrawRef.current;
 
-      // Prepare element data
-      const elementData = elements
-        .filter((el: any) => !el.isDeleted)
-        .map((el: any) => ({
-          id: el.id,
-          type: el.type,
-          x: el.x,
-          y: el.y,
-          width: el.width || 0,
-          height: el.height || 0,
-          text: el.text || undefined,
-        }));
+    // Create a text element for the annotation
+    // Excalidraw supports LaTeX rendering for text elements
+    const textElement = {
+      type: 'text',
+      x: annotation.x,
+      y: annotation.y,
+      text: annotation.text,
+      fontSize: 16,
+      fontFamily: 1,
+      textAlign: 'left',
+      verticalAlign: 'top',
+      strokeColor: annotation.type === 'hint' ? '#10b981' : '#3b82f6', // Green for hints, blue for explanations
+      backgroundColor: 'transparent',
+      fillStyle: 'solid',
+      strokeWidth: 1,
+      roughness: 0,
+      opacity: 100,
+      width: 400,
+      height: 40,
+      seed: Math.floor(Math.random() * 1000000),
+      version: 1,
+      versionNonce: Math.floor(Math.random() * 1000000),
+      isDeleted: false,
+      customData: {
+        isAIGenerated: true,
+        annotationType: annotation.type,
+      },
+    };
 
-      // Call API to get voice explanation with positional encoding
-      const response = await fetch('/api/voice-explain', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          screenshot,
-          elements: elementData,
-        }),
-      });
+    // Add to canvas
+    const currentElements = api.getSceneElements?.() || elements;
+    api.updateScene({
+      elements: [...currentElements, textElement],
+    });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate voice explanation');
-      }
+    console.log('✍️ AI annotation added to canvas:', annotation.text);
+  }, [excalidrawRef, elements]);
 
-      const data = await response.json();
-      setVoiceSegments(data.segments);
-      setIsVoiceActive(true);
+  // AI Coach callback: Speak text
+  const handleSpeakText = useCallback((text: string) => {
+    setVoiceText(text);
+    console.log('🗣️ AI speaking:', text);
+  }, []);
 
-    } catch (error) {
-      console.error('Error generating voice explanation:', error);
-      alert('Failed to generate voice explanation. Please try again.');
-    } finally {
-      setIsLoadingExplanation(false);
-    }
-  };
+  // AI Coach callback: Update laser position
+  const handleLaserPositionChange = useCallback((position: PointerPosition | null) => {
+    setLaserPosition(position);
+  }, []);
 
-  // Expose export functions via ref
+  // Expose functions via ref
   useImperativeHandle(ref, () => ({
     exportCanvasAsImage,
     exportCanvasFromState,
@@ -450,25 +419,29 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     exportAnnotatedPdf: handleExportPDF,
     setPdfFileUrl,
     setPdfPageNum,
-    startVoiceExplanation,
   }));
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Voice AI Controls */}
-      {isVoiceActive && voiceSegments.length > 0 && (
-        <div className="p-3 border-b border-border bg-background/95 backdrop-blur-sm">
-          <VoiceOrchestrator
-            segments={voiceSegments}
-            onPositionChange={setLaserPosition}
-            onComplete={() => {
-              setIsVoiceActive(false);
-              setLaserPosition(null);
-            }}
-            autoStart={true}
-          />
-        </div>
-      )}
+    <div className="h-full flex flex-col bg-background relative">
+      {/* AI Coach Toggle */}
+      <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+        <button
+          onClick={() => setIsAICoachEnabled(!isAICoachEnabled)}
+          className={`p-3 rounded-full shadow-lg transition-all ${
+            isAICoachEnabled
+              ? 'bg-green-500 text-white hover:bg-green-600'
+              : 'bg-gray-300 text-gray-600 hover:bg-gray-400'
+          }`}
+          title={isAICoachEnabled ? 'AI Coach: ON (will help proactively)' : 'AI Coach: OFF'}
+        >
+          {isAICoachEnabled ? <Bot className="w-6 h-6" /> : <BotOff className="w-6 h-6" />}
+        </button>
+        {isAICoachEnabled && (
+          <div className="bg-green-500 text-white text-xs px-2 py-1 rounded-full shadow-md">
+            AI Watching
+          </div>
+        )}
+      </div>
 
       {/* PDF Navigation */}
       {pdfDoc && (
@@ -493,30 +466,12 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         </div>
       )}
 
-      {/* Voice AI Trigger Button */}
-      <div className="absolute top-4 right-4 z-40">
-        <button
-          onClick={startVoiceExplanation}
-          disabled={isLoadingExplanation || isVoiceActive || elements.length === 0}
-          className="p-3 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          title="Start voice explanation with laser pointer"
-        >
-          {isLoadingExplanation ? (
-            <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          ) : isVoiceActive ? (
-            <Volume2 className="w-6 h-6" />
-          ) : (
-            <VolumeX className="w-6 h-6" />
-          )}
-        </button>
-      </div>
-
       {/* Excalidraw Canvas */}
       <div ref={canvasContainerRef} className="flex-1 overflow-hidden relative">
         {/* Laser Pointer Overlay */}
         <LaserPointerOverlay
           position={laserPosition}
-          isActive={isVoiceActive}
+          isActive={laserPosition !== null}
           canvasRef={canvasContainerRef}
         />
 
@@ -525,26 +480,22 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             excalidrawRef.current = api;
           }}
           onChange={(newElements: readonly any[], newAppState: any, newFiles: any) => {
-            // Sanitize appState to ensure collaborators is always an array
-            // Always ensure appState is an object (never null) with collaborators array
             const sanitizedAppState = newAppState ? {
               ...newAppState,
               collaborators: Array.isArray(newAppState.collaborators)
                 ? newAppState.collaborators
                 : [],
             } : { collaborators: [] };
-            
-            // Only update if state actually changed (performance optimization)
+
             const elementsChanged = JSON.stringify(newElements) !== JSON.stringify(elements);
             const appStateChanged = JSON.stringify(sanitizedAppState) !== JSON.stringify(appState);
             const filesChanged = JSON.stringify(newFiles) !== JSON.stringify(files);
-            
+
             if (elementsChanged || appStateChanged || filesChanged) {
               setElements([...newElements]);
               setAppState(sanitizedAppState);
               setFiles(newFiles || {});
-              
-              // Notify parent of state change for saving
+
               if (onStateChange) {
                 onStateChange({
                   elements: [...newElements],
@@ -558,8 +509,8 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
             elements: initialData?.elements || [],
             appState: initialData?.appState ? {
               ...initialData.appState,
-              collaborators: Array.isArray(initialData.appState.collaborators) 
-                ? initialData.appState.collaborators 
+              collaborators: Array.isArray(initialData.appState.collaborators)
+                ? initialData.appState.collaborators
                 : [],
             } : {
               collaborators: [],
@@ -573,6 +524,22 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
           }}
         />
       </div>
+
+      {/* Live AI Coaching System (background component) */}
+      <LiveAICoachingSystem
+        excalidrawRef={excalidrawRef}
+        elements={elements}
+        onLaserPositionChange={handleLaserPositionChange}
+        onAddAnnotation={handleAddAnnotation}
+        onSpeakText={handleSpeakText}
+        isEnabled={isAICoachEnabled}
+      />
+
+      {/* Live Voice Synthesis (background component) */}
+      <LiveVoiceSynthesis
+        text={voiceText}
+        onComplete={() => setVoiceText(null)}
+      />
     </div>
   );
 });
