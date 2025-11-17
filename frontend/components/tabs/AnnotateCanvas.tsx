@@ -451,6 +451,8 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   const handleVoiceComplete = useCallback(() => {
     console.log('✅ Voice synthesis completed');
     setVoiceText(null);
+    // Return AI state to idle when speaking finishes
+    setAIState('idle');
   }, []);
 
   // Expose functions via ref

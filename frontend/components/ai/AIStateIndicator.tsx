@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-
-export type AIState = 'idle' | 'listening' | 'thinking' | 'speaking';
+import type { AIState } from './LiveAICoachingSystem';
 
 interface AIStateIndicatorProps {
   state: AIState;
