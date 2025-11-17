@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { LectureSourceType } from '@/lib/types';
 
+const TRANSCRIPT_CHUNK_SECONDS = 60;
+
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -57,6 +59,7 @@ interface LectureViewerProps {
   slidesUrl?: string;
   slidesFileName?: string;
   slidesPageCount?: number;
+  slidesFullText?: string; // Added this prop
   audioUrl?: string;
   metadata?: LectureMetadata;
   onUpload: (data: {
@@ -98,6 +101,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   slidesUrl,
   slidesFileName,
   slidesPageCount,
+  slidesFullText,
   audioUrl,
   metadata,
   onUpload,
@@ -120,6 +124,11 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [deepgramSocket, setDeepgramSocket] = useState<WebSocket | null>(null);
+  const deepgramSocketRef = useRef<WebSocket | null>(null);
+  const streamingTranscriptRef = useRef<TranscriptSegment[]>([]);
+  const latestSelectedMethodRef = useRef<LectureSourceType | null>(null);
+  const recordingStartTimeRef = useRef<number | null>(null);
 
   // Video player state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -149,6 +158,14 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       setSelectedMethod(sourceType);
     }
   }, [sourceType]);
+
+  useEffect(() => {
+    latestSelectedMethodRef.current = selectedMethod;
+  }, [selectedMethod]);
+
+  useEffect(() => {
+    streamingTranscriptRef.current = streamingTranscript;
+  }, [streamingTranscript]);
 
   // Recording timer
   useEffect(() => {
@@ -241,9 +258,95 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
     return null;
   };
 
-  // Start audio recording
+  // Start audio recording with live transcription
   const handleStartRecording = async () => {
+    setStreamingTranscript([]);
+
     try {
+      // Get Deepgram config
+      const configResponse = await fetch('/api/lecture/transcribe-live');
+      if (!configResponse.ok) {
+        throw new Error('Failed to get transcription config');
+      }
+      const config = await configResponse.json();
+
+      // Establish WebSocket connection to Deepgram
+      const wsUrl = new URL(config.wsUrl);
+      wsUrl.searchParams.append('model', config.options.model);
+      wsUrl.searchParams.append('smart_format', config.options.smart_format);
+      wsUrl.searchParams.append('punctuate', config.options.punctuate);
+      wsUrl.searchParams.append('interim_results', config.options.interim_results);
+      wsUrl.searchParams.append('language', config.options.language);
+
+      const socket = new WebSocket(wsUrl.toString(), ['token', config.apiKey]);
+      deepgramSocketRef.current = socket;
+      setDeepgramSocket(socket);
+
+      // Handle WebSocket events
+      socket.onopen = () => {
+        console.log('Deepgram WebSocket connected');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.channel?.alternatives?.[0]?.transcript) {
+            const transcript = data.channel.alternatives[0].transcript;
+            
+            // Only process non-empty transcripts
+            if (transcript.trim()) {
+              const isFinal = data.is_final;
+              
+              if (isFinal) {
+                const now = Date.now();
+                const startTime = recordingStartTimeRef.current ?? now;
+                if (!recordingStartTimeRef.current) {
+                  recordingStartTimeRef.current = now;
+                }
+                const elapsedSeconds = Math.max(0, Math.floor((now - startTime) / 1000));
+                const bucketStart = Math.floor(elapsedSeconds / TRANSCRIPT_CHUNK_SECONDS) * TRANSCRIPT_CHUNK_SECONDS;
+
+                // Group final transcripts into minute buckets
+                setStreamingTranscript((prev) => {
+                  const updated = [...prev];
+                  const lastSegment = updated[updated.length - 1];
+
+                  if (lastSegment && lastSegment.timestamp === bucketStart) {
+                    updated[updated.length - 1] = {
+                      ...lastSegment,
+                      text: `${lastSegment.text} ${transcript}`.trim(),
+                      duration: TRANSCRIPT_CHUNK_SECONDS,
+                    };
+                  } else {
+                    updated.push({
+                      text: transcript,
+                      timestamp: bucketStart,
+                      duration: TRANSCRIPT_CHUNK_SECONDS,
+                    });
+                  }
+
+                  return updated;
+                });
+              } else {
+                // Interim transcripts are ignored for now; we only store finalized minute buckets
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing Deepgram message:', error);
+        }
+      };
+
+      socket.onerror = (error) => {
+        console.error('Deepgram WebSocket error:', error);
+      };
+
+      socket.onclose = () => {
+        console.log('Deepgram WebSocket closed');
+      };
+
+      // Start audio recording
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
@@ -251,28 +354,45 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunks.push(e.data);
+          
+          // Send audio chunk to Deepgram WebSocket
+          if (socket.readyState === WebSocket.OPEN) {
+            e.data.arrayBuffer().then((buffer) => {
+              socket.send(buffer);
+            });
+          }
         }
       };
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        recordingStartTimeRef.current = null;
+        
+        // Close WebSocket
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'CloseStream' }));
+          socket.close();
+        }
+        
         await processAudioRecording(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
 
-      recorder.start();
+      // Start recording with chunks every 250ms for real-time streaming
+      recorder.start(250);
       setMediaRecorder(recorder);
       setAudioChunks(chunks);
       setIsRecording(true);
       setStreamingTranscript([]); // Clear previous transcripts
-      
+      recordingStartTimeRef.current = Date.now();
+
       // If we're in slides mode, update to slides-recording
-      if (selectedMethod === 'slides' || sourceType === 'slides') {
-        setSelectedMethod('slides-recording');
-      }
+      const isSlidesContext = selectedMethod === 'slides' || selectedMethod === 'slides-recording' || sourceType === 'slides' || sourceType === 'slides-recording' || Boolean(slidesUrl);
+      const nextMethod: LectureSourceType = isSlidesContext ? 'slides-recording' : 'recording';
+      setSelectedMethod(nextMethod);
+      latestSelectedMethodRef.current = nextMethod;
       
-      // Show immediate feedback that transcription is ready
-      console.log('Recording started - transcription will appear after you stop recording');
+      console.log('Recording started - live transcription active');
     } catch (error) {
       console.error('Error starting recording:', error);
       alert('Failed to start recording. Please allow microphone access.');
@@ -287,86 +407,22 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
     }
   };
 
-  // Process recorded audio with real-time transcription
+  // Process recorded audio - upload to storage (transcription already done via WebSocket)
   const processAudioRecording = async (audioBlob: Blob) => {
     setProcessing(true);
-    setIsTranscribing(true);
-    setStreamingTranscript([]); // Clear any previous transcript
     
     try {
-      // Upload audio to Supabase and transcribe
+      // Upload audio to Supabase for storage and playback
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error('User not authenticated');
       }
 
-      // First, upload to Supabase storage
-      const formData = new FormData();
-      formData.append('audio', audioBlob);
-      formData.append('userId', user.id);
-
-      // Start streaming transcription
-      const streamResponse = await fetch('/api/lecture/transcribe-audio-stream', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!streamResponse.ok) {
-        throw new Error('Failed to start transcription');
-      }
-
-      const reader = streamResponse.body?.getReader();
-      const decoder = new TextDecoder();
-      
-      if (!reader) {
-        throw new Error('Response body is not readable');
-      }
-
-      let buffer = '';
-      let allSegments: TranscriptSegment[] = [];
-      let finalTranscript = '';
-      let finalDuration = 0;
-      let audioUrl = '';
-
-      // Read the SSE stream
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'segment') {
-                // Add segment to streaming display
-                allSegments.push(data.segment);
-                setStreamingTranscript([...allSegments]);
-              } else if (data.type === 'done') {
-                finalTranscript = data.transcript;
-                allSegments = data.segments;
-                finalDuration = data.duration;
-                setStreamingTranscript(allSegments);
-              } else if (data.type === 'error') {
-                throw new Error(data.content);
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e);
-            }
-          }
-        }
-      }
-
-      // Now upload audio file to get the storage URL
+      // Upload audio file to get storage URL
       const uploadFormData = new FormData();
       uploadFormData.append('audio', audioBlob);
       uploadFormData.append('userId', user.id);
 
-      // Upload to Supabase for storage
       const uploadResponse = await fetch('/api/lecture/transcribe-audio', {
         method: 'POST',
         body: uploadFormData,
@@ -377,13 +433,22 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       }
 
       const uploadResult = await uploadResponse.json();
-      audioUrl = uploadResult.audioUrl;
+      const audioUrl = uploadResult.audioUrl;
 
-      // Use the streamed transcription data
+      // Use the live transcription data from WebSocket
+      const allSegments = streamingTranscriptRef.current;
+      const finalTranscript = allSegments.map(s => s.text).join(' ');
+      const finalDuration = allSegments.length > 0 
+        ? allSegments[allSegments.length - 1].timestamp + TRANSCRIPT_CHUNK_SECONDS 
+        : 0;
+
       // Keep the source type as slides-recording if we're in that mode
-      const finalSourceType = selectedMethod === 'slides-recording' || sourceType === 'slides-recording' 
-        ? 'slides-recording' 
-        : 'recording';
+      const isSlidesContext = latestSelectedMethodRef.current === 'slides-recording' 
+        || latestSelectedMethodRef.current === 'slides' 
+        || sourceType === 'slides-recording' 
+        || sourceType === 'slides' 
+        || Boolean(slidesUrl);
+      const finalSourceType: LectureSourceType = isSlidesContext ? 'slides-recording' : 'recording';
       
       // Preserve slides data if we're in slides-recording mode
       const uploadData: any = {
@@ -410,16 +475,13 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       
       onUpload(uploadData);
 
-      // Don't change the selected method if we're already in slides mode
-      if (selectedMethod !== 'slides-recording' && sourceType !== 'slides-recording') {
-        setSelectedMethod('recording');
-      }
+      // Keep the UI aligned with the data we save
+      setSelectedMethod(finalSourceType);
     } catch (error) {
       console.error('Error processing audio:', error);
       alert(error instanceof Error ? error.message : 'Failed to process audio recording');
     } finally {
       setProcessing(false);
-      setIsTranscribing(false);
     }
   };
 
@@ -840,16 +902,16 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                 </button>
               )}
             </div>
-            {isRecording && !isTranscribing && streamingTranscript.length === 0 && (
+            {isRecording && streamingTranscript.length === 0 && (
               <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                 <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-sm">Recording in progress... Transcription will appear when you stop.</span>
+                <span className="text-sm">Recording... Speak to see live transcription.</span>
               </div>
             )}
-            {isTranscribing && (
+            {processing && !isRecording && (
               <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Transcribing...</span>
+                <span className="text-sm">Uploading audio...</span>
               </div>
             )}
             {streamingTranscript.map((segment, idx) => (
@@ -1059,7 +1121,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   }
 
   // Render PDF slides viewer
-  if ((sourceType === 'slides' || sourceType === 'slides-recording' || selectedMethod === 'slides') && slidesUrl) {
+  if ((sourceType === 'slides' || sourceType === 'slides-recording' || selectedMethod === 'slides' || selectedMethod === 'slides-recording') && slidesUrl) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
         {/* Toolbar */}
@@ -1178,16 +1240,16 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                   </button>
                 )}
               </div>
-              {isRecording && !isTranscribing && streamingTranscript.length === 0 && (
+              {isRecording && streamingTranscript.length === 0 && (
                 <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                   <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                  <span className="text-sm">Recording in progress... Transcription will appear when you stop.</span>
+                  <span className="text-sm">Recording... Speak to see live transcription.</span>
                 </div>
               )}
-              {isTranscribing && (
+              {processing && !isRecording && (
                 <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Transcribing...</span>
+                  <span className="text-sm">Uploading audio...</span>
                 </div>
               )}
               {streamingTranscript.length > 0 ? (
@@ -1248,8 +1310,8 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
     );
   }
 
-  // Render audio recording playback
-  if ((sourceType === 'recording' || selectedMethod === 'recording') && audioUrl) {
+  // Render audio recording playback (only when there are no slides)
+  if ((sourceType === 'recording' || selectedMethod === 'recording') && audioUrl && !slidesUrl) {
     return (
       <div className="flex flex-col h-full overflow-hidden">
         {/* Audio Player */}
