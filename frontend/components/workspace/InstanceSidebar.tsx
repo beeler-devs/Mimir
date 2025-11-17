@@ -16,7 +16,9 @@ import {
   ChevronRight,
   ChevronDown,
   Search,
-  Video
+  Video,
+  Calendar,
+  Timer
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
 
@@ -37,6 +39,8 @@ interface InstanceSidebarProps {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenCalendar?: () => void;
+  onOpenPomodoro?: () => void;
   onCreateFolder?: (name: string, parentId?: string) => void;
   onRenameFolder?: (id: string, name: string) => void;
   onDeleteFolder?: (id: string) => void;
@@ -56,6 +60,8 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   onRename,
   onDelete,
   onOpenSettings,
+  onOpenCalendar,
+  onOpenPomodoro,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -494,7 +500,25 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             </button>
           </div>
           <div className="flex-1" />
-          <div className="p-3 border-t border-border flex items-center justify-center">
+          <div className="p-3 border-t border-border flex flex-col gap-2 items-center">
+            {onOpenCalendar && (
+              <button
+                onClick={onOpenCalendar}
+                className="h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                aria-label="Open calendar"
+              >
+                <Calendar className="h-4 w-4" />
+              </button>
+            )}
+            {onOpenPomodoro && (
+              <button
+                onClick={onOpenPomodoro}
+                className="h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                aria-label="Open pomodoro timer"
+              >
+                <Timer className="h-4 w-4" />
+              </button>
+            )}
             <button
               onClick={onOpenSettings}
               className="h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
@@ -633,7 +657,29 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         {rootInstances.map(instance => renderInstance(instance))}
       </div>
 
-      <div className="p-4 border-t border-border">
+      <div className="p-4 border-t border-border space-y-2">
+        <div className="flex gap-2">
+          {onOpenCalendar && (
+            <button
+              onClick={onOpenCalendar}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-muted/40 hover:bg-muted transition"
+              aria-label="Open calendar"
+            >
+              <Calendar className="h-4 w-4" />
+              <span className="text-sm font-medium">Calendar</span>
+            </button>
+          )}
+          {onOpenPomodoro && (
+            <button
+              onClick={onOpenPomodoro}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-muted/40 hover:bg-muted transition"
+              aria-label="Open pomodoro"
+            >
+              <Timer className="h-4 w-4" />
+              <span className="text-sm font-medium">Timer</span>
+            </button>
+          )}
+        </div>
         <button
           onClick={onOpenSettings}
           className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-muted/40 hover:bg-muted transition"

@@ -1,10 +1,15 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { InstanceSidebar, NewInstanceModal, SettingsModal } from '@/components/workspace';
+import { PomodoroTimer } from '@/components/calendar/PomodoroTimer';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [pomodoroOpen, setPomodoroOpen] = useState(false);
+
   const {
     instances,
     folders,
@@ -27,6 +32,14 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     moveInstanceToFolder,
   } = useWorkspace();
 
+  const handleOpenCalendar = () => {
+    router.push('/calendar');
+  };
+
+  const handleOpenPomodoro = () => {
+    setPomodoroOpen(true);
+  };
+
   // Keep the chrome rendered even while individual pages change
   return (
     <div className="flex h-screen bg-background">
@@ -39,6 +52,8 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         onRename={renameInstance}
         onDelete={deleteInstance}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenCalendar={handleOpenCalendar}
+        onOpenPomodoro={handleOpenPomodoro}
         onCreateFolder={createFolder}
         onRenameFolder={renameFolder}
         onDeleteFolder={deleteFolder}
@@ -71,6 +86,13 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         onClose={() => setNewInstanceOpen(false)}
         onCreate={createInstance}
       />
+
+      {pomodoroOpen && (
+        <PomodoroTimer
+          tasks={[]} // TODO: Load tasks from database
+          onClose={() => setPomodoroOpen(false)}
+        />
+      )}
     </div>
   );
 }

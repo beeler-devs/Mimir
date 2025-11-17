@@ -564,3 +564,153 @@ export interface ReactFlowEdge {
   style?: Record<string, any>;
   animated?: boolean;
 }
+
+// Calendar and Task Management types
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TaskStatus = 'todo' | 'in_progress' | 'completed' | 'cancelled';
+export type SessionType = 'work' | 'pomodoro' | 'break';
+export type PomodoroSessionType = 'work' | 'short_break' | 'long_break';
+
+export interface Task {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  estimatedDurationMinutes?: number;
+  actualDurationMinutes?: number;
+  dueDate?: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  taskCategory?: string;
+  tags?: string[];
+  instanceId?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduledBlock {
+  id: string;
+  userId: string;
+  taskId: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  isCompleted: boolean;
+  isAutoScheduled: boolean;
+  sessionNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeTracking {
+  id: string;
+  userId: string;
+  taskId: string;
+  scheduledBlockId?: string;
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  sessionType: SessionType;
+  interruptionCount: number;
+  focusRating?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PomodoroSession {
+  id: string;
+  userId: string;
+  taskId?: string;
+  timeTrackingId?: string;
+  workDurationMinutes: number;
+  breakDurationMinutes: number;
+  longBreakDurationMinutes: number;
+  sessionsUntilLongBreak: number;
+  sessionNumber: number;
+  sessionType: PomodoroSessionType;
+  startedAt: string;
+  completedAt?: string;
+  pausedAt?: string;
+  totalPauseDurationMinutes: number;
+  isCompleted: boolean;
+  wasInterrupted: boolean;
+  createdAt: string;
+}
+
+export interface TaskDurationPattern {
+  id: string;
+  userId: string;
+  taskCategory: string;
+  tags?: string[];
+  keywords?: string[];
+  sampleCount: number;
+  avgEstimatedDurationMinutes?: number;
+  avgActualDurationMinutes?: number;
+  stdDevMinutes?: number;
+  avgEstimationErrorPercent?: number;
+  lastUpdated: string;
+  createdAt: string;
+}
+
+export interface CalendarPreferences {
+  id: string;
+  userId: string;
+  workHoursStart: string;
+  workHoursEnd: string;
+  workDays: number[];
+  preferredSessionDurationMinutes: number;
+  minSessionDurationMinutes: number;
+  maxSessionDurationMinutes: number;
+  breakDurationMinutes: number;
+  preferMorning: boolean;
+  preferAfternoon: boolean;
+  preferEvening: boolean;
+  defaultPomodoroWorkMinutes: number;
+  defaultPomodoroBreakMinutes: number;
+  defaultPomodoroLongBreakMinutes: number;
+  timezone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Extended types with related data
+export interface TaskWithBlocks extends Task {
+  scheduledBlocks?: ScheduledBlock[];
+  timeTracking?: TimeTracking[];
+}
+
+export interface ScheduledBlockWithTask extends ScheduledBlock {
+  task?: Task;
+}
+
+// Calendar event types for UI
+export interface CalendarEvent {
+  id: string;
+  taskId: string;
+  title: string;
+  description?: string;
+  startTime: Date;
+  endTime: Date;
+  isCompleted: boolean;
+  isAutoScheduled: boolean;
+  priority: TaskPriority;
+  color?: string;
+}
+
+// AI Scheduling request/response types
+export interface ScheduleTaskRequest {
+  task: Task;
+  preferences: CalendarPreferences;
+  existingBlocks: ScheduledBlock[];
+  availabilityHints?: {
+    preferredDates?: string[];
+    blockedTimes?: { start: string; end: string }[];
+  };
+}
+
+export interface ScheduleTaskResponse {
+  scheduledBlocks: Omit<ScheduledBlock, 'id' | 'createdAt' | 'updatedAt'>[];
+  reasoning?: string;
+  confidence?: number;
+}
