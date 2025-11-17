@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useState, useCallback, Suspense, lazy } from 'react';
 import { GridComponent } from '@/lib/focusView';
-import { CodeWorkspace } from '@/components/code/CodeWorkspace';
-import { TextEditor } from '@/components/tabs/TextEditor';
-import { PDFViewer } from '@/components/tabs/PDFViewer';
+import { useFocusViewContext } from '@/lib/FocusViewContext';
 import { VoiceButton } from '@/components/ai/VoiceButton';
-import { AnnotateCanvas } from '@/components/tabs/AnnotateCanvas';
-import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Loader2 } from 'lucide-react';
+import { ChatPanelWrapper } from './ChatPanelWrapper';
+import { ComponentErrorBoundary } from './ComponentErrorBoundary';
+
+// Lazy load heavy components to reduce initial bundle size
+const LazyCodeWorkspace = lazy(() => import('@/components/code/CodeWorkspace').then(mod => ({ default: mod.CodeWorkspace })));
+const LazyTextEditor = lazy(() => import('@/components/tabs/TextEditor').then(mod => ({ default: mod.TextEditor })));
+const LazyPDFViewer = lazy(() => import('@/components/tabs/PDFViewer').then(mod => ({ default: mod.PDFViewer })));
+const LazyAnnotateCanvas = lazy(() => import('@/components/tabs/AnnotateCanvas').then(mod => ({ default: mod.AnnotateCanvas })));
 
 interface FocusViewComponentRendererProps {
   component: GridComponent;
@@ -16,19 +20,33 @@ interface FocusViewComponentRendererProps {
 }
 
 /**
+ * Loading fallback for lazy-loaded components
+ */
+const ComponentLoadingFallback: React.FC = () => (
+  <div className="h-full flex items-center justify-center">
+    <div className="flex flex-col items-center gap-3">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">Loading component...</p>
+    </div>
+  </div>
+);
+
+/**
  * Renders the actual component content based on type
  *
  * This component acts as a wrapper that:
  * - Selects the appropriate component to render
  * - Handles component-specific configurations
- * - Manages "highlight for ask" functionality
+ * - Manages "highlight for ask" functionality via event bus
  * - Provides data persistence
+ * - Lazy loads components to optimize bundle size
+ * - Wraps components in error boundaries for isolation
  */
 export const FocusViewComponentRenderer: React.FC<FocusViewComponentRendererProps> = ({
   component,
   onUpdate,
 }) => {
-  const chatPanelRef = useRef<AISidePanelRef>(null);
+  const { dispatch } = useFocusViewContext();
   const [highlightedText, setHighlightedText] = useState<string | null>(null);
 
   // Handle text selection for "Ask Mimir" feature
@@ -39,99 +57,109 @@ export const FocusViewComponentRenderer: React.FC<FocusViewComponentRendererProp
     if (text && text.length > 0 && component.config?.enableHighlightForAsk) {
       setHighlightedText(text);
 
-      // Add to chat if chat is enabled
-      if (chatPanelRef.current) {
-        chatPanelRef.current.addToChat(text);
-      }
+      // Dispatch event to any listening chat components
+      dispatch('ASK_MIMIR', { text });
     }
-  }, [component.config?.enableHighlightForAsk]);
+  }, [component.config?.enableHighlightForAsk, dispatch]);
 
   // Render based on component type
   switch (component.type) {
     case 'chat':
       return (
-        <div className="h-full">
-          <AISidePanel
-            ref={chatPanelRef}
-            instances={[]}
-            folders={[]}
-          />
-        </div>
+        <ComponentErrorBoundary componentType="Chat">
+          <Suspense fallback={<ComponentLoadingFallback />}>
+            <div className="h-full">
+              <ChatPanelWrapper />
+            </div>
+          </Suspense>
+        </ComponentErrorBoundary>
       );
 
     case 'code-editor':
       return (
-        <div
-          className="h-full"
-          onMouseUp={handleTextSelection}
-        >
-          <CodeWorkspace
-            initialFiles={component.config?.files}
-            initialFileTree={component.config?.fileTree}
-            onSave={(payload) => {
-              onUpdate({
-                config: {
-                  ...component.config,
-                  files: payload.files,
-                  fileTree: payload.fileTree,
-                  activeFilePath: payload.activeFilePath,
-                  openFiles: payload.openFiles,
-                },
-              });
-            }}
-          />
-        </div>
+        <ComponentErrorBoundary componentType="Code Editor">
+          <Suspense fallback={<ComponentLoadingFallback />}>
+            <div
+              className="h-full"
+              onMouseUp={handleTextSelection}
+            >
+              <LazyCodeWorkspace
+                initialFiles={component.config?.files}
+                initialFileTree={component.config?.fileTree}
+                onSave={(payload) => {
+                  onUpdate({
+                    config: {
+                      ...component.config,
+                      files: payload.files,
+                      fileTree: payload.fileTree,
+                      activeFilePath: payload.activeFilePath,
+                      openFiles: payload.openFiles,
+                    },
+                  });
+                }}
+              />
+            </div>
+          </Suspense>
+        </ComponentErrorBoundary>
       );
 
     case 'text-editor':
       return (
-        <div
-          className="h-full"
-          onMouseUp={handleTextSelection}
-        >
-          <TextEditor
-            content={component.config?.content || ''}
-            onChange={(newContent) => {
-              onUpdate({
-                config: {
-                  ...component.config,
-                  content: newContent,
-                },
-              });
-            }}
-          />
-        </div>
+        <ComponentErrorBoundary componentType="Text Editor">
+          <Suspense fallback={<ComponentLoadingFallback />}>
+            <div
+              className="h-full"
+              onMouseUp={handleTextSelection}
+            >
+              <LazyTextEditor
+                content={component.config?.content || ''}
+                onChange={(newContent) => {
+                  onUpdate({
+                    config: {
+                      ...component.config,
+                      content: newContent,
+                    },
+                  });
+                }}
+              />
+            </div>
+          </Suspense>
+        </ComponentErrorBoundary>
       );
 
     case 'pdf-viewer':
       return (
-        <div
-          className="h-full"
-          onMouseUp={handleTextSelection}
-        >
-          <PDFViewer
-            pdfUrl={component.config?.pdfUrl}
-            fileName={component.config?.fileName}
-            metadata={component.config?.metadata}
-            fullText={component.config?.fullText}
-            onUpload={(file, url, metadata) => {
-              onUpdate({
-                config: {
-                  ...component.config,
-                  pdfUrl: url,
-                  fileName: file.name,
-                  metadata: metadata.metadata,
-                  fullText: metadata.fullText,
-                },
-              });
-            }}
-            onAddToChat={(text) => {
-              if (component.config?.enableHighlightForAsk && chatPanelRef.current) {
-                chatPanelRef.current.addToChat(text);
-              }
-            }}
-          />
-        </div>
+        <ComponentErrorBoundary componentType="PDF Viewer">
+          <Suspense fallback={<ComponentLoadingFallback />}>
+            <div
+              className="h-full"
+              onMouseUp={handleTextSelection}
+            >
+              <LazyPDFViewer
+                pdfUrl={component.config?.pdfUrl}
+                fileName={component.config?.fileName}
+                metadata={component.config?.metadata}
+                fullText={component.config?.fullText}
+                onUpload={(file, url, metadata) => {
+                  onUpdate({
+                    config: {
+                      ...component.config,
+                      pdfUrl: url,
+                      fileName: file.name,
+                      metadata: metadata.metadata,
+                      fullText: metadata.fullText,
+                    },
+                  });
+                }}
+                onAddToChat={(text) => {
+                  if (component.config?.enableHighlightForAsk) {
+                    dispatch('ASK_MIMIR', { text });
+                  }
+                }}
+              />
+            </div>
+          </Suspense>
+        </ComponentErrorBoundary>
       );
 
     case 'voice-input':
@@ -146,19 +174,23 @@ export const FocusViewComponentRenderer: React.FC<FocusViewComponentRendererProp
 
     case 'annotate-canvas':
       return (
-        <div className="h-full">
-          <AnnotateCanvas
-            initialData={component.config?.excalidrawState}
-            onStateChange={(state: { elements: any[]; appState: any; files: any }) => {
-              onUpdate({
-                config: {
-                  ...component.config,
-                  excalidrawState: state,
-                },
-              });
-            }}
-          />
-        </div>
+        <ComponentErrorBoundary componentType="Annotation Canvas">
+          <Suspense fallback={<ComponentLoadingFallback />}>
+            <div className="h-full">
+              <LazyAnnotateCanvas
+                initialData={component.config?.excalidrawState}
+                onStateChange={(state: { elements: any[]; appState: any; files: any }) => {
+                  onUpdate({
+                    config: {
+                      ...component.config,
+                      excalidrawState: state,
+                    },
+                  });
+                }}
+              />
+            </div>
+          </Suspense>
+        </ComponentErrorBoundary>
       );
 
     case 'lecture-viewer':

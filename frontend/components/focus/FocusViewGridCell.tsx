@@ -86,7 +86,7 @@ export const FocusViewGridCell: React.FC<FocusViewGridCellProps> = ({
         `}
         onClick={onSelect}
         onContextMenu={handleContextMenu}
-        style={{ zIndex: component.zIndex || 0 }}
+        style={{ zIndex: isSelected ? 10 : 1 }}
       >
         {/* Component Header */}
         <div className="h-10 px-3 border-b border-border bg-card/50 flex items-center justify-between gap-2">

@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { GridComponent, GridPosition, GRID_POSITION_CLASSES, ComponentType } from '@/lib/focusView';
+import { FocusViewProvider } from '@/lib/FocusViewContext';
 import { Plus, Settings, Save, Layout } from 'lucide-react';
 import { Button } from '@/components/common';
 import { ComponentPlacementModal } from './ComponentPlacementModal';
@@ -75,7 +76,8 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   }, [onComponentsChange]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <FocusViewProvider>
+      <div className="h-screen flex flex-col bg-background">
       {/* Toolbar */}
       <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-4 gap-4">
         <div className="flex items-center gap-2">
@@ -205,6 +207,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
           currentComponents={components}
         />
       )}
-    </div>
+      </div>
+    </FocusViewProvider>
   );
 };
