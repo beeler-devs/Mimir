@@ -22,6 +22,10 @@ import time
 from PIL import Image
 import io
 
+# Import hybrid caching and template systems
+from manim_worker.semantic_cache import semantic_cache
+from manim_worker.template_classifier import template_classifier
+
 # Load environment variables from .env file
 # Load from backend directory (parent of manim_worker)
 env_path = Path(__file__).parent.parent / '.env'
@@ -160,7 +164,11 @@ class ManimService:
 
     def create_job(self, description: str, topic: str, student_context: str | None = None) -> str:
         """
-        Create a new animation job
+        Create a new animation job using hybrid pipeline:
+        1. Exact cache (instant)
+        2. Semantic cache (fast similarity matching)
+        3. Template matching (fast parameter extraction + validation)
+        4. Full generation (slow but flexible)
 
         Args:
             description: Animation description
@@ -172,14 +180,20 @@ class ManimService:
         """
         job_id = str(uuid.uuid4())
 
-        # Check cache first if enabled
+        logger.info("=" * 70)
+        logger.info(f"JOB {job_id}: Hybrid pipeline starting")
+        logger.info(f"Description: {description[:60]}...")
+        logger.info("=" * 70)
+
+        # ===== LAYER 1: Exact Cache =====
         cached_video_url = None
         if self.cache_enabled:
             cache_key = self._get_cache_key(description, student_context)
             cached_video_url = self.animation_cache.get(cache_key)
             if cached_video_url:
-                logger.info(f"Cache HIT for job {job_id}: {description[:50]}...")
-                # Return cached result immediately
+                logger.info(f"✓ LAYER 1: Exact cache HIT")
+                logger.info(f"  Returning cached video instantly")
+                logger.info("=" * 70)
                 self.jobs[job_id] = {
                     "status": JobStatus.DONE,
                     "description": description,
@@ -187,10 +201,77 @@ class ManimService:
                     "student_context": student_context,
                     "video_url": cached_video_url,
                     "error": None,
+                    "cache_layer": "exact"
                 }
                 return job_id
             else:
-                logger.info(f"Cache MISS for job {job_id}: {description[:50]}...")
+                logger.info(f"✗ LAYER 1: Exact cache MISS")
+
+        # ===== LAYER 2: Semantic Cache =====
+        if semantic_cache.enabled:
+            semantic_match = semantic_cache.find_similar(description, student_context)
+            if semantic_match:
+                cached_desc, similarity, video_url = semantic_match
+                logger.info(f"✓ LAYER 2: Semantic cache HIT (similarity: {similarity:.3f})")
+                logger.info(f"  Returning semantically similar video")
+                logger.info("=" * 70)
+                self.jobs[job_id] = {
+                    "status": JobStatus.DONE,
+                    "description": description,
+                    "topic": topic,
+                    "student_context": student_context,
+                    "video_url": video_url,
+                    "error": None,
+                    "cache_layer": "semantic",
+                    "semantic_similarity": similarity
+                }
+                return job_id
+            else:
+                logger.info(f"✗ LAYER 2: Semantic cache MISS")
+        else:
+            logger.info(f"⊘ LAYER 2: Semantic cache disabled")
+
+        # ===== LAYER 3: Template Matching =====
+        if template_classifier.enabled:
+            template_match = template_classifier.classify(description, student_context)
+            if template_match and template_match.confidence >= template_classifier.confidence_threshold:
+                logger.info(f"✓ LAYER 3: Template match found")
+                logger.info(f"  Template: {template_match.template.template_id}")
+                logger.info(f"  Confidence: {template_match.confidence:.3f}")
+                logger.info(f"  Using template-based generation")
+                logger.info("=" * 70)
+
+                # Create job and start template-based rendering
+                self.jobs[job_id] = {
+                    "status": JobStatus.PENDING,
+                    "description": description,
+                    "topic": topic,
+                    "student_context": student_context,
+                    "video_url": None,
+                    "error": None,
+                    "generation_mode": "template",
+                    "template_id": template_match.template.template_id,
+                    "template_confidence": template_match.confidence
+                }
+
+                # Start template-based rendering in background
+                self.executor.submit(
+                    self._render_job_from_template,
+                    job_id, description, topic, student_context,
+                    template_match
+                )
+                return job_id
+            else:
+                if template_match:
+                    logger.info(f"✗ LAYER 3: Template match too low confidence ({template_match.confidence:.3f})")
+                else:
+                    logger.info(f"✗ LAYER 3: No template match")
+        else:
+            logger.info(f"⊘ LAYER 3: Template matching disabled")
+
+        # ===== LAYER 4: Full Generation (Fallback) =====
+        logger.info(f"→ LAYER 4: Using full LLM generation (fallback)")
+        logger.info("=" * 70)
 
         self.jobs[job_id] = {
             "status": JobStatus.PENDING,
@@ -199,9 +280,10 @@ class ManimService:
             "student_context": student_context,
             "video_url": None,
             "error": None,
+            "generation_mode": "full_llm"
         }
 
-        # Start rendering in background
+        # Start full rendering in background
         self.executor.submit(self._render_job, job_id, description, topic, student_context)
 
         logger.info(f"Created job {job_id}: {description}")
@@ -353,6 +435,145 @@ class ManimService:
         except Exception as e:
             logger.error(f"Error in ffmpeg frame extraction: {e}", exc_info=True)
     
+    def _render_job_from_template(
+        self,
+        job_id: str,
+        description: str,
+        topic: str,
+        student_context: str | None,
+        template_match
+    ):
+        """
+        Render animation using a template
+
+        Args:
+            job_id: Job identifier
+            description: Animation description
+            topic: Topic category
+            student_context: Optional student context
+            template_match: TemplateMatch object with template and parameters
+        """
+        # Create async wrapper for progress updates
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            # Update status to running
+            self.jobs[job_id]["status"] = JobStatus.RUNNING
+            logger.info(f"Starting template-based render for job {job_id}")
+            logger.info(f"Template: {template_match.template.template_id}")
+
+            # Send initial progress
+            loop.run_until_complete(self._send_progress(job_id, "template_rendering", "Using template...", 10))
+
+            # Create job-specific directory
+            job_dir = self.output_dir / job_id
+            job_dir.mkdir(exist_ok=True)
+
+            # Render template with parameters
+            logger.info(f"Rendering template with parameters: {template_match.parameters}")
+            code = template_match.template.render(template_match.parameters)
+
+            # Write code to file
+            scene_path = job_dir / "template_scene.py"
+            with open(scene_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+
+            logger.info(f"Template code written to {scene_path}")
+            loop.run_until_complete(self._send_progress(job_id, "template_rendering", "Template code generated", 30))
+
+            # Import and verify the scene
+            spec = importlib.util.spec_from_file_location("template_scene", scene_path)
+            if spec is None or spec.loader is None:
+                raise ValueError(f"Failed to create module spec from {scene_path}")
+
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            if not hasattr(module, 'GeneratedScene'):
+                raise AttributeError("Template did not generate GeneratedScene class")
+
+            scene_class = module.GeneratedScene
+            logger.info(f"Successfully imported GeneratedScene from template")
+
+            # Send progress: starting rendering
+            loop.run_until_complete(self._send_progress(job_id, "rendering", "Rendering animation...", 50))
+
+            # Configure Manim and render
+            with tempconfig({
+                "quality": "high_quality",
+                "preview": False,
+                "output_file": "out",
+                "media_dir": str(job_dir),
+                "video_dir": str(job_dir),
+                "pixel_height": 1080,
+                "pixel_width": 1920,
+                "frame_rate": 30,
+            }):
+                scene = scene_class()
+                scene.render()
+
+            loop.run_until_complete(self._send_progress(job_id, "rendering", "Rendering complete", 80))
+
+            # Find output video
+            video_path = self._find_output_video(job_dir)
+
+            if not video_path or not video_path.exists():
+                raise FileNotFoundError(f"Output video not found in {job_dir}")
+
+            logger.info(f"Template render complete: {video_path}")
+
+            # Extract and stream frames
+            loop.run_until_complete(self._extract_and_stream_frames(job_id, video_path, loop))
+
+            # Upload to Supabase or use local path
+            if self.supabase:
+                video_url = self._upload_to_supabase(job_id, video_path)
+                self.jobs[job_id]["video_url"] = video_url
+            else:
+                fallback_url = f"/local/{job_id}/out.mp4"
+                self.jobs[job_id]["video_url"] = fallback_url
+
+            # Update status
+            self.jobs[job_id]["status"] = JobStatus.DONE
+
+            # Cache the result in both caches
+            if self.cache_enabled:
+                cache_key = self._get_cache_key(description, student_context)
+                self.animation_cache[cache_key] = self.jobs[job_id]["video_url"]
+                logger.info(f"Cached template result (exact cache)")
+
+            if semantic_cache.enabled:
+                semantic_cache.add(description, self.jobs[job_id]["video_url"], student_context)
+                logger.info(f"Cached template result (semantic cache)")
+
+            # Send completion
+            ws_manager = get_websocket_manager()
+            if ws_manager and ws_manager.has_connections(job_id):
+                loop.run_until_complete(ws_manager.send_message(job_id, {
+                    "type": "complete",
+                    "job_id": job_id,
+                    "video_url": self.jobs[job_id].get("video_url"),
+                }))
+
+            logger.info(f"Template job {job_id} completed successfully")
+
+        except Exception as e:
+            logger.error(f"Error rendering template job {job_id}: {e}", exc_info=True)
+            self.jobs[job_id]["status"] = JobStatus.ERROR
+            self.jobs[job_id]["error"] = str(e)
+
+            # Send error message
+            ws_manager = get_websocket_manager()
+            if ws_manager:
+                loop.run_until_complete(ws_manager.send_message(job_id, {
+                    "type": "error",
+                    "job_id": job_id,
+                    "error": str(e)
+                }))
+        finally:
+            loop.close()
+
     def _render_job(self, job_id: str, description: str, topic: str, student_context: str | None = None):
         """
         Render a Manim animation job (runs in thread pool)
@@ -504,8 +725,15 @@ class ManimService:
             if self.cache_enabled and self.jobs[job_id].get("video_url"):
                 cache_key = self._get_cache_key(description, student_context)
                 self.animation_cache[cache_key] = self.jobs[job_id]["video_url"]
-                logger.info(f"Cached animation result for: {description[:50]}...")
-                logger.info(f"Cache now contains {len(self.animation_cache)} entries")
+                logger.info(f"Cached animation result (exact cache): {description[:50]}...")
+                logger.info(f"Exact cache now contains {len(self.animation_cache)} entries")
+
+            # Also add to semantic cache
+            if semantic_cache.enabled and self.jobs[job_id].get("video_url"):
+                semantic_cache.add(description, self.jobs[job_id]["video_url"], student_context)
+                logger.info(f"Cached animation result (semantic cache)")
+                stats = semantic_cache.get_stats()
+                logger.info(f"Semantic cache now contains {stats['size']} entries")
 
             # Send completion message via WebSocket
             ws_manager = get_websocket_manager()

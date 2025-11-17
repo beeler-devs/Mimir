@@ -3,6 +3,8 @@
 ## Overview
 This document describes the optimizations and improvements made to the Manim visualization backend to address layout issues, over-explanation problems, and performance bottlenecks.
 
+**📚 See also:** [HYBRID_CACHING_SYSTEM.md](./HYBRID_CACHING_SYSTEM.md) for comprehensive documentation on the 4-layer hybrid caching and template system.
+
 ## Issues Addressed
 
 ### 1. Layout & Overlap Problems
