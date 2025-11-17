@@ -56,7 +56,10 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
 
   const analysisTimerRef = useRef<NodeJS.Timeout | null>(null);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const laserTimerRef = useRef<NodeJS.Timeout | null>(null);
   const interventionInProgressRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const lastElementCountRef = useRef(0);
 
   // Configuration
   const IDLE_THRESHOLD_MS = 15000; // 15 seconds
@@ -95,41 +98,54 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   // Execute AI intervention
   const executeIntervention = useCallback(
     (intervention: AIIntervention) => {
-      if (intervention.voiceText) {
-        console.log('🗣️ AI speaking:', intervention.voiceText);
-        conversationManager.startAIUtterance(intervention.voiceText);
-        onSpeakText(intervention.voiceText);
+      if (!isMountedRef.current) return;
+
+      try {
+        if (intervention.voiceText) {
+          console.log('🗣️ AI speaking:', intervention.voiceText);
+          conversationManager.startAIUtterance(intervention.voiceText);
+          onSpeakText(intervention.voiceText);
+        }
+
+        if (intervention.laserPosition) {
+          console.log('🔴 Laser pointing to:', intervention.laserPosition);
+          onLaserPositionChange({
+            x: intervention.laserPosition.x,
+            y: intervention.laserPosition.y,
+            style: intervention.laserPosition.style || 'point',
+            emphasis: 0.8,
+          });
+
+          // Clear any existing laser timer
+          if (laserTimerRef.current) {
+            clearTimeout(laserTimerRef.current);
+          }
+
+          // Clear laser after estimated speak duration
+          const speakDuration = intervention.voiceText
+            ? intervention.voiceText.split('.').length * 3000
+            : 5000;
+          laserTimerRef.current = setTimeout(() => {
+            if (isMountedRef.current) {
+              onLaserPositionChange(null);
+            }
+          }, speakDuration);
+        }
+
+        if (intervention.annotation) {
+          console.log('✍️ AI writing annotation:', intervention.annotation.text);
+          onAddAnnotation({
+            text: intervention.annotation.text,
+            x: intervention.annotation.position.x,
+            y: intervention.annotation.position.y,
+            type: intervention.annotation.type,
+          });
+        }
+
+        conversationManager.recordIntervention();
+      } catch (error) {
+        console.error('Failed to execute intervention:', error);
       }
-
-      if (intervention.laserPosition) {
-        console.log('🔴 Laser pointing to:', intervention.laserPosition);
-        onLaserPositionChange({
-          x: intervention.laserPosition.x,
-          y: intervention.laserPosition.y,
-          style: intervention.laserPosition.style || 'point',
-          emphasis: 0.8,
-        });
-
-        // Clear laser after estimated speak duration
-        const speakDuration = intervention.voiceText
-          ? intervention.voiceText.split('.').length * 3000
-          : 5000;
-        setTimeout(() => {
-          onLaserPositionChange(null);
-        }, speakDuration);
-      }
-
-      if (intervention.annotation) {
-        console.log('✍️ AI writing annotation:', intervention.annotation.text);
-        onAddAnnotation({
-          text: intervention.annotation.text,
-          x: intervention.annotation.position.x,
-          y: intervention.annotation.position.y,
-          type: intervention.annotation.type,
-        });
-      }
-
-      conversationManager.recordIntervention();
     },
     [onSpeakText, onLaserPositionChange, onAddAnnotation, conversationManager]
   );
@@ -140,31 +156,33 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       trigger: 'idle' | 'help_request' | 'interrupt';
       userSpeech?: string;
     }) => {
-      if (interventionInProgressRef.current) return;
-
-      const conversationState = conversationManager.getSummaryForAPI();
-      const screenshot = await captureCanvasScreenshot();
-
-      if (!screenshot) {
-        console.warn('Failed to capture screenshot');
-        return;
-      }
-
-      const elementData = elements
-        .filter((el: any) => !el.isDeleted)
-        .map((el: any) => ({
-          id: el.id,
-          type: el.type,
-          x: el.x,
-          y: el.y,
-          width: el.width || 0,
-          height: el.height || 0,
-          text: el.text || undefined,
-        }));
+      if (interventionInProgressRef.current || !isMountedRef.current) return;
 
       interventionInProgressRef.current = true;
 
       try {
+        const conversationState = conversationManager.getSummaryForAPI();
+        const screenshot = await captureCanvasScreenshot();
+
+        if (!isMountedRef.current) return;
+
+        if (!screenshot) {
+          console.warn('Failed to capture screenshot');
+          return;
+        }
+
+        const elementData = elements
+          .filter((el: any) => !el.isDeleted)
+          .map((el: any) => ({
+            id: el.id,
+            type: el.type,
+            x: el.x,
+            y: el.y,
+            width: el.width || 0,
+            height: el.height || 0,
+            text: el.text || undefined,
+          }));
+
         const response = await fetch('/api/ai-coach-conversational', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -179,16 +197,25 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
           }),
         });
 
+        if (!isMountedRef.current) return;
+
         if (!response.ok) {
-          throw new Error('AI coaching request failed');
+          throw new Error(`AI coaching request failed: ${response.status}`);
         }
 
         const intervention: AIIntervention = await response.json();
+
+        if (!isMountedRef.current) return;
+
         executeIntervention(intervention);
       } catch (error) {
-        console.error('❌ AI intervention failed:', error);
+        if (isMountedRef.current) {
+          console.error('❌ AI intervention failed:', error);
+        }
       } finally {
-        interventionInProgressRef.current = false;
+        if (isMountedRef.current) {
+          interventionInProgressRef.current = false;
+        }
       }
     },
     [elements, conversationManager, captureCanvasScreenshot, executeIntervention]
@@ -272,33 +299,45 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
 
   // Track canvas changes (idle detection)
   useEffect(() => {
-    if (!isEnabled) return;
+    if (!isEnabled || !isMountedRef.current) return;
 
-    // Clear existing timers
-    if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    const currentElementCount = elements.filter((el: any) => !el.isDeleted).length;
+    const elementCountChanged = currentElementCount !== lastElementCountRef.current;
 
-    // Debounce analysis
-    analysisTimerRef.current = setTimeout(() => {
-      console.log('⏱️ Canvas change debounce complete');
-    }, ANALYSIS_DEBOUNCE_MS);
+    // Only reset timers if element count actually changed (user made a change)
+    if (elementCountChanged) {
+      lastElementCountRef.current = currentElementCount;
 
-    // Idle timer
-    idleTimerRef.current = setTimeout(() => {
-      console.log('💤 User is idle on canvas');
+      // Clear existing timers
+      if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
-      // Only intervene if user is not speaking and hasn't intervened recently
-      const timeSinceLastIntervention =
-        Date.now() - conversationManager.getState().lastInterventionTime;
+      // Debounce analysis
+      analysisTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          console.log('⏱️ Canvas change debounce complete');
+        }
+      }, ANALYSIS_DEBOUNCE_MS);
 
-      if (
-        !isUserSpeaking &&
-        timeSinceLastIntervention > MIN_INTERVENTION_INTERVAL_MS &&
-        elements.length > 0
-      ) {
-        callAIForIntervention({ trigger: 'idle' });
-      }
-    }, IDLE_THRESHOLD_MS);
+      // Idle timer
+      idleTimerRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
+
+        console.log('💤 User is idle on canvas');
+
+        // Only intervene if user is not speaking and hasn't intervened recently
+        const timeSinceLastIntervention =
+          Date.now() - conversationManager.getState().lastInterventionTime;
+
+        if (
+          !isUserSpeaking &&
+          timeSinceLastIntervention > MIN_INTERVENTION_INTERVAL_MS &&
+          currentElementCount > 0
+        ) {
+          callAIForIntervention({ trigger: 'idle' });
+        }
+      }, IDLE_THRESHOLD_MS);
+    }
 
     return () => {
       if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
@@ -306,11 +345,13 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
     };
   }, [elements, isEnabled, isUserSpeaking, conversationManager, callAIForIntervention]);
 
-  // Cleanup
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (laserTimerRef.current) clearTimeout(laserTimerRef.current);
     };
   }, []);
 

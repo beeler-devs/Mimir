@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
+if (!process.env.CLAUDE_API_KEY) {
+  console.error('⚠️ CLAUDE_API_KEY is not set');
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY || '',
 });
@@ -46,11 +50,28 @@ interface AIIntervention {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check API key
+    if (!process.env.CLAUDE_API_KEY) {
+      return NextResponse.json(
+        { error: 'Claude API key not configured' },
+        { status: 500 }
+      );
+    }
+
     const body: ConversationalCoachRequest = await request.json();
     const { screenshot, elements, conversationContext } = body;
 
+    // Input validation
     if (!screenshot) {
       return NextResponse.json({ error: 'Screenshot is required' }, { status: 400 });
+    }
+
+    if (!elements || !Array.isArray(elements)) {
+      return NextResponse.json({ error: 'Elements array is required' }, { status: 400 });
+    }
+
+    if (!conversationContext || !conversationContext.trigger) {
+      return NextResponse.json({ error: 'Conversation context is required' }, { status: 400 });
     }
 
     // Build conversation history for context
@@ -215,13 +236,31 @@ Now analyze the situation and provide your intervention:`;
     // Extract response
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
 
-    // Parse JSON response
+    if (!responseText) {
+      throw new Error('No text response from Claude');
+    }
+
+    // Parse JSON response with error handling
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error('Failed to extract JSON from response:', responseText);
       throw new Error('Failed to extract JSON from Claude response');
     }
 
-    const intervention: AIIntervention = JSON.parse(jsonMatch[0]);
+    let intervention: AIIntervention;
+    try {
+      intervention = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      console.error('Attempted to parse:', jsonMatch[0]);
+      throw new Error('Invalid JSON in Claude response');
+    }
+
+    // Validate intervention structure
+    if (!intervention.type || !intervention.voiceText) {
+      console.error('Invalid intervention structure:', intervention);
+      throw new Error('Incomplete intervention response from Claude');
+    }
 
     console.log('🤖 AI Intervention:', {
       trigger: conversationContext.trigger,

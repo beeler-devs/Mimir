@@ -38,6 +38,7 @@ export interface ConversationState {
 
 export class ConversationStateManager {
   private state: ConversationState;
+  private readonly MAX_HISTORY_LENGTH = 50; // Prevent unbounded growth
 
   constructor() {
     this.state = {
@@ -51,10 +52,20 @@ export class ConversationStateManager {
   }
 
   /**
-   * Get current conversation state
+   * Get current conversation state (deep copy)
    */
   getState(): ConversationState {
-    return { ...this.state };
+    return {
+      ...this.state,
+      history: [...this.state.history],
+      canvasContext: {
+        ...this.state.canvasContext,
+        detectedConcepts: [...this.state.canvasContext.detectedConcepts],
+      },
+      currentAIUtterance: this.state.currentAIUtterance
+        ? { ...this.state.currentAIUtterance }
+        : null,
+    };
   }
 
   /**
@@ -69,26 +80,32 @@ export class ConversationStateManager {
     };
 
     this.state.history.push(turn);
+    this.trimHistory();
 
     // Mark current AI utterance as interrupted if applicable
     if (isInterruption && this.state.currentAIUtterance && !this.state.currentAIUtterance.wasInterrupted) {
       this.markAIUtteranceInterrupted();
     }
 
-    console.log('💬 User said:', text, isInterruption ? '(interrupted AI)' : '');
+    console.log('💬 User said:', text.substring(0, 50) + (text.length > 50 ? '...' : ''), isInterruption ? '(interrupted AI)' : '');
   }
 
   /**
    * Start a new AI utterance
    */
   startAIUtterance(text: string): void {
+    // If there was a previous utterance that wasn't completed, complete it
+    if (this.state.currentAIUtterance && !this.state.currentAIUtterance.completedAt) {
+      this.completeAIUtterance();
+    }
+
     this.state.currentAIUtterance = {
       text,
       startedAt: Date.now(),
       wasInterrupted: false,
     };
 
-    console.log('🤖 AI started saying:', text);
+    console.log('🤖 AI started saying:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
   }
 
   /**
@@ -99,7 +116,7 @@ export class ConversationStateManager {
 
     this.state.currentAIUtterance.completedAt = Date.now();
 
-    // Add to history
+    // Only add to history if it wasn't interrupted or was finished speaking
     const turn: ConversationTurn = {
       speaker: 'ai',
       text: this.state.currentAIUtterance.text,
@@ -107,6 +124,8 @@ export class ConversationStateManager {
     };
 
     this.state.history.push(turn);
+    this.trimHistory();
+
     this.state.currentAIUtterance = null;
 
     console.log('✅ AI completed utterance');
@@ -118,8 +137,11 @@ export class ConversationStateManager {
   markAIUtteranceInterrupted(progress: number = 0.5): void {
     if (!this.state.currentAIUtterance) return;
 
+    // Don't re-interrupt if already interrupted
+    if (this.state.currentAIUtterance.wasInterrupted) return;
+
     this.state.currentAIUtterance.wasInterrupted = true;
-    this.state.currentAIUtterance.progressWhenInterrupted = progress;
+    this.state.currentAIUtterance.progressWhenInterrupted = Math.max(0, Math.min(1, progress));
 
     console.log('⚠️ AI utterance interrupted at', (progress * 100).toFixed(0) + '%');
   }
@@ -128,14 +150,14 @@ export class ConversationStateManager {
    * Update canvas context
    */
   updateCanvasContext(snapshot?: string, topic?: string, concepts?: string[]): void {
-    if (snapshot) {
+    if (snapshot !== undefined) {
       this.state.canvasContext.lastSnapshot = snapshot;
     }
-    if (topic) {
+    if (topic !== undefined) {
       this.state.canvasContext.currentTopic = topic;
     }
-    if (concepts) {
-      this.state.canvasContext.detectedConcepts = concepts;
+    if (concepts !== undefined) {
+      this.state.canvasContext.detectedConcepts = [...concepts];
     }
   }
 
@@ -150,14 +172,15 @@ export class ConversationStateManager {
    * Get recent conversation history (last N turns)
    */
   getRecentHistory(count: number = 5): ConversationTurn[] {
-    return this.state.history.slice(-count);
+    const safeCount = Math.max(0, Math.min(count, this.state.history.length));
+    return this.state.history.slice(-safeCount).map(turn => ({ ...turn }));
   }
 
   /**
    * Get current AI utterance if active
    */
   getCurrentAIUtterance(): AIUtteranceState | null {
-    return this.state.currentAIUtterance;
+    return this.state.currentAIUtterance ? { ...this.state.currentAIUtterance } : null;
   }
 
   /**
@@ -181,7 +204,22 @@ export class ConversationStateManager {
   clearHistory(): void {
     this.state.history = [];
     this.state.currentAIUtterance = null;
-    console.log('🧹 Conversation history cleared');
+    this.state.canvasContext = {
+      detectedConcepts: [],
+    };
+    this.state.lastInterventionTime = 0;
+    console.log('🧹 Conversation state cleared');
+  }
+
+  /**
+   * Trim history to prevent unbounded growth
+   */
+  private trimHistory(): void {
+    if (this.state.history.length > this.MAX_HISTORY_LENGTH) {
+      const excess = this.state.history.length - this.MAX_HISTORY_LENGTH;
+      this.state.history = this.state.history.slice(excess);
+      console.log(`🗑️ Trimmed ${excess} old conversation turns`);
+    }
   }
 
   /**
@@ -191,13 +229,21 @@ export class ConversationStateManager {
     recentHistory: ConversationTurn[];
     currentAIUtterance: string | null;
     wasInterrupted: boolean;
-    canvasContext: ConversationState['canvasContext'];
+    canvasContext: {
+      currentTopic?: string;
+      detectedConcepts: string[];
+      lastSnapshot?: string;
+    };
   } {
     return {
       recentHistory: this.getRecentHistory(5),
       currentAIUtterance: this.state.currentAIUtterance?.text ?? null,
       wasInterrupted: this.wasInterrupted(),
-      canvasContext: this.state.canvasContext,
+      canvasContext: {
+        currentTopic: this.state.canvasContext.currentTopic,
+        detectedConcepts: [...this.state.canvasContext.detectedConcepts],
+        lastSnapshot: this.state.canvasContext.lastSnapshot,
+      },
     };
   }
 }
@@ -205,9 +251,23 @@ export class ConversationStateManager {
 // Singleton instance
 let conversationStateManager: ConversationStateManager | null = null;
 
+/**
+ * Get the singleton conversation state manager
+ * Note: In development with hot reload, this persists across reloads
+ */
 export function getConversationStateManager(): ConversationStateManager {
   if (!conversationStateManager) {
     conversationStateManager = new ConversationStateManager();
   }
   return conversationStateManager;
+}
+
+/**
+ * Reset the conversation state manager (useful for testing or cleanup)
+ */
+export function resetConversationStateManager(): void {
+  if (conversationStateManager) {
+    conversationStateManager.clearHistory();
+  }
+  conversationStateManager = null;
 }

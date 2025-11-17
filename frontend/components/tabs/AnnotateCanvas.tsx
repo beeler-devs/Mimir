@@ -171,6 +171,11 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
+        // Revoke previous URL to prevent memory leak
+        if (pdfFileUrl) {
+          URL.revokeObjectURL(pdfFileUrl);
+        }
+
         const url = URL.createObjectURL(file);
         setPdfFileUrl(url);
         setPdfPageNum(1);
@@ -254,6 +259,15 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       renderPdfPageToExcalidraw();
     }
   }, [pdfDoc, pdfPageNum, renderPdfPageToExcalidraw]);
+
+  // Cleanup PDF URL on unmount
+  useEffect(() => {
+    return () => {
+      if (pdfFileUrl) {
+        URL.revokeObjectURL(pdfFileUrl);
+      }
+    };
+  }, [pdfFileUrl]);
 
   // Helper to export canvas from state
   const exportCanvasFromState = async (state: { elements: any[]; appState: any; files: any }): Promise<string> => {
@@ -351,43 +365,56 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     y: number;
     type: string;
   }) => {
-    if (!excalidrawRef.current) return;
+    if (!excalidrawRef.current) {
+      console.warn('Cannot add annotation: Excalidraw API not ready');
+      return;
+    }
 
-    const api = excalidrawRef.current;
+    try {
+      const api = excalidrawRef.current;
 
-    const textElement = {
-      type: 'text',
-      x: annotation.x,
-      y: annotation.y,
-      text: annotation.text,
-      fontSize: 16,
-      fontFamily: 1,
-      textAlign: 'left',
-      verticalAlign: 'top',
-      strokeColor: annotation.type === 'hint' ? '#10b981' : '#3b82f6',
-      backgroundColor: 'transparent',
-      fillStyle: 'solid',
-      strokeWidth: 1,
-      roughness: 0,
-      opacity: 100,
-      width: 400,
-      height: 40,
-      seed: Math.floor(Math.random() * 1000000),
-      version: 1,
-      versionNonce: Math.floor(Math.random() * 1000000),
-      isDeleted: false,
-      customData: {
-        isAIGenerated: true,
-        annotationType: annotation.type,
-      },
-    };
+      const textElement = {
+        type: 'text',
+        x: annotation.x,
+        y: annotation.y,
+        text: annotation.text,
+        fontSize: 16,
+        fontFamily: 1,
+        textAlign: 'left',
+        verticalAlign: 'top',
+        strokeColor: annotation.type === 'hint' ? '#10b981' : '#3b82f6',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        roughness: 0,
+        opacity: 100,
+        width: 400,
+        height: 40,
+        seed: Math.floor(Math.random() * 1000000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 1000000),
+        isDeleted: false,
+        customData: {
+          isAIGenerated: true,
+          annotationType: annotation.type,
+        },
+      };
 
-    const currentElements = api.getSceneElements?.() || elements;
-    api.updateScene({
-      elements: [...currentElements, textElement],
-    });
+      const currentElements = api.getSceneElements?.() || elements;
 
-    console.log('✍️ AI annotation added to canvas:', annotation.text);
+      if (!api.updateScene) {
+        console.warn('updateScene method not available');
+        return;
+      }
+
+      api.updateScene({
+        elements: [...currentElements, textElement],
+      });
+
+      console.log('✍️ AI annotation added to canvas:', annotation.text);
+    } catch (error) {
+      console.error('Failed to add annotation to canvas:', error);
+    }
   }, [excalidrawRef, elements]);
 
   // AI Coach callback: Speak text
@@ -399,6 +426,21 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   // AI Coach callback: Update laser position
   const handleLaserPositionChange = useCallback((position: PointerPosition | null) => {
     setLaserPosition(position);
+  }, []);
+
+  // Voice synthesis callbacks
+  const handleVoiceStart = useCallback(() => {
+    console.log('🎙️ Voice synthesis started');
+  }, []);
+
+  const handleVoiceProgress = useCallback((progress: number) => {
+    // Progress tracking for interrupt handling
+    // Progress is used by LiveAICoachingSystem to determine how far through utterance
+  }, []);
+
+  const handleVoiceComplete = useCallback(() => {
+    console.log('✅ Voice synthesis completed');
+    setVoiceText(null);
   }, []);
 
   // Expose functions via ref
@@ -554,7 +596,9 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       <EnhancedLiveVoiceSynthesis
         ref={voiceSynthesisRef}
         text={voiceText}
-        onComplete={() => setVoiceText(null)}
+        onStart={handleVoiceStart}
+        onProgress={handleVoiceProgress}
+        onComplete={handleVoiceComplete}
       />
     </div>
   );

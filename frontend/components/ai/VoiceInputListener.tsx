@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 interface VoiceInputListenerProps {
   isEnabled: boolean;
@@ -25,15 +25,76 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
   onError,
 }) => {
   const recognitionRef = useRef<any>(null);
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const isListeningRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const isEnabledRef = useRef(isEnabled);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastTranscriptRef = useRef<string>('');
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
 
   // VAD configuration
   const SILENCE_THRESHOLD_MS = 1500; // 1.5 seconds of silence = end of speech
 
-  // Initialize speech recognition
+  // Keep refs in sync
+  useEffect(() => {
+    isEnabledRef.current = isEnabled;
+  }, [isEnabled]);
+
+  // Clear silence timer helper
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  // Clear restart timeout helper
+  const clearRestartTimeout = useCallback(() => {
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Start recognition
+  const startRecognition = useCallback(() => {
+    if (!recognitionRef.current || isListeningRef.current || !isMountedRef.current) return;
+
+    try {
+      console.log('🎤 Starting voice recognition...');
+      recognitionRef.current.start();
+      isListeningRef.current = true;
+    } catch (err: any) {
+      if (err.name !== 'InvalidStateError') {
+        console.error('Failed to start recognition:', err);
+        onError?.(err);
+      }
+    }
+  }, [onError]);
+
+  // Stop recognition
+  const stopRecognition = useCallback(() => {
+    if (!recognitionRef.current || !isListeningRef.current) return;
+
+    try {
+      console.log('🔇 Stopping voice recognition...');
+      recognitionRef.current.stop();
+      isListeningRef.current = false;
+
+      // Clear speaking state
+      if (isSpeakingRef.current) {
+        isSpeakingRef.current = false;
+        onVoiceActivityEnd();
+      }
+
+      clearSilenceTimer();
+      clearRestartTimeout();
+    } catch (err) {
+      console.error('Failed to stop recognition:', err);
+    }
+  }, [onVoiceActivityEnd, clearSilenceTimer, clearRestartTimeout]);
+
+  // Initialize speech recognition (only once)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -49,34 +110,34 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
 
     // Create recognition instance
     const recognition = new SpeechRecognition();
-    recognition.continuous = true; // Keep listening
-    recognition.interimResults = true; // Get partial results
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.lang = 'en-US';
     recognition.maxAlternatives = 1;
 
     // Handle results (transcription)
     recognition.onresult = (event: any) => {
+      if (!isMountedRef.current) return;
+
       const current = event.resultIndex;
       const transcript = event.results[current][0].transcript;
       const isFinal = event.results[current].isFinal;
 
       // Detect voice activity start (first result)
-      if (!isSpeaking) {
+      if (!isSpeakingRef.current) {
         console.log('🎤 User started speaking (VAD)');
-        setIsSpeaking(true);
+        isSpeakingRef.current = true;
         onVoiceActivityStart();
       }
 
       // Clear silence timer (user still speaking)
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-      }
+      clearSilenceTimer();
 
       // Start silence detection timer
       silenceTimerRef.current = setTimeout(() => {
-        if (isSpeaking) {
+        if (isSpeakingRef.current && isMountedRef.current) {
           console.log('🔇 User stopped speaking (VAD - silence detected)');
-          setIsSpeaking(false);
+          isSpeakingRef.current = false;
           onVoiceActivityEnd();
         }
       }, SILENCE_THRESHOLD_MS);
@@ -84,55 +145,60 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
       // Send final transcription
       if (isFinal && transcript.trim()) {
         console.log('📝 Transcription:', transcript);
-        lastTranscriptRef.current = transcript;
         onTranscription(transcript);
       }
     };
 
     // Handle errors
     recognition.onerror = (event: any) => {
+      if (!isMountedRef.current) return;
+
       console.error('Speech recognition error:', event.error);
 
+      // Don't treat these as real errors
+      if (event.error === 'no-speech' || event.error === 'aborted') {
+        return;
+      }
+
       // Restart on network errors (common)
-      if (event.error === 'network') {
+      if (event.error === 'network' && isEnabledRef.current) {
         console.log('🔄 Network error, restarting recognition...');
-        setTimeout(() => {
-          if (isEnabled && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-            } catch (err) {
-              console.error('Failed to restart recognition:', err);
-            }
+        clearRestartTimeout();
+        restartTimeoutRef.current = setTimeout(() => {
+          if (isEnabledRef.current && isMountedRef.current) {
+            startRecognition();
           }
         }, 1000);
-      } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      } else {
         onError?.(new Error(`Speech recognition error: ${event.error}`));
       }
     };
 
     // Handle end (auto-restart for continuous listening)
     recognition.onend = () => {
-      console.log('🔄 Recognition ended, restarting...');
-      setIsListening(false);
+      if (!isMountedRef.current) return;
+
+      console.log('🔄 Recognition ended');
+      isListeningRef.current = false;
 
       // Auto-restart if still enabled
-      if (isEnabled && recognitionRef.current) {
-        try {
-          setTimeout(() => {
-            if (recognitionRef.current && isEnabled) {
-              recognitionRef.current.start();
-              setIsListening(true);
-            }
-          }, 100);
-        } catch (err) {
-          console.error('Failed to restart recognition:', err);
-        }
+      if (isEnabledRef.current) {
+        clearRestartTimeout();
+        restartTimeoutRef.current = setTimeout(() => {
+          if (isEnabledRef.current && isMountedRef.current) {
+            startRecognition();
+          }
+        }, 100);
       }
     };
 
     recognitionRef.current = recognition;
 
     return () => {
+      isMountedRef.current = false;
+      clearSilenceTimer();
+      clearRestartTimeout();
+
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -140,38 +206,19 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
           // Ignore errors on cleanup
         }
       }
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-      }
     };
-  }, [isEnabled, onTranscription, onVoiceActivityStart, onVoiceActivityEnd, onError, isSpeaking]);
+  }, [onTranscription, onVoiceActivityStart, onVoiceActivityEnd, onError, clearSilenceTimer, clearRestartTimeout, startRecognition]);
 
   // Start/stop recognition based on isEnabled
   useEffect(() => {
     if (!recognitionRef.current) return;
 
-    if (isEnabled && !isListening) {
-      try {
-        console.log('🎤 Starting voice recognition...');
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (err: any) {
-        if (err.name !== 'InvalidStateError') {
-          console.error('Failed to start recognition:', err);
-          onError?.(err);
-        }
-      }
-    } else if (!isEnabled && isListening) {
-      try {
-        console.log('🔇 Stopping voice recognition...');
-        recognitionRef.current.stop();
-        setIsListening(false);
-        setIsSpeaking(false);
-      } catch (err) {
-        console.error('Failed to stop recognition:', err);
-      }
+    if (isEnabled) {
+      startRecognition();
+    } else {
+      stopRecognition();
     }
-  }, [isEnabled, isListening, onError]);
+  }, [isEnabled, startRecognition, stopRecognition]);
 
   // This component doesn't render UI
   return null;

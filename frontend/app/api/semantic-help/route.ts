@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
+if (!process.env.OPENAI_API_KEY) {
+  console.error('⚠️ OPENAI_API_KEY is not set');
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
@@ -18,12 +22,23 @@ const HELP_EXAMPLES = [
   "I'm not sure what to do next",
 ];
 
+// Cache for help embeddings (computed once on first request)
+let cachedHelpEmbeddings: number[][] | null = null;
+
 /**
  * Lightweight semantic help detection using embeddings
  * Compares user text to known help request patterns
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check API key
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OpenAI API key not configured' },
+        { status: 500 }
+      );
+    }
+
     const { text } = await request.json();
 
     if (!text || typeof text !== 'string') {
@@ -41,13 +56,22 @@ export async function POST(request: NextRequest) {
 
     const userEmbedding = userEmbeddingResponse.data[0].embedding;
 
-    // Get embeddings for help examples (in production, cache these)
-    const helpEmbeddingsResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: HELP_EXAMPLES,
-    });
+    // Get embeddings for help examples (use cache if available)
+    let helpEmbeddings: number[][];
 
-    const helpEmbeddings = helpEmbeddingsResponse.data.map((d) => d.embedding);
+    if (cachedHelpEmbeddings) {
+      helpEmbeddings = cachedHelpEmbeddings;
+      console.log('📦 Using cached help embeddings');
+    } else {
+      const helpEmbeddingsResponse = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: HELP_EXAMPLES,
+      });
+
+      helpEmbeddings = helpEmbeddingsResponse.data.map((d) => d.embedding);
+      cachedHelpEmbeddings = helpEmbeddings;
+      console.log('🆕 Cached help embeddings for future requests');
+    }
 
     // Compute cosine similarity with each help example
     const similarities = helpEmbeddings.map((helpEmb) =>
