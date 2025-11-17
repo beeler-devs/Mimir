@@ -3,7 +3,10 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { Components } from 'react-markdown';
+import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
   content: string;
@@ -13,6 +16,9 @@ interface MarkdownRendererProps {
 /**
  * Custom markdown renderer with compact, chat-optimized styling
  * Renders AI assistant responses with proper formatting
+ * Supports LaTeX math rendering using KaTeX:
+ *   - Inline math: $equation$
+ *   - Display math: $$equation$$
  */
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
@@ -132,7 +138,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={components}
+      >
         {content}
       </ReactMarkdown>
     </div>
