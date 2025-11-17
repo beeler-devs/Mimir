@@ -6,8 +6,8 @@ import '@excalidraw/excalidraw/index.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { LaserPointerOverlay, PointerPosition } from '../ai/LaserPointerOverlay';
 import { LiveAICoachingSystem } from '../ai/LiveAICoachingSystem';
-import { LiveVoiceSynthesis } from '../ai/LiveVoiceSynthesis';
-import { Bot, BotOff } from 'lucide-react';
+import { EnhancedLiveVoiceSynthesis, VoiceSynthesisController } from '../ai/EnhancedLiveVoiceSynthesis';
+import { Bot, BotOff, Mic, MicOff } from 'lucide-react';
 
 // Dynamically import Excalidraw to avoid SSR issues
 const Excalidraw = dynamic(
@@ -34,8 +34,11 @@ interface AnnotateCanvasProps {
 }
 
 /**
- * Enhanced Excalidraw canvas with live AI coaching
- * - Real-time monitoring of user activity
+ * Enhanced Excalidraw canvas with live AI coaching + voice conversation
+ * - Real-time monitoring of user activity (canvas + voice)
+ * - Voice input with VAD (Voice Activity Detection)
+ * - Semantic help detection
+ * - Interrupt handling (AI pauses when user speaks)
  * - Proactive AI assistance via voice, laser pointer, and canvas annotations
  * - AI can write LaTeX and markdown directly on the canvas
  */
@@ -43,6 +46,8 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   const { initialData, onStateChange } = props;
   const excalidrawRef = useRef<any>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const voiceSynthesisRef = useRef<VoiceSynthesisController>(null);
+
   const [elements, setElements] = useState<any[]>(initialData?.elements || []);
   const [appState, setAppState] = useState<any>(
     initialData?.appState
@@ -64,6 +69,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 
   // Live AI Coach state
   const [isAICoachEnabled, setIsAICoachEnabled] = useState(true);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false); // Voice input OFF by default
   const [laserPosition, setLaserPosition] = useState<PointerPosition | null>(null);
   const [voiceText, setVoiceText] = useState<string | null>(null);
 
@@ -273,11 +279,6 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       }
 
       const visibleElements = state.elements.filter((element: any) => !element.isDeleted);
-      const deletedCount = state.elements.length - visibleElements.length;
-
-      if (deletedCount > 0) {
-        console.log(`🗑️ Filtered out ${deletedCount} deleted element(s) before export`);
-      }
 
       if (visibleElements.length === 0) {
         const padding = 40;
@@ -325,15 +326,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
               return;
             }
             const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = reader.result as string;
-              console.log('📸 Exported Canvas Image:', {
-                size: base64.length,
-                sizeKB: Math.round(base64.length / 1024),
-                paddedDimensions: `${paddedCanvas.width}x${paddedCanvas.height}`,
-              });
-              resolve(base64);
-            };
+            reader.onloadend = () => resolve(reader.result as string);
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           },
@@ -362,8 +355,6 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 
     const api = excalidrawRef.current;
 
-    // Create a text element for the annotation
-    // Excalidraw supports LaTeX rendering for text elements
     const textElement = {
       type: 'text',
       x: annotation.x,
@@ -373,7 +364,7 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       fontFamily: 1,
       textAlign: 'left',
       verticalAlign: 'top',
-      strokeColor: annotation.type === 'hint' ? '#10b981' : '#3b82f6', // Green for hints, blue for explanations
+      strokeColor: annotation.type === 'hint' ? '#10b981' : '#3b82f6',
       backgroundColor: 'transparent',
       fillStyle: 'solid',
       strokeWidth: 1,
@@ -391,7 +382,6 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       },
     };
 
-    // Add to canvas
     const currentElements = api.getSceneElements?.() || elements;
     api.updateScene({
       elements: [...currentElements, textElement],
@@ -423,8 +413,22 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
 
   return (
     <div className="h-full flex flex-col bg-background relative">
-      {/* AI Coach Toggle */}
+      {/* AI Coach Controls */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+        {/* Voice Input Toggle */}
+        <button
+          onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+          className={`p-3 rounded-full shadow-lg transition-all ${
+            isVoiceEnabled
+              ? 'bg-blue-500 text-white hover:bg-blue-600'
+              : 'bg-gray-300 text-gray-600 hover:bg-gray-400'
+          }`}
+          title={isVoiceEnabled ? 'Voice Input: ON (speak to AI)' : 'Voice Input: OFF'}
+        >
+          {isVoiceEnabled ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
+        </button>
+
+        {/* AI Coach Toggle */}
         <button
           onClick={() => setIsAICoachEnabled(!isAICoachEnabled)}
           className={`p-3 rounded-full shadow-lg transition-all ${
@@ -432,15 +436,24 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
               ? 'bg-green-500 text-white hover:bg-green-600'
               : 'bg-gray-300 text-gray-600 hover:bg-gray-400'
           }`}
-          title={isAICoachEnabled ? 'AI Coach: ON (will help proactively)' : 'AI Coach: OFF'}
+          title={isAICoachEnabled ? 'AI Coach: ON (watching canvas)' : 'AI Coach: OFF'}
         >
           {isAICoachEnabled ? <Bot className="w-6 h-6" /> : <BotOff className="w-6 h-6" />}
         </button>
-        {isAICoachEnabled && (
-          <div className="bg-green-500 text-white text-xs px-2 py-1 rounded-full shadow-md">
-            AI Watching
-          </div>
-        )}
+
+        {/* Status Indicators */}
+        <div className="flex flex-col gap-1">
+          {isAICoachEnabled && (
+            <div className="bg-green-500 text-white text-xs px-2 py-1 rounded-full shadow-md">
+              AI Watching
+            </div>
+          )}
+          {isVoiceEnabled && (
+            <div className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow-md">
+              Voice Active
+            </div>
+          )}
+        </div>
       </div>
 
       {/* PDF Navigation */}
@@ -528,15 +541,18 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
       {/* Live AI Coaching System (background component) */}
       <LiveAICoachingSystem
         excalidrawRef={excalidrawRef}
+        voiceSynthesisRef={voiceSynthesisRef}
         elements={elements}
         onLaserPositionChange={handleLaserPositionChange}
         onAddAnnotation={handleAddAnnotation}
         onSpeakText={handleSpeakText}
         isEnabled={isAICoachEnabled}
+        isVoiceEnabled={isVoiceEnabled}
       />
 
-      {/* Live Voice Synthesis (background component) */}
-      <LiveVoiceSynthesis
+      {/* Enhanced Voice Synthesis (with pause/resume) */}
+      <EnhancedLiveVoiceSynthesis
+        ref={voiceSynthesisRef}
         text={voiceText}
         onComplete={() => setVoiceText(null)}
       />
