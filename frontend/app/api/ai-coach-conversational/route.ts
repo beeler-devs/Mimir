@@ -32,6 +32,7 @@ interface ConversationalCoachRequest {
     };
     trigger: 'idle' | 'help_request' | 'interrupt';
     userSpeech?: string;
+    coachingMode?: string; // 'observe' | 'hints' | 'full'
   };
 }
 
@@ -95,6 +96,31 @@ export async function POST(request: NextRequest) {
       )
       .join('\n');
 
+    // Get coaching mode behavior
+    const coachingMode = conversationContext.coachingMode || 'full';
+    let modeBehavior = '';
+
+    if (coachingMode === 'observe') {
+      modeBehavior = `**COACHING MODE: Observe Only**
+- Only respond when the student explicitly asks for help
+- Keep responses brief and minimal
+- DO NOT provide proactive guidance
+- Point to resources rather than explaining directly`;
+    } else if (coachingMode === 'hints') {
+      modeBehavior = `**COACHING MODE: Hints Only**
+- Provide hints and guiding questions, NOT full solutions
+- Ask Socratic questions to lead student to discovery
+- Use laser pointer to draw attention, but let them figure it out
+- Avoid giving away answers directly`;
+    } else {
+      // 'full' mode
+      modeBehavior = `**COACHING MODE: Full Tutor**
+- Provide complete explanations and step-by-step guidance
+- Use all tools (voice, laser, annotations) to help student learn
+- Be proactive in offering assistance
+- Explain concepts thoroughly when asked`;
+    }
+
     // Build context-aware prompt based on trigger type
     let situationDescription = '';
     let behaviorGuidelines = '';
@@ -119,7 +145,8 @@ Student just said: "${conversationContext.userSpeech}"
 2. Decide: CONTINUE with original topic or PIVOT to new topic
 3. If continuing, reference what you were saying: "As I was explaining..."
 4. If pivoting, make it smooth: "That's actually related to..." or "Let's focus on that first..."
-5. Keep it brief - the student interrupted for a reason`;
+5. Keep it brief - the student interrupted for a reason
+${coachingMode === 'hints' ? '6. Remember: hints only, not full solutions' : ''}`;
     } else if (conversationContext.trigger === 'help_request') {
       situationDescription = `**HELP REQUEST**
 
@@ -133,7 +160,9 @@ Student said: "${conversationContext.userSpeech}"
 1. Address their specific question directly
 2. Be clear and concise
 3. Use voice + laser + annotation as needed
-4. Provide hints first, not full solutions (unless they're very stuck)`;
+${coachingMode === 'hints'
+  ? '4. Provide hints and guiding questions, NOT full solutions\n5. Ask Socratic questions to lead them to discovery'
+  : '4. Provide explanations appropriate to their question'}`;
     } else {
       // idle trigger
       situationDescription = `**PROACTIVE GUIDANCE**
@@ -146,11 +175,14 @@ The student has been idle for 15+ seconds. They may be stuck or thinking.
 1. Be encouraging and supportive
 2. Ask guiding questions or offer hints
 3. Don't be intrusive - keep it brief
-4. Use voice for encouragement, laser to point to next steps`;
+4. Use voice for encouragement, laser to point to next steps
+${coachingMode === 'hints' ? '5. Remember: guide with questions, not direct answers' : ''}`;
     }
 
     // Construct full prompt
     const prompt = `You are a live AI tutor having a **real-time voice conversation** with a student working on a math problem in Excalidraw.
+
+${modeBehavior}
 
 ${situationDescription}
 

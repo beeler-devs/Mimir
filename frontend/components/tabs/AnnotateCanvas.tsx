@@ -5,8 +5,10 @@ import dynamic from 'next/dynamic';
 import '@excalidraw/excalidraw/index.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { LaserPointerOverlay, PointerPosition } from '../ai/LaserPointerOverlay';
-import { LiveAICoachingSystem } from '../ai/LiveAICoachingSystem';
+import { LiveAICoachingSystem, type AIState } from '../ai/LiveAICoachingSystem';
 import { EnhancedLiveVoiceSynthesis, VoiceSynthesisController } from '../ai/EnhancedLiveVoiceSynthesis';
+import { AIStateIndicator } from '../ai/AIStateIndicator';
+import { AI_COACH_CONFIG, type CoachingMode, getCoachingModeBehavior } from '../../lib/aiCoachConfig';
 import { Bot, BotOff, Mic, MicOff } from 'lucide-react';
 
 // Dynamically import Excalidraw to avoid SSR issues
@@ -70,6 +72,8 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
   // Live AI Coach state
   const [isAICoachEnabled, setIsAICoachEnabled] = useState(true);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false); // Voice input OFF by default
+  const [coachingMode, setCoachingMode] = useState<CoachingMode>(AI_COACH_CONFIG.defaultMode);
+  const [aiState, setAIState] = useState<AIState>('idle');
   const [laserPosition, setLaserPosition] = useState<PointerPosition | null>(null);
   const [voiceText, setVoiceText] = useState<string | null>(null);
 
@@ -423,6 +427,12 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     console.log('🗣️ AI speaking:', text);
   }, []);
 
+  // AI Coach callback: Update AI state
+  const handleAIStateChange = useCallback((newState: AIState) => {
+    setAIState(newState);
+    console.log('🤖 AI state changed:', newState);
+  }, []);
+
   // AI Coach callback: Update laser position
   const handleLaserPositionChange = useCallback((position: PointerPosition | null) => {
     setLaserPosition(position);
@@ -457,6 +467,27 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
     <div className="h-full flex flex-col bg-background relative">
       {/* AI Coach Controls */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+        {/* AI State Indicator */}
+        <AIStateIndicator state={aiState} />
+
+        {/* Coaching Mode Selector */}
+        <select
+          value={coachingMode}
+          onChange={(e) => setCoachingMode(e.target.value as CoachingMode)}
+          className="px-3 py-2 rounded-lg shadow-lg bg-white border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
+          title={getCoachingModeBehavior(coachingMode).description}
+        >
+          <option value={AI_COACH_CONFIG.modes.OBSERVE_ONLY}>
+            {getCoachingModeBehavior(AI_COACH_CONFIG.modes.OBSERVE_ONLY).label}
+          </option>
+          <option value={AI_COACH_CONFIG.modes.HINTS}>
+            {getCoachingModeBehavior(AI_COACH_CONFIG.modes.HINTS).label}
+          </option>
+          <option value={AI_COACH_CONFIG.modes.FULL_TUTOR}>
+            {getCoachingModeBehavior(AI_COACH_CONFIG.modes.FULL_TUTOR).label}
+          </option>
+        </select>
+
         {/* Voice Input Toggle */}
         <button
           onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
@@ -588,8 +619,10 @@ export const AnnotateCanvas = forwardRef<AnnotateCanvasRef, AnnotateCanvasProps>
         onLaserPositionChange={handleLaserPositionChange}
         onAddAnnotation={handleAddAnnotation}
         onSpeakText={handleSpeakText}
+        onStateChange={handleAIStateChange}
         isEnabled={isAICoachEnabled}
         isVoiceEnabled={isVoiceEnabled}
+        coachingMode={coachingMode}
       />
 
       {/* Enhanced Voice Synthesis (with pause/resume) */}

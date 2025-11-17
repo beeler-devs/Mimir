@@ -5,7 +5,7 @@ import { PointerPosition } from './LaserPointerOverlay';
 import { VoiceInputListener } from './VoiceInputListener';
 import { getConversationStateManager } from '../../lib/conversationState';
 import { detectHelpRequest, extractIntent } from '../../lib/semanticAnalyzer';
-import { AI_COACH_CONFIG } from '../../lib/aiCoachConfig';
+import { AI_COACH_CONFIG, type CoachingMode, getCoachingModeBehavior } from '../../lib/aiCoachConfig';
 import { retryAICoachingRequest } from '../../lib/retryFetch';
 import type { VoiceSynthesisController } from './EnhancedLiveVoiceSynthesis';
 
@@ -24,6 +24,8 @@ interface AIIntervention {
   };
 }
 
+export type AIState = 'idle' | 'listening' | 'thinking' | 'speaking';
+
 interface LiveAICoachingSystemProps {
   excalidrawRef: React.RefObject<any>;
   voiceSynthesisRef: React.RefObject<VoiceSynthesisController>;
@@ -31,8 +33,10 @@ interface LiveAICoachingSystemProps {
   onLaserPositionChange: (position: PointerPosition | null) => void;
   onAddAnnotation: (annotation: { text: string; x: number; y: number; type: string }) => void;
   onSpeakText: (text: string) => void;
+  onStateChange?: (state: AIState) => void;
   isEnabled: boolean;
   isVoiceEnabled: boolean;
+  coachingMode: CoachingMode;
 }
 
 /**
@@ -50,11 +54,23 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   onLaserPositionChange,
   onAddAnnotation,
   onSpeakText,
+  onStateChange,
   isEnabled,
   isVoiceEnabled,
+  coachingMode,
 }) => {
   const conversationManager = getConversationStateManager();
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [aiState, setAIState] = useState<AIState>('idle');
+
+  // Get coaching mode behavior
+  const modeBehavior = getCoachingModeBehavior(coachingMode);
+
+  // Update AI state and notify parent
+  const updateAIState = useCallback((newState: AIState) => {
+    setAIState(newState);
+    onStateChange?.(newState);
+  }, [onStateChange]);
 
   const analysisTimerRef = useRef<NodeJS.Timeout | null>(null);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -71,10 +87,56 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   const inCooldownRef = useRef(false);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Export canvas as screenshot
+  // Screenshot cache (avoid re-capturing identical canvas)
+  const screenshotCacheRef = useRef<{
+    version: number;
+    screenshot: string;
+  } | null>(null);
+
+  // Helper: Resize canvas if it exceeds max dimensions
+  const resizeCanvasIfNeeded = useCallback(
+    (canvas: HTMLCanvasElement, maxWidth: number, maxHeight: number): HTMLCanvasElement => {
+      const { width, height } = canvas;
+
+      // Check if resize needed
+      if (width <= maxWidth && height <= maxHeight) {
+        return canvas; // No resize needed
+      }
+
+      // Calculate scale to fit within bounds while maintaining aspect ratio
+      const scale = Math.min(maxWidth / width, maxHeight / height);
+      const newWidth = Math.floor(width * scale);
+      const newHeight = Math.floor(height * scale);
+
+      console.log(`🔧 Resizing screenshot: ${width}x${height} → ${newWidth}x${newHeight}`);
+
+      // Create new canvas with resized dimensions
+      const resizedCanvas = document.createElement('canvas');
+      resizedCanvas.width = newWidth;
+      resizedCanvas.height = newHeight;
+
+      const ctx = resizedCanvas.getContext('2d');
+      if (!ctx) return canvas; // Fallback if context unavailable
+
+      // Draw resized image
+      ctx.drawImage(canvas, 0, 0, newWidth, newHeight);
+
+      return resizedCanvas;
+    },
+    []
+  );
+
+  // Export canvas as screenshot with optimization
   const captureCanvasScreenshot = useCallback(async (): Promise<string | null> => {
     try {
       if (!excalidrawRef.current) return null;
+
+      // Check cache: if canvas version unchanged, reuse screenshot
+      const currentVersion = canvasVersionRef.current;
+      if (screenshotCacheRef.current?.version === currentVersion) {
+        console.log('📸 Using cached screenshot (canvas unchanged)');
+        return screenshotCacheRef.current.screenshot;
+      }
 
       const api = excalidrawRef.current;
       const { elements: currentElements, appState, files } = api.getSceneElements
@@ -87,18 +149,41 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       const excalidrawModule = await import('@excalidraw/excalidraw');
       const { exportToCanvas } = excalidrawModule;
 
+      // Export with configured scale for optimization
       const canvas = await exportToCanvas({
         elements: visibleElements,
-        appState: appState || {},
+        appState: {
+          ...(appState || {}),
+          exportScale: AI_COACH_CONFIG.screenshotScale,
+        },
         files: files || {},
       });
 
-      return canvas.toDataURL('image/png');
+      // Optionally resize if canvas is too large
+      const optimizedCanvas = resizeCanvasIfNeeded(
+        canvas,
+        AI_COACH_CONFIG.maxScreenshotWidth,
+        AI_COACH_CONFIG.maxScreenshotHeight
+      );
+
+      // Convert to data URL with quality optimization
+      const screenshot = optimizedCanvas.toDataURL('image/png', 0.85); // 85% quality
+
+      // Cache the screenshot
+      screenshotCacheRef.current = {
+        version: currentVersion,
+        screenshot,
+      };
+
+      const sizeKB = Math.round(screenshot.length / 1024);
+      console.log(`📸 Captured screenshot (${sizeKB}KB, version ${currentVersion})`);
+
+      return screenshot;
     } catch (error) {
       console.error('Failed to capture canvas screenshot:', error);
       return null;
     }
-  }, [excalidrawRef, elements]);
+  }, [excalidrawRef, elements, resizeCanvasIfNeeded]);
 
   // Execute AI intervention
   const executeIntervention = useCallback(
@@ -109,6 +194,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         if (intervention.voiceText) {
           console.log('🗣️ AI speaking:', intervention.voiceText);
           conversationManager.startAIUtterance(intervention.voiceText);
+          updateAIState('speaking');
           onSpeakText(intervention.voiceText);
         }
 
@@ -150,9 +236,15 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         conversationManager.recordIntervention();
       } catch (error) {
         console.error('Failed to execute intervention:', error);
+      } finally {
+        // After intervention completes, return to idle (unless still speaking)
+        // The voice synthesis component should manage 'speaking' state duration
+        if (!intervention.voiceText) {
+          updateAIState('idle');
+        }
       }
     },
-    [onSpeakText, onLaserPositionChange, onAddAnnotation, conversationManager]
+    [onSpeakText, onLaserPositionChange, onAddAnnotation, conversationManager, updateAIState]
   );
 
   // Call AI API for intervention
@@ -164,6 +256,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       if (interventionInProgressRef.current || !isMountedRef.current) return;
 
       interventionInProgressRef.current = true;
+      updateAIState('thinking');
 
       try {
         const conversationState = conversationManager.getSummaryForAPI();
@@ -196,6 +289,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
             ...conversationState,
             trigger: context.trigger,
             userSpeech: context.userSpeech,
+            coachingMode, // Pass mode to API
           },
           {
             onRetry: (attempt, error) => {
@@ -231,10 +325,14 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       } finally {
         if (isMountedRef.current) {
           interventionInProgressRef.current = false;
+          // Reset to idle after API call completes (executeIntervention will set to 'speaking' if needed)
+          if (aiState === 'thinking') {
+            updateAIState('idle');
+          }
         }
       }
     },
-    [elements, conversationManager, captureCanvasScreenshot, executeIntervention]
+    [elements, conversationManager, captureCanvasScreenshot, executeIntervention, updateAIState, aiState, coachingMode]
   );
 
   // Check for interrupt storm
@@ -343,19 +441,25 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   const handleVoiceActivityStart = useCallback(() => {
     console.log('🎤 User started speaking (VAD)');
     setIsUserSpeaking(true);
+    updateAIState('listening');
 
     // If AI is speaking, pause immediately
     if (voiceSynthesisRef.current?.isSpeaking() && !voiceSynthesisRef.current?.isPaused()) {
       console.log('⏸️ Auto-pausing AI speech (user started speaking)');
       voiceSynthesisRef.current.pause();
     }
-  }, [voiceSynthesisRef]);
+  }, [voiceSynthesisRef, updateAIState]);
 
   // Handle voice activity end (user stopped speaking)
   const handleVoiceActivityEnd = useCallback(() => {
     console.log('🔇 User stopped speaking (VAD)');
     setIsUserSpeaking(false);
-  }, []);
+
+    // Return to idle state if not thinking or speaking
+    if (aiState === 'listening') {
+      updateAIState('idle');
+    }
+  }, [aiState, updateAIState]);
 
   // Track canvas changes (idle detection with version tracking)
   useEffect(() => {
@@ -392,6 +496,12 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
 
         console.log(`💤 User is idle (no canvas changes for ${AI_COACH_CONFIG.idleThresholdMs}ms)`);
 
+        // Check if mode allows idle interventions
+        if (!modeBehavior.allowIdleIntervention) {
+          console.log('🚫 Idle intervention disabled in current mode:', coachingMode);
+          return;
+        }
+
         // Only intervene if user is not speaking and hasn't intervened recently
         const timeSinceLastIntervention =
           Date.now() - conversationManager.getState().lastInterventionTime;
@@ -410,7 +520,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
       if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
-  }, [elements, isEnabled, isUserSpeaking, conversationManager, callAIForIntervention]);
+  }, [elements, isEnabled, isUserSpeaking, conversationManager, callAIForIntervention, modeBehavior, coachingMode]);
 
   // Cleanup on unmount
   useEffect(() => {
