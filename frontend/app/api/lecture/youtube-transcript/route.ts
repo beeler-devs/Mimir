@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { YoutubeTranscript } from 'youtube-transcript';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,55 +22,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Implement YouTube transcript fetching
-    // Options:
-    // 1. Use youtube-transcript npm package
-    // 2. Use YouTube Data API v3 with captions
-    // 3. Use a third-party service like AssemblyAI or Deepgram
+    // Fetch transcript from YouTube
+    const transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
+    
+    if (!transcriptData || transcriptData.length === 0) {
+      return NextResponse.json(
+        { error: 'No transcript available for this video' },
+        { status: 404 }
+      );
+    }
 
-    // Example using youtube-transcript package:
-    // const { YoutubeTranscript } = require('youtube-transcript');
-    // const transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId);
-    //
-    // const segments = transcriptData.map(item => ({
-    //   text: item.text,
-    //   timestamp: item.offset / 1000, // Convert ms to seconds
-    //   duration: item.duration / 1000
-    // }));
-    //
-    // const transcript = segments.map(s => s.text).join(' ');
-    //
-    // // Optionally fetch video metadata
-    // const videoInfo = await fetchYouTubeMetadata(youtubeId);
-    //
-    // return NextResponse.json({
-    //   success: true,
-    //   transcript,
-    //   segments,
-    //   duration: videoInfo.duration,
-    //   title: videoInfo.title,
-    //   publishedAt: videoInfo.publishedAt,
-    // });
+    // Convert transcript data to our format
+    const segments = transcriptData.map(item => ({
+      text: item.text,
+      timestamp: item.offset / 1000, // Convert ms to seconds
+      duration: item.duration / 1000
+    }));
 
-    // TEMPORARY: Return mock data for testing
+    // Combine all text for full transcript
+    const transcript = segments.map(s => s.text).join(' ');
+
+    // Calculate total duration from last segment
+    const lastSegment = segments[segments.length - 1];
+    const duration = lastSegment.timestamp + lastSegment.duration;
+
+    // Fetch video metadata using oEmbed API (no API key required)
+    let title = 'YouTube Video';
+    let publishedAt = new Date().toISOString();
+    
+    try {
+      const oembedResponse = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${youtubeId}&format=json`
+      );
+      
+      if (oembedResponse.ok) {
+        const metadata = await oembedResponse.json();
+        title = metadata.title || title;
+      }
+    } catch (metadataError) {
+      console.warn('Failed to fetch video metadata, using defaults:', metadataError);
+    }
+
     return NextResponse.json({
       success: true,
-      transcript: 'This is a mock transcript. Replace this with actual YouTube transcript fetching.',
-      segments: [
-        { text: 'This is a mock transcript.', timestamp: 0, duration: 3 },
-        { text: 'Replace this with actual YouTube transcript fetching.', timestamp: 3, duration: 5 },
-      ],
-      duration: 8,
-      title: 'Mock Video Title',
-      publishedAt: new Date().toISOString(),
+      transcript,
+      segments,
+      duration,
+      title,
+      publishedAt,
     });
 
   } catch (error) {
     console.error('Error fetching YouTube transcript:', error);
+    
+    // Provide more specific error messages
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isTranscriptDisabled = errorMessage.toLowerCase().includes('transcript') || 
+                                  errorMessage.toLowerCase().includes('disabled');
+    
     return NextResponse.json(
       {
-        error: 'Failed to fetch YouTube transcript',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        error: isTranscriptDisabled 
+          ? 'Transcripts are disabled for this video or no transcript is available'
+          : 'Failed to fetch YouTube transcript',
+        details: errorMessage
       },
       { status: 500 }
     );

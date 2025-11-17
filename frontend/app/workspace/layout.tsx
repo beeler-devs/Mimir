@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { InstanceSidebar, NewInstanceModal, SettingsModal } from '@/components/workspace';
+import React, { useEffect, useState } from 'react';
+import { InstanceSidebar, NewInstanceModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
@@ -26,6 +26,22 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     moveFolder,
     moveInstanceToFolder,
   } = useWorkspace();
+  const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      if (cmdOrCtrl && e.key.toLowerCase() === 'k' && !e.shiftKey) {
+        e.preventDefault();
+        setInstanceSearchOpen(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Keep the chrome rendered even while individual pages change
   return (
@@ -64,6 +80,13 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         onClose={() => setSettingsOpen(false)}
         theme={themePreference}
         onThemeChange={setThemePreference}
+      />
+
+      <SearchInstancesModal
+        open={instanceSearchOpen}
+        instances={instances}
+        onClose={() => setInstanceSearchOpen(false)}
+        onSelect={selectInstance}
       />
 
       <NewInstanceModal

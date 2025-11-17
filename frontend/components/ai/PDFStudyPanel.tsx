@@ -184,7 +184,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
           {/* Header */}
           <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">Study Your {contentType}</h2>
+            <h2 className="text-2xl font-semibold mb-2 pt-30">Study Your {contentType}</h2>
           </div>
 
           {/* Study Mode Grid - 3-2 layout */}
