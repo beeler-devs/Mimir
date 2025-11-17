@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from manim_worker.layout_validator import validate_layout, suggest_layout_fixes
 
 # Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
@@ -500,18 +501,18 @@ self.play(
    Phase 1: Title/Introduction (1-2 seconds)
    - Show a clear title that identifies the concept
    - Fade in or write the title, then move it to top edge or fade out
-   
+
    Phase 2: Setup (2-3 seconds)
    - Create axes, labels, or initial objects
    - Use Create() for axes, Write() for labels
    - Establish the visual context clearly
-   
+
    Phase 3: Main Animation (5-10 seconds)
    - This is the core explanation
    - Use progressive reveals - build understanding step by step
    - Animate smoothly with appropriate timing
    - Use MoveAlongPath for curves, Transform for shape changes
-   
+
    Phase 4: Conclusion (1-2 seconds)
    - Add a key insight, label, or summary
    - Use Write() or FadeIn() for final text
@@ -547,7 +548,35 @@ self.play(
    - Match animation complexity to concept complexity
    - Simple concepts = simpler animations
 
-Remember: Your goal is to create an animation that a student can watch and understand the concept clearly. Prioritize clarity, pacing, and educational value. Use the examples and patterns above as inspiration, but adapt them to fit the specific concept you're visualizing."""
+7. **CRITICAL: SPATIAL LAYOUT & BOUNDS**:
+   - **Keep all content within visible bounds**: x ∈ [-6, 6], y ∈ [-3.5, 3.5]
+   - **Prevent overlaps**: Space elements at least 0.5 units apart
+   - **Use proper positioning**:
+     * Title: to_edge(UP) or to_corner(UL/UR) with padding
+     * Main content: ORIGIN or shift by small amounts (±1-2 units max)
+     * Labels: to_edge(DOWN) or next_to() with appropriate buff
+     * Side annotations: to_edge(LEFT/RIGHT) with padding
+   - **For axes**: Use reasonable ranges (x_range=[-5,5], y_range=[-4,4])
+   - **For multiple objects**: Use VGroup.arrange() or explicit positioning with next_to()
+   - **Test bounds mentally**: Imagine the 16:9 screen, keep everything visible
+
+8. **SCOPE MATCHING - ANSWER ONLY WHAT'S ASKED**:
+   - **Read the user's question carefully** - what EXACTLY are they asking?
+   - **Don't over-explain**: If they ask "why is area of triangle bh/2", show ONLY that - don't explain derivatives, integrals, or other advanced topics
+   - **Stay focused**: One concept = one visualization
+   - **Match depth to question**:
+     * Simple "what is X" → Show definition + basic example
+     * "How does X work" → Show mechanism/process
+     * "Prove X" → Show step-by-step derivation
+     * "Visualize X" → Show the concept directly
+   - **Avoid scope creep**: Don't add "related concepts" unless explicitly asked
+   - **Examples of scope matching**:
+     * Request: "area of triangle" → Show base × height ÷ 2 visually ❌ Don't show calculus
+     * Request: "Pythagorean theorem" → Show a²+b²=c² with squares ❌ Don't derive using trig
+     * Request: "what is derivative" → Show slope/rate of change ❌ Don't show integration
+     * Request: "bubble sort" → Show the swap algorithm ❌ Don't compare to quicksort
+
+Remember: Your goal is to create an animation that a student can watch and understand the concept clearly. Prioritize clarity, pacing, and educational value. Use the examples and patterns above as inspiration, but adapt them to fit the specific concept you're visualizing. **Keep everything on-screen and answer only what was asked.**"""
     
     # Analyze concept to provide better guidance
     concept_type = _detect_concept_type(concept)
@@ -577,22 +606,34 @@ Target complexity: {complexity_hint}
 - Advanced: Can assume prior knowledge, more sophisticated visualizations
 
 === YOUR TASK ===
-Design a clear, intuitive animation that explains this concept to a student.
+Design a clear, intuitive animation that explains **EXACTLY AND ONLY** what the user asked for.
+
+**CRITICAL: SCOPE ANALYSIS (Do this first!)**
+Before coding, analyze the user's request:
+- What is the EXACT question being asked?
+- What is the MINIMUM explanation needed to answer it?
+- Are they asking for a definition, proof, visualization, or mechanism?
+- What prerequisite knowledge can we assume?
+
+**DO NOT over-explain or add tangential topics!**
 
 **Key Questions to Consider:**
 1. What is the core idea that needs to be visualized?
-   - Identify the main mathematical/scientific principle
+   - Identify the main mathematical/scientific principle **being asked about**
    - What makes this concept important or interesting?
+   - **Stay within the scope of the question**
 
 2. What visual elements will best convey this concept?
    - Should you use axes, number lines, shapes, or combinations?
    - What colors and sizes will create clear visual hierarchy?
    - Are there standard visualizations for this concept type?
+   - **Ensure all elements fit within bounds: x∈[-6,6], y∈[-3.5,3.5]**
 
 3. How can you build understanding progressively?
    - What should the student see first? (setup/context)
    - What's the main demonstration? (core animation)
    - What's the key takeaway? (conclusion/insight)
+   - **Use proper spacing: elements at least 0.5 units apart**
 
 4. What pacing will help the student follow along?
    - Are there multiple steps that need separate reveals?
@@ -608,6 +649,9 @@ Design a clear, intuitive animation that explains this concept to a student.
 {_get_concept_specific_guidance(concept_type)}
 
 **Implementation Checklist:**
+- [ ] **SCOPE CHECK**: Does this answer EXACTLY what was asked, no more, no less?
+- [ ] **LAYOUT CHECK**: All elements within bounds [-6,6] × [-3.5,3.5]?
+- [ ] **SPACING CHECK**: Elements spaced at least 0.5 units apart?
 - [ ] Title/introduction phase (1-2 seconds)
 - [ ] Setup phase with axes/labels/initial objects (2-3 seconds)
 - [ ] Main animation that demonstrates the concept (5-10 seconds)
@@ -617,6 +661,7 @@ Design a clear, intuitive animation that explains this concept to a student.
 - [ ] Code follows all technical constraints
 
 Follow all the system constraints, best practices, and use the examples/patterns as inspiration.
+**Focus on clarity and staying within scope.**
 Return ONLY the complete Python source code for the scene - no markdown, no explanations, just the code."""
     
     try:
@@ -719,15 +764,20 @@ Layout methods:
   * Dollar signs ($) inside MathTex - REMOVE THEM! MathTex is already in math mode.
   * Example: Change MathTex(r"$a$") to MathTex(r"a")
   * Example: Change MathTex(r"$\frac{1}{2}$") to MathTex(r"\frac{1}{2}")
+- Layout errors: Elements positioned outside visible bounds or overlapping
+  * Keep all content within: x ∈ [-6, 6], y ∈ [-3.5, 3.5]
+  * Space elements at least 0.5 units apart
+  * Use to_edge(), next_to(), and move_to() properly
 
 === FIXING STRATEGY ===
 1. Read the error message carefully - it tells you what went wrong
 2. Identify the specific line or operation causing the issue
 3. Fix the error while preserving the original animation intent
-4. Ensure the fixed code follows all constraints
+4. Ensure the fixed code follows all constraints (including layout bounds)
 5. Test your mental model: would this code compile and run?
+6. Check that all elements stay within visible screen bounds
 
-Remember: Fix the error, but keep the same teaching concept and visual approach."""
+Remember: Fix the error, but keep the same teaching concept and visual approach. **Ensure proper layout and spacing.**"""
     
     user_prompt = f"""=== ERROR OUTPUT ===
 {error_output}
@@ -891,10 +941,18 @@ def generate_and_validate_manim_scene(
     
     # Initial generation
     code = call_claude_for_manim_code(concept, student_context)
-    
+
+    # Validate layout before testing execution
+    is_layout_valid, layout_warnings, layout_metrics = validate_layout(code)
+    if layout_warnings:
+        logger.warning(f"Layout validation found {len(layout_warnings)} potential issues")
+        suggestions = suggest_layout_fixes(code, layout_warnings)
+        if suggestions:
+            logger.info(suggestions)
+
     attempt = 0
     last_error = ""
-    
+
     # Create a temporary directory for validation
     temp_dir = Path(tempfile.gettempdir()) / "manim_validation"
     temp_dir.mkdir(exist_ok=True)

@@ -54,6 +54,7 @@ def _get_codegen_funcs():
 import tempfile
 import importlib.util
 from uuid import uuid4
+from manim_worker.layout_validator import validate_layout, suggest_layout_fixes
 
 # Try to import orchestrator
 try:
@@ -266,12 +267,20 @@ def generate_and_validate_manim_scene(
         
         # Ensure GeneratedScene class name
         code = _ensure_generated_scene_class(code)
-        
+
         logger.info("=" * 70)
         logger.info(f"✓ Orchestrator generated code ({len(code)} characters)")
         logger.info("  Full 6-agent pipeline completed successfully!")
         logger.info("=" * 70)
-        
+
+        # Validate layout before testing execution
+        is_layout_valid, layout_warnings, layout_metrics = validate_layout(code)
+        if layout_warnings:
+            logger.warning(f"Layout validation found {len(layout_warnings)} potential issues")
+            suggestions = suggest_layout_fixes(code, layout_warnings)
+            if suggestions:
+                logger.info(suggestions)
+
         # Validate the code using the same validation pipeline as simple codegen
         attempt = 0
         last_error = ""
