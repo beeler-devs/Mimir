@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_COACH_CONFIG } from '@/lib/aiCoachConfig';
+import { safeParseIntervention } from '@/lib/interventionValidator';
 
 if (!process.env.CLAUDE_API_KEY) {
   console.error('⚠️ CLAUDE_API_KEY is not set');
@@ -210,8 +212,8 @@ Now analyze the situation and provide your intervention:`;
 
     // Call Claude API
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2048,
+      model: AI_COACH_CONFIG.api.claudeModel,
+      max_tokens: AI_COACH_CONFIG.api.claudeMaxTokens,
       messages: [
         {
           role: 'user',
@@ -240,27 +242,28 @@ Now analyze the situation and provide your intervention:`;
       throw new Error('No text response from Claude');
     }
 
-    // Parse JSON response with error handling
+    // Parse and validate JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error('Failed to extract JSON from response:', responseText);
       throw new Error('Failed to extract JSON from Claude response');
     }
 
-    let intervention: AIIntervention;
+    let rawIntervention: unknown;
     try {
-      intervention = JSON.parse(jsonMatch[0]);
+      rawIntervention = JSON.parse(jsonMatch[0]);
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
       console.error('Attempted to parse:', jsonMatch[0]);
       throw new Error('Invalid JSON in Claude response');
     }
 
-    // Validate intervention structure
-    if (!intervention.type || !intervention.voiceText) {
-      console.error('Invalid intervention structure:', intervention);
-      throw new Error('Incomplete intervention response from Claude');
-    }
+    // Validate intervention with runtime checks
+    const intervention = safeParseIntervention(rawIntervention, {
+      allowFallback: true, // Use fallback if validation fails
+      onWarning: (warning) => console.warn('⚠️ Intervention warning:', warning),
+      onError: (error) => console.error('❌ Intervention error:', error),
+    });
 
     console.log('🤖 AI Intervention:', {
       trigger: conversationContext.trigger,

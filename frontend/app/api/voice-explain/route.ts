@@ -1,5 +1,16 @@
+/**
+ * @deprecated This endpoint is deprecated.
+ * Use /api/ai-coach-conversational instead for live coaching with conversation context.
+ *
+ * This was the original "playback" system with pre-planned segments.
+ * The new system supports real-time conversation, interrupts, and context awareness.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+
+// DEPRECATED: This endpoint is no longer maintained
+// Redirect to new endpoint
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -48,7 +59,21 @@ interface VoiceExplanationResponse {
 }
 
 export async function POST(request: NextRequest) {
-  try {
+  // Return 410 Gone to indicate this endpoint is deprecated
+  return NextResponse.json(
+    {
+      error: 'This endpoint is deprecated',
+      message: 'Please use /api/ai-coach-conversational for live AI coaching with conversation support',
+      migration: {
+        newEndpoint: '/api/ai-coach-conversational',
+        documentation: 'See VOICE_CONVERSATION_SYSTEM.md for details',
+      },
+    },
+    { status: 410 } // 410 Gone = permanently removed
+  );
+
+  // Old implementation kept for reference (disabled)
+  /* try {
     const body: VoiceExplainRequest = await request.json();
     const { screenshot, elements, userQuestion, focusArea } = body;
 
@@ -176,4 +201,5 @@ Now analyze the canvas and create the explanation:`;
       { status: 500 }
     );
   }
+  */
 }

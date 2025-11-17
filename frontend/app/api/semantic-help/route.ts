@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { AI_COACH_CONFIG } from '@/lib/aiCoachConfig';
 
 if (!process.env.OPENAI_API_KEY) {
   console.error('⚠️ OPENAI_API_KEY is not set');
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     // Get embedding for user text
     const userEmbeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small', // Fast and cheap
+      model: AI_COACH_CONFIG.api.embeddingModel,
       input: text,
     });
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       console.log('📦 Using cached help embeddings');
     } else {
       const helpEmbeddingsResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
+        model: AI_COACH_CONFIG.api.embeddingModel,
         input: HELP_EXAMPLES,
       });
 
@@ -81,10 +82,8 @@ export async function POST(request: NextRequest) {
     // Get max similarity
     const maxSimilarity = Math.max(...similarities);
 
-    // Threshold for help detection
-    const HELP_THRESHOLD = 0.75;
-
-    const needsHelp = maxSimilarity >= HELP_THRESHOLD;
+    // Use configured threshold for help detection
+    const needsHelp = maxSimilarity >= AI_COACH_CONFIG.help.apiHelpThreshold;
     const confidence = maxSimilarity;
 
     console.log('🔍 Semantic help detection:', {

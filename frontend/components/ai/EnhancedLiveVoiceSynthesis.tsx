@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { AI_COACH_CONFIG } from '../../lib/aiCoachConfig';
 
 interface EnhancedLiveVoiceSynthesisProps {
   text: string | null;
@@ -62,11 +63,10 @@ export const EnhancedLiveVoiceSynthesis = React.forwardRef<
     };
   }, []);
 
-  // Estimate speaking duration (rough: ~150 words per minute)
+  // Estimate speaking duration using configured WPM
   const estimateDuration = useCallback((text: string): number => {
     const words = text.split(/\s+/).length;
-    const wordsPerMinute = 150;
-    const minutes = words / wordsPerMinute;
+    const minutes = words / AI_COACH_CONFIG.estimatedWordsPerMinute;
     return minutes * 60 * 1000; // Convert to milliseconds
   }, []);
 
@@ -103,7 +103,7 @@ export const EnhancedLiveVoiceSynthesis = React.forwardRef<
       const elapsed = Date.now() - startTimeRef.current;
       const progress = Math.min(elapsed / estimatedDurationRef.current, 1);
       onProgress?.(progress);
-    }, 100);
+    }, AI_COACH_CONFIG.progressUpdateIntervalMs);
   }, [onProgress, clearProgressInterval]);
 
   // Get preferred voice

@@ -8,6 +8,8 @@
  * This is lightweight and doesn't require calling Claude for every utterance.
  */
 
+import { AI_COACH_CONFIG } from './aiCoachConfig';
+
 interface HelpDetectionResult {
   needsHelp: boolean;
   confidence: number; // 0-1
@@ -158,8 +160,8 @@ export async function detectHelpRequest(text: string): Promise<HelpDetectionResu
   // Fast path: keyword matching
   const keywordResult = detectHelpByKeywords(text);
 
-  // If high confidence from keywords, return immediately
-  if (keywordResult.confidence >= 0.8) {
+  // If high confidence from keywords, return immediately (skip semantic analysis)
+  if (keywordResult.confidence >= AI_COACH_CONFIG.help.keywordConfidenceThreshold) {
     console.log('🚨 Help detected (keyword):', keywordResult);
     return keywordResult;
   }
@@ -174,7 +176,7 @@ export async function detectHelpRequest(text: string): Promise<HelpDetectionResu
   // This catches nuanced expressions like "I'm not sure about this step"
   const semanticResult = await detectHelpBySemantic(text);
 
-  if (semanticResult.confidence >= 0.7) {
+  if (semanticResult.confidence >= AI_COACH_CONFIG.help.semanticConfidenceThreshold) {
     console.log('🔍 Help detected (semantic):', semanticResult);
     return semanticResult;
   }

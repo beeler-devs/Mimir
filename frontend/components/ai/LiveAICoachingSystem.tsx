@@ -5,6 +5,7 @@ import { PointerPosition } from './LaserPointerOverlay';
 import { VoiceInputListener } from './VoiceInputListener';
 import { getConversationStateManager } from '../../lib/conversationState';
 import { detectHelpRequest, extractIntent } from '../../lib/semanticAnalyzer';
+import { AI_COACH_CONFIG } from '../../lib/aiCoachConfig';
 import type { VoiceSynthesisController } from './EnhancedLiveVoiceSynthesis';
 
 interface AIIntervention {
@@ -60,11 +61,6 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
   const interventionInProgressRef = useRef(false);
   const isMountedRef = useRef(true);
   const lastElementCountRef = useRef(0);
-
-  // Configuration
-  const IDLE_THRESHOLD_MS = 15000; // 15 seconds
-  const ANALYSIS_DEBOUNCE_MS = 3000; // 3 seconds
-  const MIN_INTERVENTION_INTERVAL_MS = 30000; // 30 seconds
 
   // Export canvas as screenshot
   const captureCanvasScreenshot = useCallback(async (): Promise<string | null> => {
@@ -123,7 +119,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
 
           // Clear laser after estimated speak duration
           const speakDuration = intervention.voiceText
-            ? intervention.voiceText.split('.').length * 3000
+            ? intervention.voiceText.split('.').length * AI_COACH_CONFIG.laserDurationPerSentenceMs
             : 5000;
           laserTimerRef.current = setTimeout(() => {
             if (isMountedRef.current) {
@@ -317,7 +313,7 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
         if (isMountedRef.current) {
           console.log('⏱️ Canvas change debounce complete');
         }
-      }, ANALYSIS_DEBOUNCE_MS);
+      }, AI_COACH_CONFIG.canvasDebounceMs);
 
       // Idle timer
       idleTimerRef.current = setTimeout(() => {
@@ -331,12 +327,12 @@ export const LiveAICoachingSystem: React.FC<LiveAICoachingSystemProps> = ({
 
         if (
           !isUserSpeaking &&
-          timeSinceLastIntervention > MIN_INTERVENTION_INTERVAL_MS &&
+          timeSinceLastIntervention > AI_COACH_CONFIG.minInterventionIntervalMs &&
           currentElementCount > 0
         ) {
           callAIForIntervention({ trigger: 'idle' });
         }
-      }, IDLE_THRESHOLD_MS);
+      }, AI_COACH_CONFIG.idleThresholdMs);
     }
 
     return () => {

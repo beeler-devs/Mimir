@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { AI_COACH_CONFIG } from '../../lib/aiCoachConfig';
 
 interface VoiceInputListenerProps {
   isEnabled: boolean;
@@ -31,9 +32,6 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
-
-  // VAD configuration
-  const SILENCE_THRESHOLD_MS = 1500; // 1.5 seconds of silence = end of speech
 
   // Keep refs in sync
   useEffect(() => {
@@ -140,7 +138,7 @@ export const VoiceInputListener: React.FC<VoiceInputListenerProps> = ({
           isSpeakingRef.current = false;
           onVoiceActivityEnd();
         }
-      }, SILENCE_THRESHOLD_MS);
+      }, AI_COACH_CONFIG.vadSilenceThresholdMs);
 
       // Send final transcription
       if (isFinal && transcript.trim()) {

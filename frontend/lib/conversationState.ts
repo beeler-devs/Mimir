@@ -10,6 +10,8 @@
  * Used for interrupt handling and re-evaluation
  */
 
+import { AI_COACH_CONFIG } from './aiCoachConfig';
+
 export interface ConversationTurn {
   speaker: 'user' | 'ai';
   text: string;
@@ -38,7 +40,6 @@ export interface ConversationState {
 
 export class ConversationStateManager {
   private state: ConversationState;
-  private readonly MAX_HISTORY_LENGTH = 50; // Prevent unbounded growth
 
   constructor() {
     this.state = {
@@ -215,8 +216,9 @@ export class ConversationStateManager {
    * Trim history to prevent unbounded growth
    */
   private trimHistory(): void {
-    if (this.state.history.length > this.MAX_HISTORY_LENGTH) {
-      const excess = this.state.history.length - this.MAX_HISTORY_LENGTH;
+    const maxLength = AI_COACH_CONFIG.historyMaxTurns;
+    if (this.state.history.length > maxLength) {
+      const excess = this.state.history.length - maxLength;
       this.state.history = this.state.history.slice(excess);
       console.log(`🗑️ Trimmed ${excess} old conversation turns`);
     }
@@ -236,7 +238,7 @@ export class ConversationStateManager {
     };
   } {
     return {
-      recentHistory: this.getRecentHistory(5),
+      recentHistory: this.getRecentHistory(AI_COACH_CONFIG.apiContextTurns),
       currentAIUtterance: this.state.currentAIUtterance?.text ?? null,
       wasInterrupted: this.wasInterrupted(),
       canvasContext: {

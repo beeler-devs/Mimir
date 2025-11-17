@@ -1,5 +1,15 @@
+/**
+ * @deprecated This endpoint is deprecated.
+ * Use /api/ai-coach-conversational instead for live coaching with conversation context.
+ *
+ * This was the original AI coach without conversation history or interrupt handling.
+ * The new system supports real-time conversation, interrupts, and context-aware responses.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+
+// DEPRECATED: This endpoint is no longer maintained
 
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY || '',
@@ -42,7 +52,27 @@ interface AIIntervention {
 }
 
 export async function POST(request: NextRequest) {
-  try {
+  // Return 410 Gone to indicate this endpoint is deprecated
+  return NextResponse.json(
+    {
+      error: 'This endpoint is deprecated',
+      message: 'Please use /api/ai-coach-conversational for live AI coaching with full conversation support',
+      migration: {
+        newEndpoint: '/api/ai-coach-conversational',
+        documentation: 'See VOICE_CONVERSATION_SYSTEM.md for details',
+        changes: [
+          'Supports conversation history and context',
+          'Handles user interrupts intelligently',
+          'Tracks AI utterance state for smooth re-evaluation',
+          'Better prompt engineering for tutoring scenarios',
+        ],
+      },
+    },
+    { status: 410 } // 410 Gone = permanently removed
+  );
+
+  // Old implementation kept for reference (disabled)
+  /* try {
     const body: AICoachRequest = await request.json();
     const { screenshot, elements, context } = body;
 
@@ -193,4 +223,5 @@ Now analyze the canvas and provide your intervention:`;
       { status: 500 }
     );
   }
+  */
 }
