@@ -9,6 +9,7 @@ import { MultiFileEditor } from './MultiFileEditor';
 import { OutputConsole } from './OutputConsole';
 import { CodeFile, FileTreeNode, CodeLanguage, CodeExecutionResult } from '@/lib/types';
 import { nanoid } from 'nanoid';
+import { executeCode, requiresServerExecution, isExecutionSupported } from '@/lib/api/execute';
 
 interface CodeWorkspaceProps {
   initialFiles?: CodeFile[];
@@ -85,7 +86,7 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
     );
 
     workerRef.current.onmessage = (event: MessageEvent) => {
-      const { type, output, error, executionTime } = event.data;
+      const { type, stdout, stderr, output, error, executionTime } = event.data;
 
       switch (type) {
         case 'ready':
@@ -95,7 +96,9 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
         case 'success':
           setExecutionResult({
             status: 'success',
-            output,
+            stdout,
+            stderr,
+            output: output || stdout || '',
             executionTime,
           });
           setIsRunning(false);
@@ -104,11 +107,20 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
         case 'error':
           setExecutionResult({
             status: 'error',
+            stdout,
+            stderr,
             output,
             error,
             executionTime,
           });
           setIsRunning(false);
+          break;
+
+        case 'installing':
+          setExecutionResult({
+            status: 'running',
+            output: output || 'Installing packages...',
+          });
           break;
       }
     };
@@ -147,6 +159,11 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
       case 'cc':
       case 'cxx':
         return 'cpp';
+      case 'c':
+      case 'h':
+        return 'c';
+      case 'rs':
+        return 'rust';
       default:
         return 'python';
     }
@@ -320,17 +337,17 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
     );
   }, []);
 
-  const handleRunCode = useCallback(() => {
+  const handleRunCode = useCallback(async () => {
     if (!activeFilePath) return;
 
     const activeFile = files.find((f) => f.path === activeFilePath);
     if (!activeFile) return;
 
-    // Only support Python for now
-    if (activeFile.language !== 'python') {
+    // Check if language is supported
+    if (!isExecutionSupported(activeFile.language)) {
       setExecutionResult({
         status: 'error',
-        error: `Code execution for ${activeFile.language} is not yet supported. Only Python is currently available.`,
+        error: `Code execution for ${activeFile.language} is not yet supported.`,
       });
       return;
     }
@@ -339,11 +356,58 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
     setExecutionResult(null);
     setIsConsoleCollapsed(false); // Open console when running
 
-    workerRef.current?.postMessage({
-      type: 'run',
-      code: activeFile.content,
-      timeout: 30000,
-    });
+    // Route execution based on language
+    if (requiresServerExecution(activeFile.language)) {
+      // Server-side execution for compiled languages (C, C++, Java, Rust)
+      try {
+        // Filter files by language for the execution
+        const languageFiles = files
+          .filter((f) => f.language === activeFile.language)
+          .map((f) => ({ path: f.path, content: f.content }));
+
+        const result = await executeCode({
+          language: activeFile.language,
+          entryPoint: activeFile.path,
+          files: languageFiles,
+          timeout: 30000,
+        });
+
+        setExecutionResult({
+          status: result.status,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          output: result.stdout + (result.stderr ? `\n${result.stderr}` : ''),
+          executionTime: result.executionTime,
+          compilationOutput: result.compilationOutput,
+        });
+      } catch (error: any) {
+        setExecutionResult({
+          status: 'error',
+          error: error.message || 'Execution failed',
+        });
+      } finally {
+        setIsRunning(false);
+      }
+    } else if (activeFile.language === 'python') {
+      // Client-side execution for Python using Pyodide
+      // Get all Python files for multi-file support
+      const pythonFiles = files
+        .filter((f) => f.language === 'python')
+        .map((f) => ({ path: f.path, content: f.content }));
+
+      workerRef.current?.postMessage({
+        type: 'run',
+        entryPoint: activeFile.path,
+        files: pythonFiles,
+        timeout: 30000,
+      });
+    } else {
+      setExecutionResult({
+        status: 'error',
+        error: `Code execution for ${activeFile.language} is not yet supported.`,
+      });
+      setIsRunning(false);
+    }
   }, [activeFilePath, files]);
 
   const handleClearOutput = useCallback(() => {

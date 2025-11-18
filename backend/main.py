@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from models import HealthResponse, JobRequest, JobResponse, ChatRequest, ChatResponse, ChatMessageResponse, AnimationSuggestion
 from manim_worker.manim_service import manim_service
+from execution import execute_code, ExecuteRequest, ExecuteResponse
 import logging
 import os
 import re
@@ -70,6 +71,40 @@ async def health_check():
     Returns the service status
     """
     return HealthResponse(status="ok", version="0.2.0")
+
+
+@app.post("/execute", response_model=ExecuteResponse)
+async def execute_code_endpoint(request: ExecuteRequest):
+    """
+    Execute code in a sandboxed environment
+
+    Supports: C, C++, Java, Rust
+
+    Args:
+        request: ExecuteRequest with language, files, entry point, and timeout
+
+    Returns:
+        ExecuteResponse with stdout, stderr, execution time, and compilation output
+
+    Example:
+        POST /execute
+        {
+            "language": "cpp",
+            "entryPoint": "main.cpp",
+            "files": [
+                {"path": "main.cpp", "content": "#include <iostream>\\nint main() { std::cout << \\"Hello\\"; }"}
+            ],
+            "timeout": 30000
+        }
+    """
+    try:
+        logger.info(f"Execute request for {request.language}: {request.entryPoint}")
+        result = execute_code(request)
+        logger.info(f"Execution result: status={result.status}, time={result.executionTime}ms")
+        return result
+    except Exception as e:
+        logger.error(f"Error executing code: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/ws/test")
