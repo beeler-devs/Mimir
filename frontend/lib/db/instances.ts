@@ -8,11 +8,20 @@ import { Folder, WorkspaceInstance, InstanceType } from '@/lib/types';
 
 /**
  * Load all folders for the current user
+ * SECURITY: Filters by authenticated user's ID to prevent cross-user access
  */
 export async function loadUserFolders(): Promise<Folder[]> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   const { data, error } = await supabase
     .from('folders')
     .select('*')
+    .eq('user_id', user.id) // SECURITY: Filter by user_id
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -71,12 +80,20 @@ export async function createFolder(
 
 /**
  * Update folder name
+ * SECURITY: Verifies user owns the folder before updating
  */
 export async function updateFolder(
   folderId: string,
   name?: string,
   parentFolderId?: string | null
 ): Promise<void> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   const updates: { name?: string; parent_folder_id?: string | null } = {};
   if (name !== undefined) {
     updates.name = name;
@@ -89,10 +106,12 @@ export async function updateFolder(
     return;
   }
 
+  // SECURITY: Only update if user owns the folder
   const { error } = await supabase
     .from('folders')
     .update(updates)
-    .eq('id', folderId);
+    .eq('id', folderId)
+    .eq('user_id', user.id); // SECURITY: Verify ownership
 
   if (error) {
     console.error('Error updating folder:', error);
@@ -102,13 +121,23 @@ export async function updateFolder(
 
 /**
  * Delete a folder
+ * SECURITY: Verifies user owns the folder before deleting
  * Note: This will cascade delete child folders and set instances' folder_id to null
  */
 export async function deleteFolder(folderId: string): Promise<void> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
+  // SECURITY: Only delete if user owns the folder
   const { error } = await supabase
     .from('folders')
     .delete()
-    .eq('id', folderId);
+    .eq('id', folderId)
+    .eq('user_id', user.id); // SECURITY: Verify ownership
 
   if (error) {
     console.error('Error deleting folder:', error);
@@ -118,11 +147,20 @@ export async function deleteFolder(folderId: string): Promise<void> {
 
 /**
  * Load all instances for the current user
+ * SECURITY: Filters by authenticated user's ID to prevent cross-user access
  */
 export async function loadUserInstances(): Promise<WorkspaceInstance[]> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   const { data, error } = await supabase
     .from('instances')
     .select('*')
+    .eq('user_id', user.id) // SECURITY: Filter by user_id
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -252,6 +290,7 @@ export async function createInstance(
 
 /**
  * Update an instance (title, data, or folder)
+ * SECURITY: Verifies user owns the instance before updating
  */
 export async function updateInstance(
   instanceId: string,
@@ -261,8 +300,15 @@ export async function updateInstance(
     folderId?: string | null;
   }
 ): Promise<void> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
   const dbUpdates: Record<string, unknown> = {};
-  
+
   if (updates.title !== undefined) {
     dbUpdates.title = updates.title;
   }
@@ -273,10 +319,12 @@ export async function updateInstance(
     dbUpdates.folder_id = updates.folderId;
   }
 
+  // SECURITY: Only update if user owns the instance
   const { error } = await supabase
     .from('instances')
     .update(dbUpdates)
-    .eq('id', instanceId);
+    .eq('id', instanceId)
+    .eq('user_id', user.id); // SECURITY: Verify ownership
 
   if (error) {
     console.error('Error updating instance:', error);
@@ -286,12 +334,22 @@ export async function updateInstance(
 
 /**
  * Delete an instance
+ * SECURITY: Verifies user owns the instance before deleting
  */
 export async function deleteInstance(instanceId: string): Promise<void> {
+  // Get current authenticated user
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
+  // SECURITY: Only delete if user owns the instance
   const { error } = await supabase
     .from('instances')
     .delete()
-    .eq('id', instanceId);
+    .eq('id', instanceId)
+    .eq('user_id', user.id); // SECURITY: Verify ownership
 
   if (error) {
     console.error('Error deleting instance:', error);

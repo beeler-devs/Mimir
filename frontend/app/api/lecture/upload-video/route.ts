@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { nanoid } from 'nanoid';
+import {
+  requireAuth,
+  validateFileSignature,
+  FILE_SIGNATURES,
+  sanitizeFilename,
+  errorResponse,
+  successResponse,
+  checkRateLimit,
+} from '@/lib/auth/requireAuth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600; // 10 minutes for large video files
@@ -9,57 +18,55 @@ export const maxDuration = 600; // 10 minutes for large video files
  * POST /api/lecture/upload-video
  * Uploads video file to Supabase Storage and extracts transcript
  *
- * Request: multipart/form-data with 'video' and 'userId' fields
+ * Request: multipart/form-data with 'video' field
+ * Authorization: Bearer token required
  * Response: { videoUrl: string, transcript: string, segments: Array, duration: number }
  */
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const { user, error: authError } = await requireAuth(request);
+    if (authError) return authError;
+
+    // Rate limiting - 5 video uploads per minute per user (videos are expensive)
+    const rateLimit = checkRateLimit(`video-upload:${user!.id}`, 5, 60000);
+    if (!rateLimit.allowed) {
+      return errorResponse('Rate limit exceeded. Please try again later.', 429);
+    }
+
     if (!supabaseServer) {
-      return NextResponse.json(
-        { error: 'Storage not configured' },
-        { status: 500 }
-      );
+      return errorResponse('Storage service not configured', 503);
     }
 
     const formData = await request.formData();
     const videoFile = formData.get('video') as File;
-    const userId = formData.get('userId') as string;
 
     if (!videoFile) {
-      return NextResponse.json(
-        { error: 'No video file provided' },
-        { status: 400 }
-      );
+      return errorResponse('No video file provided', 400);
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User ID required' },
-        { status: 400 }
-      );
-    }
+    // Use authenticated user's ID
+    const userId = user!.id;
 
-    // Validate file type
-    const validVideoTypes = ['video/mp4', 'video/quicktime', 'video/x-m4v'];
-    if (!validVideoTypes.includes(videoFile.type)) {
-      return NextResponse.json(
-        { error: 'Only MP4 and MOV video files are allowed' },
-        { status: 400 }
-      );
+    // Validate file type by magic bytes
+    const signatureValidation = await validateFileSignature(videoFile, [
+      FILE_SIGNATURES.MP4,
+      FILE_SIGNATURES.WEBM,
+    ]);
+    if (!signatureValidation.valid) {
+      return errorResponse('Invalid file: Only MP4 and WebM video files are allowed', 400);
     }
 
     // Validate file size (max 500MB for video)
     const MAX_SIZE = 500 * 1024 * 1024; // 500MB
     if (videoFile.size > MAX_SIZE) {
-      return NextResponse.json(
-        { error: 'Video file size exceeds 500MB limit' },
-        { status: 400 }
-      );
+      return errorResponse('Video file size exceeds 500MB limit', 400);
     }
 
-    // Generate unique file path
-    const fileExtension = videoFile.name.split('.').pop() || 'mp4';
-    const uniqueFileName = `${nanoid()}.${fileExtension}`;
+    // Sanitize filename and use detected extension
+    const sanitizedName = sanitizeFilename(videoFile.name);
+    const safeExtension = signatureValidation.detectedType || 'mp4';
+    const uniqueFileName = `${nanoid()}.${safeExtension}`;
     const filePath = `${userId}/lectures/videos/${uniqueFileName}`;
 
     // Convert file to buffer
@@ -77,19 +84,24 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('Error uploading video to Supabase Storage:', uploadError);
-      return NextResponse.json(
-        {
-          error: 'Failed to upload video file',
-          details: uploadError.message
-        },
-        { status: 500 }
-      );
+      return errorResponse('Failed to upload video file', 500);
     }
 
-    // Get public URL
-    const { data: urlData } = supabaseServer.storage
+    // Get signed URL for better security
+    const { data: signedUrlData, error: signedUrlError } = await supabaseServer.storage
       .from('documents')
-      .getPublicUrl(filePath);
+      .createSignedUrl(filePath, 7200); // 2 hour expiry for videos
+
+    let videoUrl: string;
+    if (signedUrlError) {
+      // Fallback to public URL
+      const { data: urlData } = supabaseServer.storage
+        .from('documents')
+        .getPublicUrl(filePath);
+      videoUrl = urlData.publicUrl;
+    } else {
+      videoUrl = signedUrlData.signedUrl;
+    }
 
     // TODO: Implement video transcription
     // Options:
@@ -130,9 +142,9 @@ export async function POST(request: NextRequest) {
     //    });
 
     // TEMPORARY: Return mock data for testing
-    return NextResponse.json({
+    return successResponse({
       success: true,
-      videoUrl: urlData.publicUrl,
+      videoUrl,
       transcript: 'This is a mock transcription from video. Replace this with actual video transcription.',
       segments: [
         { text: 'This is a mock transcription from video.', timestamp: 0, duration: 4 },
@@ -143,12 +155,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error processing video:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to process video',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    return errorResponse('Failed to process video', 500);
   }
 }
