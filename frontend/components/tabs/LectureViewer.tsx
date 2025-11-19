@@ -872,18 +872,18 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               <button
                 onClick={handleStartRecording}
                 disabled={processing}
-                className="w-full px-4 py-3 font-medium rounded-lg transition-colors disabled:opacity-50"
+                className="w-full px-4 py-3 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ backgroundColor: '#F5F5F5', color: 'var(--foreground)' }}
               >
                 {processing ? (
                   <>
-                    <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
-                    Processing...
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Loading...</span>
                   </>
                 ) : (
                   <>
-                    <Mic className="w-4 h-4 inline mr-2" />
-                    Start Recording
+                    <Mic className="w-4 h-4" />
+                    <span>Start Recording</span>
                   </>
                 )}
               </button>
@@ -1201,18 +1201,18 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               <button
                 onClick={handleStartRecording}
                 disabled={processing}
-                className="px-6 py-3 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-3 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ backgroundColor: '#F5F5F5', color: 'var(--foreground)' }}
               >
                 {processing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Processing...
+                    <span>Loading...</span>
                   </>
                 ) : (
                   <>
                     <Mic className="w-4 h-4" />
-                    Record Audio
+                    <span>Record Audio</span>
                   </>
                 )}
               </button>
@@ -1235,7 +1235,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                   {/* Show audio player inline with title after processing is complete */}
                   {audioUrl && !isRecording && !processing && (
                     <div className="flex items-center justify-center flex-1">
-                      <audio controls className="max-w-md w-full" src={audioUrl}>
+                      <audio controls className="max-w-sm w-full h-11" src={audioUrl}>
                         Your browser does not support the audio element.
                       </audio>
                     </div>
