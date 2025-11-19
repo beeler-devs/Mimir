@@ -2,9 +2,10 @@
 C language executor
 """
 
+import shlex
 from typing import List
 from ..models import CodeFile, ExecuteResponse
-from ..sandbox import execute_with_sandbox
+from ..sandbox import execute_with_sandbox, sanitize_path, validate_filename
 
 
 def execute_c(
@@ -24,7 +25,19 @@ def execute_c(
         ExecuteResponse with execution results
     """
     # Get all .c files for compilation
-    c_files = [f.path for f in files if f.path.endswith('.c')]
+    c_files = []
+    for f in files:
+        sanitized = sanitize_path(f.path)
+        if sanitized.endswith('.c'):
+            if not validate_filename(sanitized):
+                return ExecuteResponse(
+                    status='error',
+                    stdout='',
+                    stderr=f'Invalid characters in filename: {f.path}',
+                    executionTime=0,
+                    compilationOutput=None
+                )
+            c_files.append(sanitized)
 
     if not c_files:
         return ExecuteResponse(
@@ -35,14 +48,15 @@ def execute_c(
             compilationOutput=None
         )
 
-    # Compile command: gcc all .c files to create executable
-    compile_command = f"gcc -o /tmp/program {' '.join(c_files)} -lm -Wall"
+    # Build compile command with properly escaped file paths
+    quoted_files = ' '.join(shlex.quote(f) for f in c_files)
+    compile_command = f"gcc -o /tmp/program {quoted_files} -lm -Wall"
 
     # Run command
     run_command = "/tmp/program"
 
     status, stdout, stderr, exec_time, compilation_output = execute_with_sandbox(
-        files=[f.model_dump() for f in files],
+        files=[{'path': f.path, 'content': f.content} for f in files],
         compile_command=compile_command,
         run_command=run_command,
         timeout_ms=timeout_ms

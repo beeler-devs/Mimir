@@ -75,57 +75,79 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
+  const isRunningRef = useRef(false); // Ref to prevent race conditions on double-click
 
   // Initialize Pyodide worker
   useEffect(() => {
     // Only initialize worker in browser environment
     if (typeof window === 'undefined') return;
 
-    workerRef.current = new Worker(
-      new URL('../../workers/python.worker.ts', import.meta.url)
-    );
+    const initWorker = () => {
+      workerRef.current = new Worker(
+        new URL('../../workers/python.worker.ts', import.meta.url)
+      );
 
-    workerRef.current.onmessage = (event: MessageEvent) => {
-      const { type, stdout, stderr, output, error, executionTime } = event.data;
+      workerRef.current.onmessage = (event: MessageEvent) => {
+        const { type, stdout, stderr, output, error, executionTime } = event.data;
 
-      switch (type) {
-        case 'ready':
-          console.log('Pyodide initialized and ready');
-          break;
+        switch (type) {
+          case 'ready':
+            console.log('Pyodide initialized and ready');
+            break;
 
-        case 'success':
-          setExecutionResult({
-            status: 'success',
-            stdout,
-            stderr,
-            output: output || stdout || '',
-            executionTime,
-          });
-          setIsRunning(false);
-          break;
+          case 'success':
+            setExecutionResult({
+              status: 'success',
+              stdout,
+              stderr,
+              output: output || stdout || '',
+              executionTime,
+            });
+            setIsRunning(false);
+            isRunningRef.current = false;
+            break;
 
-        case 'error':
-          setExecutionResult({
-            status: 'error',
-            stdout,
-            stderr,
-            output,
-            error,
-            executionTime,
-          });
-          setIsRunning(false);
-          break;
+          case 'error':
+            setExecutionResult({
+              status: 'error',
+              stdout,
+              stderr,
+              output,
+              error,
+              executionTime,
+            });
+            setIsRunning(false);
+            isRunningRef.current = false;
+            break;
 
-        case 'installing':
-          setExecutionResult({
-            status: 'running',
-            output: output || 'Installing packages...',
-          });
-          break;
-      }
+          case 'installing':
+            setExecutionResult({
+              status: 'running',
+              output: output || 'Installing packages...',
+            });
+            break;
+        }
+      };
+
+      // Handle worker errors (e.g., crashes)
+      workerRef.current.onerror = (error) => {
+        console.error('Worker error:', error);
+        setExecutionResult({
+          status: 'error',
+          error: `Worker error: ${error.message || 'Unknown error'}`,
+        });
+        setIsRunning(false);
+        isRunningRef.current = false;
+
+        // Attempt to restart worker
+        workerRef.current?.terminate();
+        initWorker();
+      };
+
+      workerRef.current.postMessage({ type: 'init' });
     };
 
-    workerRef.current.postMessage({ type: 'init' });
+    initWorker();
 
     return () => {
       workerRef.current?.terminate();
@@ -338,6 +360,8 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
   }, []);
 
   const handleRunCode = useCallback(async () => {
+    // Prevent concurrent executions using ref (avoids race condition on double-click)
+    if (isRunningRef.current) return;
     if (!activeFilePath) return;
 
     const activeFile = files.find((f) => f.path === activeFilePath);
@@ -352,6 +376,8 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
       return;
     }
 
+    // Set running state immediately using ref to prevent race conditions
+    isRunningRef.current = true;
     setIsRunning(true);
     setExecutionResult(null);
     setIsConsoleCollapsed(false); // Open console when running
@@ -387,6 +413,7 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
         });
       } finally {
         setIsRunning(false);
+        isRunningRef.current = false;
       }
     } else if (activeFile.language === 'python') {
       // Client-side execution for Python using Pyodide
@@ -395,18 +422,30 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
         .filter((f) => f.language === 'python')
         .map((f) => ({ path: f.path, content: f.content }));
 
-      workerRef.current?.postMessage({
+      if (!workerRef.current) {
+        setExecutionResult({
+          status: 'error',
+          error: 'Python worker not initialized. Please refresh the page.',
+        });
+        setIsRunning(false);
+        isRunningRef.current = false;
+        return;
+      }
+
+      workerRef.current.postMessage({
         type: 'run',
         entryPoint: activeFile.path,
         files: pythonFiles,
         timeout: 30000,
       });
+      // Note: isRunning will be set to false by the worker message handler
     } else {
       setExecutionResult({
         status: 'error',
         error: `Code execution for ${activeFile.language} is not yet supported.`,
       });
       setIsRunning(false);
+      isRunningRef.current = false;
     }
   }, [activeFilePath, files]);
 

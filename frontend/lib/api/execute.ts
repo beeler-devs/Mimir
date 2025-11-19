@@ -8,25 +8,47 @@ import { CodeLanguage, ExecuteRequest, ExecuteResponse } from '@/lib/types';
 // Get backend URL from environment
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
+// Default timeout for requests (35 seconds - slightly more than execution timeout)
+const REQUEST_TIMEOUT_MS = 35000;
+
 /**
  * Execute code on the backend server
  * Used for compiled languages that require server-side compilation
  */
-export async function executeCode(request: ExecuteRequest): Promise<ExecuteResponse> {
-  const response = await fetch(`${BACKEND_URL}/execute`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
+export async function executeCode(
+  request: ExecuteRequest,
+  signal?: AbortSignal
+): Promise<ExecuteResponse> {
+  // Create timeout abort controller if no signal provided
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Execution failed: ${response.status} - ${errorText}`);
+  const effectiveSignal = signal || controller.signal;
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: effectiveSignal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Execution failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out or was cancelled');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return response.json();
 }
 
 /**
