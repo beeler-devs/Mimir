@@ -1750,19 +1750,21 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <div className="flex gap-2">
                   <button
                     onClick={() => setMindMapScopeType('full')}
-                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${mindMapScopeType === 'full'
-                        ? 'bg-purple-500 text-white border-purple-500'
-                        : 'bg-background border-border hover:bg-muted/50'
-                      }`}
+                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${
+                      mindMapScopeType === 'full'
+                        ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                        : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
+                    }`}
                   >
                     Full Document
                   </button>
                   <button
                     onClick={() => setMindMapScopeType('custom')}
-                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${mindMapScopeType === 'custom'
-                        ? 'bg-purple-500 text-white border-purple-500'
-                        : 'bg-background border-border hover:bg-muted/50'
-                      }`}
+                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${
+                      mindMapScopeType === 'custom'
+                        ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                        : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
+                    }`}
                   >
                     Custom Scope
                   </button>
@@ -1785,7 +1787,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateMindMap}
                   disabled={generatingMindMap}
-                  className="w-full px-4 py-3 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 font-medium transition-colors"
+                  className="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none font-medium transition-all"
                 >
                   {generatingMindMap ? 'Generating...' : 'Generate Mind Map'}
                 </button>
