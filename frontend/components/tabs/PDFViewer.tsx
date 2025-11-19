@@ -84,6 +84,7 @@ interface PDFViewerProps {
   fileName?: string;
   metadata?: PDFMetadata;
   fullText?: string;
+  instanceId?: string; // For persisting zoom level per instance
   onUpload: (file: File, url: string, metadata: { size: number; pageCount: number; summary: string; metadata: PDFMetadata; fullText: string; storagePath: string }) => void;
   onSummaryReady?: (summary: string) => void;
   onAddToChat?: (text: string) => void;

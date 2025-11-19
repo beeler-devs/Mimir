@@ -234,6 +234,10 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       >
         <button
           onClick={() => onSelect(instance.id)}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            startEditing(instance.id, instance.title, 'instance');
+          }}
           className={`
             w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
             ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
@@ -294,7 +298,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             <ContextMenu
               isOpen={isMenuOpen}
               onClose={() => setMenuOpenId(null)}
-              triggerRef={{ current: menuButtonRefs.current.get(instance.id) || null }}
+              triggerRef={{ current: menuButtonRefs.current.get(instance.id) ?? null } as React.RefObject<HTMLElement>}
               align="right"
             >
               <button
@@ -440,7 +444,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <ContextMenu
                 isOpen={isMenuOpen}
                 onClose={() => setMenuOpenId(null)}
-                triggerRef={{ current: menuButtonRefs.current.get(folder.id) || null }}
+                triggerRef={{ current: menuButtonRefs.current.get(folder.id) ?? null } as React.RefObject<HTMLElement>}
                 align="right"
               >
                 <button
