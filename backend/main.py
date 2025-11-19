@@ -748,7 +748,7 @@ async def chat_stream(request: Request):
                             f"Large workspace context detected: {context_size} characters, {len(chat_request.workspaceContext.instances)} instances")
 
             # System prompt for Claude
-            system_prompt = f"""You are an AI tutor for Mimir, an educational platform. Your role is to:
+            system_prompt = """You are an AI tutor for Mimir, an educational platform. Your role is to:
 
 1. Provide clear, engaging explanations of educational concepts
 2. Break down complex topics into understandable parts
@@ -807,7 +807,9 @@ When the user includes images (especially annotation canvases with handwritten o
 
 Example: If you see "5x = 10" in an image, read it as exactly that - not "5x = |D|" or "5x = ID". The number "10" should be recognized as the digits one and zero, not letters or symbols.
 
-{context_description if context_description else ""}
+=== USER'S WORKSPACE CONTEXT ===
+
+""" + (context_description if context_description else "") + """
 
 === ANIMATION SUGGESTIONS ===
 
@@ -818,7 +820,7 @@ CRITICAL INSTRUCTION: If the user's message contains ANY of these keywords or ph
 
 When the user explicitly requests a visualization (using any of the above keywords), you MUST append this exact marker at the END of your response:
 
-ANIMATION_SUGGESTION: {{"description": "brief description of what to animate", "topic": "math"}}
+ANIMATION_SUGGESTION: {"description": "brief description of what to animate", "topic": "math"}
 
 DO NOT skip this marker if the user asks for visualization. Even if you're unsure how to visualize it, create a reasonable description and include the marker.
 
@@ -835,7 +837,7 @@ When the user explicitly requests a visualization, ALWAYS provide an animation s
 Example response with animation:
 "Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
 
-ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "math"}}"
+ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math"}"
 """
 
             # Convert messages to Anthropic format, including images if present
@@ -1813,10 +1815,13 @@ Focus on clarity, organization, and helping students understand the key concepts
 @app.post("/study-tools/mindmap/stream")
 async def generate_mindmap_stream(request: dict):
     """
-    Generate a mind map from PDF text using Claude AI with streaming
+    Generate a mind map from PDF text using Claude AI with adaptive node count
 
     Args:
-        request: dict with 'pdfText' field containing the PDF content and optional 'scope' for topic focus
+        request: dict with:
+          - pdfText: string (content)
+          - scope: string (description of scope)
+          - nodeCount: dict with min, max, levels (optional)
 
     Returns:
         StreamingResponse with SSE format containing mind map data
@@ -1825,6 +1830,7 @@ async def generate_mindmap_stream(request: dict):
         try:
             pdf_text = request.get('pdfText', '')
             scope = request.get('scope', 'full document')
+            node_config = request.get('nodeCount', None)
 
             if not pdf_text:
                 error_response = {
@@ -1833,6 +1839,18 @@ async def generate_mindmap_stream(request: dict):
                 }
                 yield f"data: {json.dumps(error_response)}\n\n"
                 return
+
+            # Calculate adaptive node count if not provided
+            if not node_config:
+                word_count = len(pdf_text.split())
+                if word_count < 500:
+                    node_config = {'min': 5, 'max': 10, 'levels': 2}
+                elif word_count < 2000:
+                    node_config = {'min': 10, 'max': 15, 'levels': 3}
+                elif word_count < 5000:
+                    node_config = {'min': 15, 'max': 20, 'levels': 4}
+                else:
+                    node_config = {'min': 20, 'max': 25, 'levels': 4}
 
             # Get Claude API key from environment
             claude_api_key = os.getenv("CLAUDE_API_KEY")
@@ -1852,17 +1870,24 @@ async def generate_mindmap_stream(request: dict):
             if len(pdf_text) > max_text_length:
                 pdf_text = pdf_text[:max_text_length] + "...(truncated)"
 
-            # System prompt for mind map generation
-            system_prompt = """You are an expert at creating interactive concept maps from educational content.
+            # System prompt for mind map generation with adaptive node count
+            system_prompt = f"""You are an expert at creating interactive concept maps from educational content.
 
 Your task: Generate a hierarchical mind map that visualizes the key concepts and their relationships.
+
+**IMPORTANT: Adapt node count to content scope**
+- Target nodes: {node_config['min']}-{node_config['max']} nodes
+- Maximum levels: {node_config['levels']}
+- If the content is focused on a small topic, use fewer nodes and levels
+- If the content covers broad topics, use more nodes and deeper hierarchy
+- Focus on quality over quantity - don't pad with unnecessary nodes
 
 Guidelines:
 1. **Hierarchical Structure**:
    - Level 0: Main concept/topic (1 node)
-   - Level 1: Major subtopics (3-5 nodes)
-   - Level 2: Key concepts under each subtopic (2-4 nodes per subtopic)
-   - Level 3: Important details or examples (1-2 nodes per concept)
+   - Level 1: Major subtopics ({max(1, node_config['min'] // 4)}-{node_config['max'] // 4} nodes)
+   - Level 2: Key concepts under each subtopic
+   - Level 3: Important details (only if levels >= 4)
 
 2. **Node Types**:
    - concept: Main central idea (level 0)
@@ -1877,32 +1902,34 @@ Guidelines:
    - example: Concept illustrates or exemplifies another
 
 4. **Constraints**:
-   - Total nodes: 15-25 (keep it focused and digestible)
+   - Total nodes: {node_config['min']}-{node_config['max']} (scale to content size)
+   - Maximum depth: {node_config['levels']} levels (0 to {node_config['levels'] - 1})
    - Each node needs a concise label (2-6 words)
    - Node descriptions are optional but helpful for detail nodes
    - Create edges that show meaningful relationships
+   - Don't create unnecessary nodes just to hit the max count
 
 Output format: JSON object with this exact structure:
-{
+{{
   "title": "Brief title for the mind map",
   "description": "One sentence describing the scope",
   "nodes": [
-    {
+    {{
       "label": "Short node label",
       "description": "Optional detailed description",
       "nodeType": "concept|topic|subtopic|detail",
-      "level": 0-3
-    }
+      "level": 0-{node_config['levels'] - 1}
+    }}
   ],
   "edges": [
-    {
+    {{
       "sourceNodeIndex": 0,
       "targetNodeIndex": 1,
       "label": "Optional relationship label",
       "edgeType": "child|related|prerequisite|example"
-    }
+    }}
   ]
-}
+}}
 
 IMPORTANT: Output ONLY valid JSON. No markdown code blocks, no explanations, just the JSON object."""
 
@@ -1913,7 +1940,7 @@ Scope: {scope}
 Content:
 {pdf_text}
 
-Generate a hierarchical mind map with 15-25 nodes that captures the key concepts and their relationships."""
+Generate a hierarchical mind map with {node_config['min']}-{node_config['max']} nodes that captures the key concepts and their relationships. Scale the complexity to match the content scope - use fewer nodes for focused topics, more for broad coverage."""
 
             # Call Claude API (non-streaming to get proper JSON)
             chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")

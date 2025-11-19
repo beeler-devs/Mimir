@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, Input, Modal, ContextMenu } from '@/components/common';
 import {
   FileText,
@@ -72,12 +73,14 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [rootDragOver, setRootDragOver] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
-  
+
   // Store refs for menu buttons - using useRef to hold a Map of refs
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const router = useRouter();
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -230,7 +233,11 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           event.dataTransfer.setData('application/mimir-instance', instance.id);
           setDraggingInstanceId(instance.id);
         }}
-        onDragEnd={() => setDraggingInstanceId(null)}
+        onDragEnd={() => {
+          setDraggingInstanceId(null);
+          setDragOverFolderId(null);
+          setRootDragOver(false);
+        }}
       >
         <button
           onClick={() => onSelect(instance.id)}
@@ -355,10 +362,25 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           event.dataTransfer.setData('application/mimir-folder', folder.id);
           setDraggingFolderId(folder.id);
         }}
-        onDragEnd={() => setDraggingFolderId(null)}
+        onDragEnd={() => {
+          setDraggingFolderId(null);
+          setDragOverFolderId(null);
+          setRootDragOver(false);
+        }}
         onDragOver={(event) => {
           if (draggingInstanceId || draggingFolderId) {
             event.preventDefault();
+            event.stopPropagation();
+            setDragOverFolderId(folder.id);
+            setRootDragOver(false);
+          }
+        }}
+        onDragLeave={(event) => {
+          event.stopPropagation();
+          // Only clear if we're leaving this folder (not entering a child)
+          const relatedTarget = event.relatedTarget as HTMLElement;
+          if (!event.currentTarget.contains(relatedTarget)) {
+            setDragOverFolderId(null);
           }
         }}
         onDrop={(event) => {
@@ -370,13 +392,14 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
           if (instanceId) {
             onMoveToFolder(instanceId, folder.id);
-          } else if (folderId) {
+          } else if (folderId && folderId !== folder.id) {
             onMoveFolder(folderId, folder.id);
           }
 
           setDraggingInstanceId(null);
           setDraggingFolderId(null);
           setRootDragOver(false);
+          setDragOverFolderId(null);
         }}
       >
         <div
@@ -385,7 +408,8 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         >
           <button
             onClick={() => toggleFolder(folder.id)}
-            className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
+            className={`w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70 ${dragOverFolderId === folder.id ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
+              }`}
           >
             {isExpanded ? (
               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -523,155 +547,161 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-    <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
-      <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
-        <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
-        <button
-          onClick={toggleCollapsed}
-          className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
-          aria-label="Collapse sidebar"
-        >
-          <PanelsLeftRight className="h-4 w-4" />
-        </button>
-      </div>
+      <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+        <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
+          <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
+          <button
+            onClick={toggleCollapsed}
+            className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+            aria-label="Collapse sidebar"
+          >
+            <PanelsLeftRight className="h-4 w-4" />
+          </button>
+        </div>
 
-      <div className="px-4 pt-4 space-y-2">
-        <button 
-          className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-          onClick={onCreateInstance}
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add instance</span>
-        </button>
-        {onCreateFolder && (
+        <div className="px-4 pt-4 space-y-2">
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-            onClick={handleStartCreateFolder}
+            onClick={() => router.push('/workspace')}
           >
-            <FolderIcon className="h-4 w-4" />
-            <span>Add folder</span>
+            <Plus className="h-4 w-4" />
+            <span>Add instance</span>
           </button>
-        )}
-        <button
-          className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-          onClick={() => setSearchModalOpen(true)}
-        >
-          <Search className="h-4 w-4" />
-          <span>Search</span>
-        </button>
-      </div>
+          {onCreateFolder && (
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
+              onClick={handleStartCreateFolder}
+            >
+              <FolderIcon className="h-4 w-4" />
+              <span>Add folder</span>
+            </button>
+          )}
+          <button
+            className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
+            onClick={() => setSearchModalOpen(true)}
+          >
+            <Search className="h-4 w-4" />
+            <span>Search</span>
+          </button>
+        </div>
 
-      <div
-        className="flex-1 overflow-y-auto px-4 py-3 space-y-1"
-        onDragOver={(event) => {
-          if (!draggingInstanceId) return;
-          event.preventDefault();
-          if (event.target === event.currentTarget) {
-            setRootDragOver(true);
-          }
-        }}
-        onDragLeave={(event) => {
-          if (event.target === event.currentTarget) {
+        <div
+          className="flex-1 overflow-y-auto px-4 py-3 space-y-1"
+          onDragOver={(event) => {
+            if (!draggingInstanceId && !draggingFolderId) return;
+            event.preventDefault();
+            // Only set rootDragOver if not over a folder
+            if (!dragOverFolderId) {
+              setRootDragOver(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            const relatedTarget = event.relatedTarget as HTMLElement;
+            if (!event.currentTarget.contains(relatedTarget)) {
+              setRootDragOver(false);
+              setDragOverFolderId(null);
+            }
+          }}
+          onDrop={(event) => {
+            if (!onMoveToFolder || !onMoveFolder) return;
+            // Only handle drop if not over a specific folder
+            if (dragOverFolderId) return;
+
+            event.preventDefault();
+            const instanceId = event.dataTransfer.getData('application/mimir-instance');
+            const folderId = event.dataTransfer.getData('application/mimir-folder');
+
+            if (instanceId) {
+              onMoveToFolder(instanceId, null);
+            } else if (folderId) {
+              onMoveFolder(folderId, null);
+            }
+
+            setDraggingInstanceId(null);
+            setDraggingFolderId(null);
             setRootDragOver(false);
-          }
-        }}
-        onDrop={(event) => {
-          if (!onMoveToFolder || !onMoveFolder) return;
-          event.preventDefault();
-          if (event.target !== event.currentTarget) return;
-          const instanceId = event.dataTransfer.getData('application/mimir-instance');
-          const folderId = event.dataTransfer.getData('application/mimir-folder');
-
-          if (instanceId) {
-            onMoveToFolder(instanceId, null);
-          } else if (folderId) {
-            onMoveFolder(folderId, null);
-          }
-          
-          setDraggingInstanceId(null);
-          setDraggingFolderId(null);
-          setRootDragOver(false);
-        }}
-      >
-        {draggingInstanceId && onMoveToFolder && (
-          <div
-            className={`
+            setDragOverFolderId(null);
+          }}
+        >
+          {draggingInstanceId && onMoveToFolder && (
+            <div
+              className={`
               px-3 py-2 mb-2 text-xs rounded-lg border-2 border-dashed
               ${rootDragOver ? 'border-primary text-primary' : 'border-muted-foreground/40 text-muted-foreground'}
             `}
-          >
-            Drop here to remove from folders
-          </div>
-        )}
-        {instances.length === 0 && folders.length === 0 && !creatingNewFolder && (
-          <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-            Create your first instance to get started.
-          </div>
-        )}
-
-        {creatingNewFolder && (
-          <div className="group relative">
-            <button
-              className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
             >
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-
-              <div className="flex-1 min-w-0 pr-6">
-                <input
-                  className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none selection:bg-primary selection:text-primary-foreground"
-                  value={newFolderName}
-                  onChange={(event) => setNewFolderName(event.target.value)}
-                  onBlur={handleCommitNewFolder}
-                  onKeyDown={handleNewFolderKeyDown}
-                  autoFocus
-                  onFocus={(e) => e.target.select()}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            </button>
-          </div>
-        )}
-
-        {rootFolders.map(folder => renderFolder(folder))}
-        {rootInstances.map(instance => renderInstance(instance))}
-      </div>
-
-      <div className="p-4 border-t border-border">
-        <button
-          onClick={onOpenSettings}
-          className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-muted/40 hover:bg-muted transition"
-        >
-          <div className="flex items-center gap-3">
-            <span className="h-9 w-9 rounded-lg bg-background flex items-center justify-center border border-border">
-              <Settings2 className="h-4 w-4" />
-            </span>
-            <div className="text-left">
-              <p className="font-medium text-sm">Settings</p>
-              <p className="text-xs text-muted-foreground">Theme & preferences</p>
+              Drop here to remove from folders
             </div>
-          </div>
-        </button>
-      </div>
-    </aside>
+          )}
+          {instances.length === 0 && folders.length === 0 && !creatingNewFolder && (
+            <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+              Create your first instance to get started.
+            </div>
+          )}
 
-    <MoveInstanceModal
-      open={!!moveModalInstance}
-      folders={folders}
-      currentFolderId={moveModalInstance?.folderId ?? null}
-      instanceTitle={moveModalInstance?.title ?? ''}
-      onClose={() => setMoveModalInstance(null)}
-      onMove={handleMoveSubmit}
-    />
-    <SearchInstancesModal
-      open={searchModalOpen}
-      instances={instances}
-      onClose={() => setSearchModalOpen(false)}
-      onSelect={(id) => {
-        onSelect(id);
-        setSearchModalOpen(false);
-      }}
-    />
+          {creatingNewFolder && (
+            <div className="group relative">
+              <button
+                className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
+              >
+                <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+
+                <div className="flex-1 min-w-0 pr-6">
+                  <input
+                    className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none selection:bg-primary selection:text-primary-foreground"
+                    value={newFolderName}
+                    onChange={(event) => setNewFolderName(event.target.value)}
+                    onBlur={handleCommitNewFolder}
+                    onKeyDown={handleNewFolderKeyDown}
+                    autoFocus
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </button>
+            </div>
+          )}
+
+          {rootFolders.map(folder => renderFolder(folder))}
+          {rootInstances.map(instance => renderInstance(instance))}
+        </div>
+
+        <div className="p-4 border-t border-border">
+          <button
+            onClick={onOpenSettings}
+            className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-muted/40 hover:bg-muted transition"
+          >
+            <div className="flex items-center gap-3">
+              <span className="h-9 w-9 rounded-lg bg-background flex items-center justify-center border border-border">
+                <Settings2 className="h-4 w-4" />
+              </span>
+              <div className="text-left">
+                <p className="font-medium text-sm">Settings</p>
+                <p className="text-xs text-muted-foreground">Theme & preferences</p>
+              </div>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      <MoveInstanceModal
+        open={!!moveModalInstance}
+        folders={folders}
+        currentFolderId={moveModalInstance?.folderId ?? null}
+        instanceTitle={moveModalInstance?.title ?? ''}
+        onClose={() => setMoveModalInstance(null)}
+        onMove={handleMoveSubmit}
+      />
+      <SearchInstancesModal
+        open={searchModalOpen}
+        instances={instances}
+        onClose={() => setSearchModalOpen(false)}
+        onSelect={(id) => {
+          onSelect(id);
+          setSearchModalOpen(false);
+        }}
+      />
     </>
   );
 };

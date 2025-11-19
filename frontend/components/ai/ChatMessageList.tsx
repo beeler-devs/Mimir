@@ -25,12 +25,16 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   
   // Auto-scroll to bottom when messages change or content updates
   useEffect(() => {
+    // Use a small timeout to ensure DOM has updated
     const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
     
-    // Small delay to ensure DOM has updated
-    const timeoutId = setTimeout(scrollToBottom, 50);
+    // Scroll immediately
+    scrollToBottom();
+    
+    // Also scroll after a brief delay to catch any layout changes
+    const timeoutId = setTimeout(scrollToBottom, 100);
     
     return () => clearTimeout(timeoutId);
   }, [messages, messages.map(m => m.content).join('')]);

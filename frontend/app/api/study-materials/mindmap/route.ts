@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveMindMap, getLatestMindMap } from '@/lib/db/mindmaps';
+import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -16,6 +17,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'pdfText and instanceId are required' },
         { status: 400 }
+      );
+    }
+
+    // Get auth token from request headers
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Missing Authorization header' },
+        { status: 401 }
+      );
+    }
+
+    // Create authenticated Supabase client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    // Verify user is authenticated
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'User not authenticated' },
+        { status: 401 }
       );
     }
 
@@ -86,7 +117,8 @@ export async function POST(request: NextRequest) {
         generatedBy: 'claude',
         sourceType: 'pdf',
         scope: scope || 'full',
-      }
+      },
+      supabase
     );
 
     return NextResponse.json({

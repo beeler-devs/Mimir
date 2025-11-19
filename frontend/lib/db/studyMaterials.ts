@@ -3,7 +3,8 @@
  * Includes versioning, analytics, and spaced repetition support
  */
 
-import { supabase } from '../supabaseClient';
+import { supabase as supabaseClient } from '../supabaseClient';
+import { SupabaseClient } from '@supabase/supabase-js';
 import {
   StudyMaterial,
   StudyMaterialType,
@@ -49,7 +50,7 @@ export async function getLatestStudyMaterial(
   instanceId: string,
   type: StudyMaterialType
 ): Promise<StudyMaterial | null> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClientClient
     .from('study_materials')
     .select('*')
     .eq('instance_id', instanceId)
@@ -74,7 +75,7 @@ export async function getStudyMaterialVersions(
   instanceId: string,
   type: StudyMaterialType
 ): Promise<StudyMaterial[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('study_materials')
     .select('*')
     .eq('instance_id', instanceId)
@@ -92,19 +93,21 @@ export async function createStudyMaterial(
   instanceId: string,
   type: StudyMaterialType,
   contentHash: string | null,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  client?: SupabaseClient
 ): Promise<StudyMaterial> {
+  const supabase = client || supabaseClient;
   // Get the current user
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
   // Get latest version
   const latest = await getLatestStudyMaterial(instanceId, type);
   const nextVersion = latest ? latest.version + 1 : 1;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('study_materials')
     .insert({
       user_id: user.id,
@@ -126,7 +129,7 @@ export async function createStudyMaterial(
  * Archive a study material version
  */
 export async function archiveStudyMaterial(studyMaterialId: string): Promise<void> {
-  const { error } = await supabase
+  const { error } = await supabaseClient
     .from('study_materials')
     .update({ is_archived: true })
     .eq('id', studyMaterialId);
@@ -152,7 +155,7 @@ export async function saveSummary(
   const studyMaterial = await createStudyMaterial(instanceId, 'summary', contentHash, metadata);
 
   // Create summary
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('summaries')
     .insert({
       study_material_id: studyMaterial.id,
@@ -176,7 +179,7 @@ export async function getLatestSummary(instanceId: string): Promise<SummaryWithM
   const studyMaterial = await getLatestStudyMaterial(instanceId, 'summary');
   if (!studyMaterial) return null;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('summaries')
     .select('*')
     .eq('study_material_id', studyMaterial.id)
@@ -189,9 +192,9 @@ export async function getLatestSummary(instanceId: string): Promise<SummaryWithM
 
   return data
     ? {
-        ...mapSummary(data),
-        studyMaterial,
-      }
+      ...mapSummary(data),
+      studyMaterial,
+    }
     : null;
 }
 
@@ -202,7 +205,7 @@ export async function getAllSummaries(instanceId: string): Promise<SummaryWithMa
   const studyMaterials = await getStudyMaterialVersions(instanceId, 'summary');
   if (studyMaterials.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('summaries')
     .select('*')
     .in(
@@ -239,7 +242,7 @@ export async function saveFlashcardSet(
   const studyMaterial = await createStudyMaterial(instanceId, 'flashcard_set', contentHash, metadata);
 
   // Create flashcard set
-  const { data: setData, error: setError } = await supabase
+  const { data: setData, error: setError } = await supabaseClient
     .from('flashcard_sets')
     .insert({
       study_material_id: studyMaterial.id,
@@ -259,7 +262,7 @@ export async function saveFlashcardSet(
     position: index,
   }));
 
-  const { data: cardsData, error: cardsError } = await supabase
+  const { data: cardsData, error: cardsError } = await supabaseClient
     .from('flashcards')
     .insert(flashcardInserts)
     .select();
@@ -280,7 +283,7 @@ export async function getLatestFlashcardSet(instanceId: string): Promise<Flashca
   const studyMaterial = await getLatestStudyMaterial(instanceId, 'flashcard_set');
   if (!studyMaterial) return null;
 
-  const { data: setData, error: setError } = await supabase
+  const { data: setData, error: setError } = await supabaseClient
     .from('flashcard_sets')
     .select('*')
     .eq('study_material_id', studyMaterial.id)
@@ -291,7 +294,7 @@ export async function getLatestFlashcardSet(instanceId: string): Promise<Flashca
     throw setError;
   }
 
-  const { data: cardsData, error: cardsError } = await supabase
+  const { data: cardsData, error: cardsError } = await supabaseClient
     .from('flashcards')
     .select('*')
     .eq('flashcard_set_id', setData.id)
@@ -316,11 +319,11 @@ export async function recordFlashcardReview(
 ): Promise<FlashcardReview> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
   // Get previous review if exists
-  const { data: prevReview } = await supabase
+  const { data: prevReview } = await supabaseClient
     .from('flashcard_reviews')
     .select('*')
     .eq('flashcard_id', flashcardId)
@@ -358,7 +361,7 @@ export async function recordFlashcardReview(
   const nextReviewDate = new Date();
   nextReviewDate.setDate(nextReviewDate.getDate() + interval);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('flashcard_reviews')
     .insert({
       flashcard_id: flashcardId,
@@ -382,11 +385,11 @@ export async function recordFlashcardReview(
 export async function getFlashcardStats(flashcardSetId: string): Promise<FlashcardStats> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
   // Get all flashcards in the set
-  const { data: flashcards } = await supabase
+  const { data: flashcards } = await supabaseClient
     .from('flashcards')
     .select('id')
     .eq('flashcard_set_id', flashcardSetId);
@@ -404,7 +407,7 @@ export async function getFlashcardStats(flashcardSetId: string): Promise<Flashca
   }
 
   // Get latest reviews for all cards
-  const { data: reviews } = await supabase
+  const { data: reviews } = await supabaseClient
     .from('flashcard_reviews')
     .select('flashcard_id, ease_factor, next_review_date')
     .in(
@@ -455,7 +458,7 @@ export async function saveQuiz(
   const studyMaterial = await createStudyMaterial(instanceId, 'quiz', contentHash, metadata);
 
   // Create quiz
-  const { data: quizData, error: quizError } = await supabase
+  const { data: quizData, error: quizError } = await supabaseClient
     .from('quizzes')
     .insert({
       study_material_id: studyMaterial.id,
@@ -478,7 +481,7 @@ export async function saveQuiz(
     difficulty: q.difficulty || null,
   }));
 
-  const { data: questionsData, error: questionsError } = await supabase
+  const { data: questionsData, error: questionsError } = await supabaseClient
     .from('quiz_questions')
     .insert(questionInserts)
     .select();
@@ -499,7 +502,7 @@ export async function getLatestQuiz(instanceId: string): Promise<QuizWithQuestio
   const studyMaterial = await getLatestStudyMaterial(instanceId, 'quiz');
   if (!studyMaterial) return null;
 
-  const { data: quizData, error: quizError } = await supabase
+  const { data: quizData, error: quizError } = await supabaseClient
     .from('quizzes')
     .select('*')
     .eq('study_material_id', studyMaterial.id)
@@ -510,7 +513,7 @@ export async function getLatestQuiz(instanceId: string): Promise<QuizWithQuestio
     throw quizError;
   }
 
-  const { data: questionsData, error: questionsError } = await supabase
+  const { data: questionsData, error: questionsError } = await supabaseClient
     .from('quiz_questions')
     .select('*')
     .eq('quiz_id', quizData.id)
@@ -531,13 +534,13 @@ export async function getLatestQuiz(instanceId: string): Promise<QuizWithQuestio
 export async function startQuizAttempt(quizId: string): Promise<QuizAttempt> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
   // Get question count
-  const { data: quiz } = await supabase.from('quizzes').select('question_count').eq('id', quizId).single();
+  const { data: quiz } = await supabaseClientClient.from('quizzes').select('question_count').eq('id', quizId).single();
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('quiz_attempts')
     .insert({
       quiz_id: quizId,
@@ -561,7 +564,7 @@ export async function submitQuizAnswer(
   timeTakenSeconds?: number
 ): Promise<QuizAnswer> {
   // Get the correct answer
-  const { data: question } = await supabase
+  const { data: question } = await supabaseClient
     .from('quiz_questions')
     .select('correct_option_index')
     .eq('id', questionId)
@@ -569,7 +572,7 @@ export async function submitQuizAnswer(
 
   const isCorrect = question ? selectedOptionIndex === question.correct_option_index : false;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('quiz_answers')
     .insert({
       quiz_attempt_id: attemptId,
@@ -590,15 +593,15 @@ export async function submitQuizAnswer(
  */
 export async function completeQuizAttempt(attemptId: string): Promise<QuizAttemptWithAnswers> {
   // Get all answers
-  const { data: answers } = await supabase.from('quiz_answers').select('*').eq('quiz_attempt_id', attemptId);
+  const { data: answers } = await supabaseClient.from('quiz_answers').select('*').eq('quiz_attempt_id', attemptId);
 
   const score = answers?.filter((a) => a.is_correct).length || 0;
   const totalQuestions = answers?.length || 0;
 
   // Get quiz to check passing score
-  const { data: attempt } = await supabase.from('quiz_attempts').select('quiz_id').eq('id', attemptId).single();
+  const { data: attempt } = await supabaseClient.from('quiz_attempts').select('quiz_id').eq('id', attemptId).single();
 
-  const { data: quiz } = await supabase
+  const { data: quiz } = await supabaseClient
     .from('quizzes')
     .select('passing_score_percent')
     .eq('id', attempt?.quiz_id)
@@ -608,14 +611,14 @@ export async function completeQuizAttempt(attemptId: string): Promise<QuizAttemp
   const passed = totalQuestions > 0 ? (score / totalQuestions) * 100 >= passingScore : false;
 
   // Calculate total time
-  const startTime = await supabase.from('quiz_attempts').select('started_at').eq('id', attemptId).single();
+  const startTime = await supabaseClient.from('quiz_attempts').select('started_at').eq('id', attemptId).single();
 
   const timeTaken = startTime?.data?.started_at
     ? Math.floor((Date.now() - new Date(startTime.data.started_at).getTime()) / 1000)
     : null;
 
   // Update attempt
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('quiz_attempts')
     .update({
       completed_at: new Date().toISOString(),
@@ -641,11 +644,11 @@ export async function completeQuizAttempt(attemptId: string): Promise<QuizAttemp
 export async function getQuizStats(quizId: string): Promise<QuizStats> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
   // Get all attempts
-  const { data: attempts } = await supabase
+  const { data: attempts } = await supabaseClient
     .from('quiz_attempts')
     .select('*')
     .eq('quiz_id', quizId)
@@ -672,7 +675,7 @@ export async function getQuizStats(quizId: string): Promise<QuizStats> {
     attempts.reduce((sum, a) => sum + (a.time_taken_seconds || 0), 0) / attempts.length;
 
   // Get weak questions (most frequently incorrect)
-  const { data: allAnswers } = await supabase
+  const { data: allAnswers } = await supabaseClient
     .from('quiz_answers')
     .select('quiz_question_id, is_correct')
     .in(
@@ -698,7 +701,7 @@ export async function getQuizStats(quizId: string): Promise<QuizStats> {
   let weakQuestions: Array<{ questionId: string; question: string; incorrectCount: number }> = [];
 
   if (weakQuestionIds.length > 0) {
-    const { data: questions } = await supabase
+    const { data: questions } = await supabaseClient
       .from('quiz_questions')
       .select('id, question')
       .in('id', weakQuestionIds);
