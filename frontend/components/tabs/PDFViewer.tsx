@@ -111,6 +111,7 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   fileName,
   metadata,
   fullText,
+  instanceId,
   onUpload,
   onSummaryReady,
   onAddToChat,
@@ -189,6 +190,44 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       isMountedRef.current = false;
     };
   }, []);
+
+  // Load saved zoom level from localStorage on mount
+  useEffect(() => {
+    if (!instanceId || !pdfUrl) return;
+
+    try {
+      const storageKey = `mimir-pdf-zoom-${instanceId}`;
+      const savedZoom = localStorage.getItem(storageKey);
+      
+      if (savedZoom) {
+        const parsedZoom = parseFloat(savedZoom);
+        // Validate zoom is within bounds (0.5 to 3.0)
+        if (!isNaN(parsedZoom) && parsedZoom >= 0.5 && parsedZoom <= 3.0) {
+          setScale(parsedZoom);
+        }
+      }
+    } catch (error) {
+      // Silently fail if localStorage is not available
+      console.warn('Failed to load saved zoom level:', error);
+    }
+  }, [instanceId, pdfUrl]);
+
+  // Save zoom level to localStorage with debouncing
+  useEffect(() => {
+    if (!instanceId) return;
+
+    const timer = setTimeout(() => {
+      try {
+        const storageKey = `mimir-pdf-zoom-${instanceId}`;
+        localStorage.setItem(storageKey, scale.toString());
+      } catch (error) {
+        // Silently fail if localStorage is not available (e.g., private browsing)
+        console.warn('Failed to save zoom level:', error);
+      }
+    }, 500); // 500ms debounce to avoid excessive writes
+
+    return () => clearTimeout(timer);
+  }, [scale, instanceId]);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     if (!isMountedRef.current) return;

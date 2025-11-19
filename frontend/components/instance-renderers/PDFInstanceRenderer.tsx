@@ -56,6 +56,7 @@ export const PDFInstanceRenderer = forwardRef<PDFViewerRef, PDFInstanceRendererP
             fileName={instance.data.fileName}
             metadata={instance.data.metadata}
             fullText={instance.data.fullText}
+            instanceId={instance.id}
             onUpload={onUpload}
             onSummaryReady={onSummaryReady}
             onAddToChat={onAddToChat}
