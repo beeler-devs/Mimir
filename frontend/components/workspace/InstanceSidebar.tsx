@@ -72,6 +72,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [rootDragOver, setRootDragOver] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
@@ -233,10 +234,18 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         }}
         onDragEnd={() => setDraggingInstanceId(null)}
       >
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => onSelect(instance.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelect(instance.id);
+            }
+          }}
           className={`
-            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
+            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer
             ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
           `}
         >
@@ -264,7 +273,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <p className="font-medium truncate">{instance.title}</p>
             )}
           </div>
-        </button>
+        </div>
 
         {!isEditing && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -380,9 +389,19 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           className="group relative"
           style={{ paddingLeft: `${depth * 12}px` }}
         >
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => toggleFolder(folder.id)}
-            className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleFolder(folder.id);
+              }
+            }}
+            className={`w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer hover:bg-muted/70 ${
+              dragOverFolderId === folder.id ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
+            }`}
           >
             {isExpanded ? (
               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -410,7 +429,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
                 <p className="font-medium truncate">{folder.name}</p>
               )}
             </div>
-          </button>
+          </div>
 
           {!isEditing && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2">

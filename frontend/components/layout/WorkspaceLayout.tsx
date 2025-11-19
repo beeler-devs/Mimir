@@ -36,10 +36,10 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
   const canControlSidebar = React.isValidElement(sidebar);
   const sidebarContent = canControlSidebar
     ? React.cloneElement(sidebar as React.ReactElement<SidebarControlProps>, {
-        collapseSidebar: () => setSidebarOpen(false),
-        sidebarOpen,
-        setSidebarOpen,
-      })
+      collapseSidebar: () => setSidebarOpen(false),
+      sidebarOpen,
+      setSidebarOpen,
+    })
     : sidebar;
 
   return (
@@ -56,6 +56,7 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
             relative bg-transparent flex-shrink-0
             ${isDragging ? '' : 'transition-[width] duration-300 ease-in-out'}
             overflow-hidden
+            border-l border-border
           `}
           style={{ width: `${rightWidth}px` }}
         >

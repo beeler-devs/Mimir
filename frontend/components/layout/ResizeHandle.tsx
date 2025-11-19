@@ -33,8 +33,6 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Capture pointer to ensure we get all move events
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     startDrag(position);
   }, [startDrag, position]);
 

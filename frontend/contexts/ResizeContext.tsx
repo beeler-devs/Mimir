@@ -451,45 +451,30 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
     }));
   }, []);
 
-  // Global mouse event handlers for drag
+  // Global pointer event handlers for drag
   useEffect(() => {
     if (!state.isDragging) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       e.preventDefault();
       requestAnimationFrame(() => {
         onDrag(e.clientX);
       });
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       endDrag();
     };
 
-    // Touch support
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        e.preventDefault();
-        requestAnimationFrame(() => {
-          onDrag(e.touches[0].clientX);
-        });
-      }
-    };
-
-    const handleTouchEnd = () => {
-      endDrag();
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    // Also listen for cancel/leave to be safe
+    window.addEventListener('pointercancel', handlePointerUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [state.isDragging, onDrag, endDrag]);
 
