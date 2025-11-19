@@ -147,11 +147,15 @@ export async function POST(request: NextRequest) {
         }
 
         // Send completion message
+        // Calculate total duration from the last segment (since Channel type doesn't have duration)
+        const totalDuration = segments.length > 0
+          ? segments[segments.length - 1].timestamp + segments[segments.length - 1].duration
+          : 0;
         const doneData = JSON.stringify({
           type: 'done',
           transcript: alternatives.transcript,
           segments: segments,
-          duration: channel.duration || 0
+          duration: totalDuration
         });
         controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));
 

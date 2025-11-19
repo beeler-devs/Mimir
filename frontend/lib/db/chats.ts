@@ -117,7 +117,7 @@ export async function loadChatMessages(chatId: string): Promise<ChatNode[]> {
   // Convert database format to ChatNode format
   return (data || []).map((msg) => {
     const attachments = msg.attachments || [];
-    const pdfAttachments = attachments.filter((att): att is PdfAttachment => att.type === 'pdf');
+    const pdfAttachments = attachments.filter((att: Attachment): att is PdfAttachment => att.type === 'pdf');
     
     return {
       id: msg.id,

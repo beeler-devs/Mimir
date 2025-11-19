@@ -19,39 +19,6 @@ const FlashcardTab: React.FC = () => {
     // Note: This component is currently not used in the main app.
     // Flashcard functionality is available in the PDF Study Panel.
     setError('Flashcard generation is available in the PDF Study Panel. Please use the Quiz tab when viewing a PDF.');
-    return;
-
-    setIsLoading(true);
-    setError(null);
-    setFlashcards([]);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', learningMode.pdf.file);
-
-      const response = await fetch('/api/pdf/flashcards', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.details || 'Failed to generate flashcards');
-      }
-
-      const data = await response.json();
-      if (data.flashcards && data.flashcards.length > 0) {
-        setFlashcards(data.flashcards);
-        setCurrentCardIndex(0);
-      } else {
-        setError('No flashcards were generated. The document might be empty or too short.');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
   }, []);
 
   const goToNextCard = () => {

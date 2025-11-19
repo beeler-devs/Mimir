@@ -9,7 +9,7 @@ interface ChatHistoryDropdownProps {
   onClose: () => void;
   chats: Chat[];
   onSelectChat: (chatId: string) => void;
-  buttonRef?: React.RefObject<HTMLElement>;
+  buttonRef?: React.RefObject<HTMLElement | null>;
 }
 
 /**
