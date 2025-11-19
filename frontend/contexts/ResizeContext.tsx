@@ -29,6 +29,9 @@ interface SavedLayout {
   rightSidebarWidth: number;
   leftCollapsed: boolean;
   rightCollapsed: boolean;
+  // Remember widths before collapse for restore
+  leftExpandedWidth?: number;
+  rightExpandedWidth?: number;
 }
 
 interface ResizeState {
@@ -38,6 +41,11 @@ interface ResizeState {
   rightCollapsed: boolean;
   isDragging: boolean;
   activeHandle: 'left' | 'right' | null;
+  // Store width before collapse to restore later
+  leftExpandedWidth: number;
+  rightExpandedWidth: number;
+  // Track if we've loaded from storage (for SSR hydration)
+  isHydrated: boolean;
 }
 
 interface ResizeContextValue {
@@ -87,37 +95,17 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
   const [instanceType, setInstanceType] = useState<InstanceType | null>(null);
   const [hasFileTree, setHasFileTree] = useState(false);
 
-  // Panel state
-  const [state, setState] = useState<ResizeState>(() => {
-    // Try to load from localStorage on client
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const parsed: SavedLayout = JSON.parse(saved);
-          return {
-            leftWidth: parsed.leftSidebarWidth,
-            rightWidth: parsed.rightSidebarWidth,
-            leftCollapsed: parsed.leftCollapsed,
-            rightCollapsed: parsed.rightCollapsed,
-            isDragging: false,
-            activeHandle: null,
-          };
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    // Default state
-    return {
-      leftWidth: DEFAULT_LEFT_WIDTH,
-      rightWidth: DEFAULT_RIGHT_WIDTH,
-      leftCollapsed: false,
-      rightCollapsed: false,
-      isDragging: false,
-      activeHandle: null,
-    };
+  // Panel state - start with defaults for SSR consistency
+  const [state, setState] = useState<ResizeState>({
+    leftWidth: DEFAULT_LEFT_WIDTH,
+    rightWidth: DEFAULT_RIGHT_WIDTH,
+    leftCollapsed: false,
+    rightCollapsed: false,
+    isDragging: false,
+    activeHandle: null,
+    leftExpandedWidth: DEFAULT_LEFT_WIDTH,
+    rightExpandedWidth: DEFAULT_RIGHT_WIDTH,
+    isHydrated: false,
   });
 
   // Track drag start position
@@ -126,24 +114,51 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
   // Get current constraints based on instance
   const constraints = getResizeConstraints(instanceType, hasFileTree);
 
+  // Load from localStorage after mount (fixes SSR hydration)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed: SavedLayout = JSON.parse(saved);
+        setState(prev => ({
+          ...prev,
+          leftWidth: parsed.leftCollapsed ? COLLAPSED_LEFT_WIDTH : parsed.leftSidebarWidth,
+          rightWidth: parsed.rightCollapsed ? COLLAPSED_RIGHT_WIDTH : parsed.rightSidebarWidth,
+          leftCollapsed: parsed.leftCollapsed,
+          rightCollapsed: parsed.rightCollapsed,
+          leftExpandedWidth: parsed.leftExpandedWidth ?? parsed.leftSidebarWidth,
+          rightExpandedWidth: parsed.rightExpandedWidth ?? parsed.rightSidebarWidth,
+          isHydrated: true,
+        }));
+      } else {
+        setState(prev => ({ ...prev, isHydrated: true }));
+      }
+    } catch {
+      setState(prev => ({ ...prev, isHydrated: true }));
+    }
+  }, []);
+
   // Save to localStorage (debounced)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    // Don't save until hydrated
+    if (!state.isHydrated) return;
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
     saveTimeoutRef.current = setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        const toSave: SavedLayout = {
-          leftSidebarWidth: state.leftWidth,
-          rightSidebarWidth: state.rightWidth,
-          leftCollapsed: state.leftCollapsed,
-          rightCollapsed: state.rightCollapsed,
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-      }
+      const toSave: SavedLayout = {
+        leftSidebarWidth: state.leftCollapsed ? state.leftExpandedWidth : state.leftWidth,
+        rightSidebarWidth: state.rightCollapsed ? state.rightExpandedWidth : state.rightWidth,
+        leftCollapsed: state.leftCollapsed,
+        rightCollapsed: state.rightCollapsed,
+        leftExpandedWidth: state.leftExpandedWidth,
+        rightExpandedWidth: state.rightExpandedWidth,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
     }, 500);
 
     return () => {
@@ -151,30 +166,48 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [state.leftWidth, state.rightWidth, state.leftCollapsed, state.rightCollapsed]);
+  }, [state.leftWidth, state.rightWidth, state.leftCollapsed, state.rightCollapsed, state.leftExpandedWidth, state.rightExpandedWidth, state.isHydrated]);
 
-  // Handle window resize
+  // Handle window resize - use refs to avoid infinite loops
+  const prevViewportRef = useRef<number>(0);
+
   useEffect(() => {
     const handleWindowResize = () => {
       const viewportWidth = window.innerWidth;
 
-      const { leftWidth, rightWidth, shouldCollapseLeft, shouldCollapseRight } =
-        calculateValidWidths(
-          viewportWidth,
-          state.leftWidth,
-          state.rightWidth,
-          constraints,
-          state.leftCollapsed,
-          state.rightCollapsed
-        );
+      // Skip if viewport hasn't actually changed
+      if (viewportWidth === prevViewportRef.current) return;
+      prevViewportRef.current = viewportWidth;
 
-      setState(prev => ({
-        ...prev,
-        leftWidth,
-        rightWidth,
-        leftCollapsed: shouldCollapseLeft,
-        rightCollapsed: shouldCollapseRight,
-      }));
+      setState(prev => {
+        const { leftWidth, rightWidth, shouldCollapseLeft, shouldCollapseRight } =
+          calculateValidWidths(
+            viewportWidth,
+            prev.leftCollapsed ? prev.leftExpandedWidth : prev.leftWidth,
+            prev.rightCollapsed ? prev.rightExpandedWidth : prev.rightWidth,
+            constraints,
+            prev.leftCollapsed,
+            prev.rightCollapsed
+          );
+
+        // Only update if something changed
+        if (
+          leftWidth === prev.leftWidth &&
+          rightWidth === prev.rightWidth &&
+          shouldCollapseLeft === prev.leftCollapsed &&
+          shouldCollapseRight === prev.rightCollapsed
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          leftWidth,
+          rightWidth,
+          leftCollapsed: shouldCollapseLeft,
+          rightCollapsed: shouldCollapseRight,
+        };
+      });
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -182,7 +215,43 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
     handleWindowResize();
 
     return () => window.removeEventListener('resize', handleWindowResize);
-  }, [constraints, state.leftCollapsed, state.rightCollapsed, state.leftWidth, state.rightWidth]);
+  }, [constraints]);
+
+  // Validate widths when constraints change (e.g., instance type changes)
+  useEffect(() => {
+    if (!state.isHydrated) return;
+
+    const viewportWidth = window.innerWidth;
+
+    setState(prev => {
+      const { leftWidth, rightWidth, shouldCollapseLeft, shouldCollapseRight } =
+        calculateValidWidths(
+          viewportWidth,
+          prev.leftCollapsed ? prev.leftExpandedWidth : prev.leftWidth,
+          prev.rightCollapsed ? prev.rightExpandedWidth : prev.rightWidth,
+          constraints,
+          prev.leftCollapsed,
+          prev.rightCollapsed
+        );
+
+      if (
+        leftWidth === prev.leftWidth &&
+        rightWidth === prev.rightWidth &&
+        shouldCollapseLeft === prev.leftCollapsed &&
+        shouldCollapseRight === prev.rightCollapsed
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        leftWidth,
+        rightWidth,
+        leftCollapsed: shouldCollapseLeft,
+        rightCollapsed: shouldCollapseRight,
+      };
+    });
+  }, [constraints, state.isHydrated]);
 
   // Set instance context
   const setInstanceContext = useCallback((type: InstanceType | null, fileTree: boolean = false) => {
@@ -192,119 +261,186 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
 
   // Width setters
   const setLeftWidth = useCallback((width: number) => {
-    setState(prev => ({ ...prev, leftWidth: width }));
+    setState(prev => ({
+      ...prev,
+      leftWidth: width,
+      leftExpandedWidth: width, // Update expanded width too
+    }));
   }, []);
 
   const setRightWidth = useCallback((width: number) => {
-    setState(prev => ({ ...prev, rightWidth: width }));
-  }, []);
-
-  // Collapse toggles
-  const setLeftCollapsed = useCallback((collapsed: boolean) => {
     setState(prev => ({
       ...prev,
-      leftCollapsed: collapsed,
-      leftWidth: collapsed ? COLLAPSED_LEFT_WIDTH : DEFAULT_LEFT_WIDTH,
+      rightWidth: width,
+      rightExpandedWidth: width, // Update expanded width too
     }));
+  }, []);
+
+  // Collapse toggles with width memory
+  const setLeftCollapsed = useCallback((collapsed: boolean) => {
+    setState(prev => {
+      if (collapsed) {
+        return {
+          ...prev,
+          leftCollapsed: true,
+          leftExpandedWidth: prev.leftWidth, // Remember current width
+          leftWidth: COLLAPSED_LEFT_WIDTH,
+        };
+      } else {
+        return {
+          ...prev,
+          leftCollapsed: false,
+          leftWidth: prev.leftExpandedWidth, // Restore previous width
+        };
+      }
+    });
   }, []);
 
   const setRightCollapsed = useCallback((collapsed: boolean) => {
-    setState(prev => ({
-      ...prev,
-      rightCollapsed: collapsed,
-      rightWidth: collapsed ? COLLAPSED_RIGHT_WIDTH : DEFAULT_RIGHT_WIDTH,
-    }));
+    setState(prev => {
+      if (collapsed) {
+        return {
+          ...prev,
+          rightCollapsed: true,
+          rightExpandedWidth: prev.rightWidth, // Remember current width
+          rightWidth: COLLAPSED_RIGHT_WIDTH,
+        };
+      } else {
+        return {
+          ...prev,
+          rightCollapsed: false,
+          rightWidth: prev.rightExpandedWidth, // Restore previous width
+        };
+      }
+    });
   }, []);
 
   const toggleLeftCollapsed = useCallback(() => {
     setState(prev => {
-      const newCollapsed = !prev.leftCollapsed;
-      return {
-        ...prev,
-        leftCollapsed: newCollapsed,
-        leftWidth: newCollapsed ? COLLAPSED_LEFT_WIDTH : DEFAULT_LEFT_WIDTH,
-      };
+      if (prev.leftCollapsed) {
+        // Expanding - restore previous width
+        return {
+          ...prev,
+          leftCollapsed: false,
+          leftWidth: prev.leftExpandedWidth,
+        };
+      } else {
+        // Collapsing - save current width
+        return {
+          ...prev,
+          leftCollapsed: true,
+          leftExpandedWidth: prev.leftWidth,
+          leftWidth: COLLAPSED_LEFT_WIDTH,
+        };
+      }
     });
   }, []);
 
   const toggleRightCollapsed = useCallback(() => {
     setState(prev => {
-      const newCollapsed = !prev.rightCollapsed;
-      return {
-        ...prev,
-        rightCollapsed: newCollapsed,
-        rightWidth: newCollapsed ? COLLAPSED_RIGHT_WIDTH : DEFAULT_RIGHT_WIDTH,
-      };
+      if (prev.rightCollapsed) {
+        // Expanding - restore previous width
+        return {
+          ...prev,
+          rightCollapsed: false,
+          rightWidth: prev.rightExpandedWidth,
+        };
+      } else {
+        // Collapsing - save current width
+        return {
+          ...prev,
+          rightCollapsed: true,
+          rightExpandedWidth: prev.rightWidth,
+          rightWidth: COLLAPSED_RIGHT_WIDTH,
+        };
+      }
     });
   }, []);
 
   // Drag handlers
   const startDrag = useCallback((handle: 'left' | 'right') => {
-    dragStartRef.current = {
-      x: 0, // Will be set on first move
-      leftWidth: state.leftWidth,
-      rightWidth: state.rightWidth,
-    };
+    setState(prev => {
+      // Capture current widths at drag start
+      dragStartRef.current = {
+        x: 0, // Will be set on first move
+        leftWidth: prev.leftWidth,
+        rightWidth: prev.rightWidth,
+      };
 
-    setState(prev => ({
-      ...prev,
-      isDragging: true,
-      activeHandle: handle,
-    }));
-  }, [state.leftWidth, state.rightWidth]);
+      return {
+        ...prev,
+        isDragging: true,
+        activeHandle: handle,
+      };
+    });
+  }, []);
 
   const onDrag = useCallback((clientX: number) => {
-    if (!state.isDragging || !state.activeHandle || !dragStartRef.current) {
-      return;
-    }
+    if (!dragStartRef.current) return;
 
-    // Initialize start X on first move
-    if (dragStartRef.current.x === 0) {
-      dragStartRef.current.x = clientX;
-      return;
-    }
+    setState(prev => {
+      if (!prev.isDragging || !prev.activeHandle) return prev;
 
-    const delta = clientX - dragStartRef.current.x;
-    const viewportWidth = window.innerWidth;
+      // Initialize start X on first move
+      if (dragStartRef.current!.x === 0) {
+        dragStartRef.current!.x = clientX;
+        return prev;
+      }
 
-    // Calculate new widths
-    const { leftWidth, rightWidth } = calculateDragWidths(
-      state.activeHandle,
-      delta,
-      viewportWidth,
-      dragStartRef.current.leftWidth,
-      dragStartRef.current.rightWidth,
-      constraints
-    );
+      const delta = clientX - dragStartRef.current!.x;
+      const viewportWidth = window.innerWidth;
 
-    // Check for snap-to-collapse
-    let newLeftCollapsed = state.leftCollapsed;
-    let newRightCollapsed = state.rightCollapsed;
-    let finalLeftWidth = leftWidth;
-    let finalRightWidth = rightWidth;
+      // Calculate new widths
+      const { leftWidth, rightWidth } = calculateDragWidths(
+        prev.activeHandle,
+        delta,
+        viewportWidth,
+        dragStartRef.current!.leftWidth,
+        dragStartRef.current!.rightWidth,
+        constraints
+      );
 
-    if (state.activeHandle === 'left' && leftWidth < COLLAPSE_THRESHOLD) {
-      newLeftCollapsed = true;
-      finalLeftWidth = COLLAPSED_LEFT_WIDTH;
-    } else if (state.activeHandle === 'left') {
-      newLeftCollapsed = false;
-    }
+      // Check for snap-to-collapse
+      let newLeftCollapsed = prev.leftCollapsed;
+      let newRightCollapsed = prev.rightCollapsed;
+      let finalLeftWidth = leftWidth;
+      let finalRightWidth = rightWidth;
+      let newLeftExpandedWidth = prev.leftExpandedWidth;
+      let newRightExpandedWidth = prev.rightExpandedWidth;
 
-    if (state.activeHandle === 'right' && rightWidth < COLLAPSE_THRESHOLD) {
-      newRightCollapsed = true;
-      finalRightWidth = COLLAPSED_RIGHT_WIDTH;
-    } else if (state.activeHandle === 'right') {
-      newRightCollapsed = false;
-    }
+      if (prev.activeHandle === 'left') {
+        if (leftWidth < COLLAPSE_THRESHOLD) {
+          newLeftCollapsed = true;
+          finalLeftWidth = COLLAPSED_LEFT_WIDTH;
+          // Don't update expanded width - keep the last good value
+        } else {
+          newLeftCollapsed = false;
+          newLeftExpandedWidth = leftWidth; // Update expanded width
+        }
+      }
 
-    setState(prev => ({
-      ...prev,
-      leftWidth: finalLeftWidth,
-      rightWidth: finalRightWidth,
-      leftCollapsed: newLeftCollapsed,
-      rightCollapsed: newRightCollapsed,
-    }));
-  }, [state.isDragging, state.activeHandle, state.leftCollapsed, state.rightCollapsed, constraints]);
+      if (prev.activeHandle === 'right') {
+        if (rightWidth < COLLAPSE_THRESHOLD) {
+          newRightCollapsed = true;
+          finalRightWidth = COLLAPSED_RIGHT_WIDTH;
+          // Don't update expanded width - keep the last good value
+        } else {
+          newRightCollapsed = false;
+          newRightExpandedWidth = rightWidth; // Update expanded width
+        }
+      }
+
+      return {
+        ...prev,
+        leftWidth: finalLeftWidth,
+        rightWidth: finalRightWidth,
+        leftCollapsed: newLeftCollapsed,
+        rightCollapsed: newRightCollapsed,
+        leftExpandedWidth: newLeftExpandedWidth,
+        rightExpandedWidth: newRightExpandedWidth,
+      };
+    });
+  }, [constraints]);
 
   const endDrag = useCallback(() => {
     dragStartRef.current = null;
@@ -330,12 +466,30 @@ export function ResizeProvider({ children }: ResizeProviderProps) {
       endDrag();
     };
 
+    // Touch support
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        e.preventDefault();
+        requestAnimationFrame(() => {
+          onDrag(e.touches[0].clientX);
+        });
+      }
+    };
+
+    const handleTouchEnd = () => {
+      endDrag();
+    };
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
     };
   }, [state.isDragging, onDrag, endDrag]);
 

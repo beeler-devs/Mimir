@@ -30,8 +30,11 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
     return null;
   }
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    // Capture pointer to ensure we get all move events
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     startDrag(position);
   }, [startDrag, position]);
 
@@ -44,29 +47,45 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
     }
   }, [position, toggleLeftCollapsed, toggleRightCollapsed]);
 
+  // Handle keyboard accessibility
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (position === 'left') {
+        toggleLeftCollapsed();
+      } else {
+        toggleRightCollapsed();
+      }
+    }
+  }, [position, toggleLeftCollapsed, toggleRightCollapsed]);
+
   return (
     <div
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
       className={`
         absolute top-0 bottom-0
         w-1 cursor-col-resize
-        group
+        group select-none touch-none
         ${position === 'left' ? 'right-0' : 'left-0'}
         ${isDragging ? 'bg-primary' : 'hover:bg-primary/50'}
         transition-colors duration-150
         z-10
+        focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1
         ${className}
       `}
       role="separator"
       aria-orientation="vertical"
-      aria-label={`Resize ${position} panel`}
+      aria-label={`Resize ${position} panel. Double-click or press Enter to collapse.`}
+      aria-valuenow={undefined}
     >
-      {/* Wider hit area for easier grabbing */}
+      {/* Wider hit area for easier grabbing - covers the actual clickable region */}
       <div
         className={`
-          absolute top-0 bottom-0
-          w-3 -translate-x-1/2
+          absolute top-0 bottom-0 left-1/2 -translate-x-1/2
+          w-4
           cursor-col-resize
         `}
       />
@@ -76,6 +95,7 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
         className={`
           absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2
           w-1 h-8 rounded-full
+          pointer-events-none
           ${isDragging ? 'bg-primary' : 'bg-transparent group-hover:bg-primary/30'}
           transition-colors duration-150
         `}
