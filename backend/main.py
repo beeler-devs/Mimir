@@ -733,6 +733,35 @@ async def chat_stream(request: Request):
 3. Use analogies and examples when helpful
 4. Reference the user's workspace context when relevant to help them understand their work
 
+=== FORMATTING YOUR RESPONSES ===
+
+Your responses support **markdown formatting** and **LaTeX math notation**:
+
+**Markdown formatting:**
+- Use headers (## Header), bold (**text**), italic (*text*), lists, code blocks, etc.
+- Format your responses with clear structure and visual hierarchy
+
+**LaTeX math notation:**
+- For inline math, use single dollar signs: $equation$
+  Example: "The formula is $E = mc^2$ where..."
+
+- For display/block math, use double dollar signs: $$equation$$
+  Example:
+  "The quadratic formula is:
+  $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+
+- Use LaTeX for mathematical expressions, equations, formulas, matrices, integrals, summations, etc.
+- Examples of when to use LaTeX:
+  * Equations: $ax^2 + bx + c = 0$
+  * Fractions: $\\frac{numerator}{denominator}$
+  * Integrals: $\\int_a^b f(x) dx$
+  * Summations: $\\sum_{i=1}^n i^2$
+  * Matrices: $\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$
+  * Greek letters: $\\alpha, \\beta, \\gamma, \\theta$
+  * Special symbols: $\\infty, \\nabla, \\partial$
+
+Use LaTeX whenever it makes mathematical content clearer and more readable. The rest of your response should use standard markdown.
+
 === READING IMAGES AND EQUATIONS ===
 
 When the user includes images (especially annotation canvases with handwritten or drawn content), carefully examine them:
@@ -1381,18 +1410,26 @@ Guidelines:
 5. Vary question types: definitions, applications, examples, comparisons
 6. Keep each card focused on ONE concept
 7. Use clear, student-friendly language
+8. Use LaTeX for mathematical notation:
+   - Inline math: $equation$ (e.g., $E = mc^2$)
+   - Display math: $$equation$$ (e.g., $$\\int_a^b f(x) dx$$)
+   - Examples: $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$, $x^2$
 
 Output format: Return ONLY a JSON array of flashcards, no other text.
 
 Example output:
 [
   {
-    "front": "What is the derivative of x^2?",
-    "back": "2x"
+    "front": "What is the derivative of $x^2$?",
+    "back": "$2x$"
   },
   {
     "front": "Define photosynthesis",
     "back": "The process by which plants convert light energy into chemical energy stored in glucose"
+  },
+  {
+    "front": "What is the quadratic formula?",
+    "back": "$$x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a}$$"
   }
 ]"""
 
@@ -1485,6 +1522,9 @@ Guidelines:
 5. Test various levels: recall, comprehension, application
 6. Questions should be clear and unambiguous
 7. Answers should be concise
+8. Use LaTeX for mathematical notation in questions and options:
+   - Inline math: $equation$ (e.g., $E = mc^2$)
+   - Examples: $x^2$, $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$
 
 Output format: Return ONLY a JSON array of questions, no other text.
 
@@ -1494,6 +1534,11 @@ Example output:
     "question": "What is the capital of France?",
     "options": ["London", "Paris", "Berlin", "Madrid"],
     "correctIndex": 1
+  },
+  {
+    "question": "What is the derivative of $f(x) = x^3$?",
+    "options": ["$3x^2$", "$x^2$", "$3x$", "$x^3$"],
+    "correctIndex": 0
   }
 ]"""
 
@@ -1663,7 +1708,7 @@ Your task: Generate a clear, engaging summary that helps students understand and
 
 Guidelines:
 1. **Opening Overview**: Start with 2-3 sentences capturing the document's main theme and purpose
-2. **Hierarchical Structure**: 
+2. **Hierarchical Structure**:
    - Use markdown headers (##, ###) to organize topics
    - Group related concepts together logically
    - Progress from foundational to advanced ideas
@@ -1685,14 +1730,18 @@ Guidelines:
    - Don't omit important details, but stay concise
    - Prioritize understanding over exhaustive coverage
 
-Output format: Well-formatted markdown with:
+Output format: Well-formatted markdown with LaTeX support:
 - ## for main sections
 - ### for subsections
 - Bullet points for lists
 - **Bold** for key terms
-- Code blocks for formulas/equations when appropriate
+- LaTeX for mathematical expressions:
+  * Inline math: $equation$ (e.g., $E = mc^2$)
+  * Display math: $$equation$$ (e.g., $$\\int_a^b f(x) dx$$)
+  * Use LaTeX for all formulas, equations, integrals, summations, matrices, etc.
+  * Examples: $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$, $\\theta$, $\\nabla$
 
-Remember: Your goal is to create a study resource that students can review to quickly grasp the material's core ideas and structure."""
+Remember: Your goal is to create a study resource that students can review to quickly grasp the material's core ideas and structure. Use LaTeX for all mathematical notation to ensure clarity and professionalism."""
 
             user_prompt = f"""Create a comprehensive, well-structured summary of the following educational content:
 
