@@ -1739,6 +1739,167 @@ Focus on clarity, organization, and helping students understand the key concepts
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.post("/study-tools/mindmap/stream")
+async def generate_mindmap_stream(request: dict):
+    """
+    Generate a mind map from PDF text using Claude AI with streaming
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content and optional 'scope' for topic focus
+
+    Returns:
+        StreamingResponse with SSE format containing mind map data
+    """
+    def generate():
+        try:
+            pdf_text = request.get('pdfText', '')
+            scope = request.get('scope', 'full document')
+
+            if not pdf_text:
+                error_response = {
+                    "type": "error",
+                    "content": "PDF text is required"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Get Claude API key from environment
+            claude_api_key = os.getenv("CLAUDE_API_KEY")
+            if not claude_api_key:
+                error_response = {
+                    "type": "error",
+                    "content": "CLAUDE_API_KEY not configured"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Initialize Anthropic client
+            client = Anthropic(api_key=claude_api_key)
+
+            # Limit PDF text to avoid token limits
+            max_text_length = 30000
+            if len(pdf_text) > max_text_length:
+                pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+            # System prompt for mind map generation
+            system_prompt = """You are an expert at creating interactive concept maps from educational content.
+
+Your task: Generate a hierarchical mind map that visualizes the key concepts and their relationships.
+
+Guidelines:
+1. **Hierarchical Structure**:
+   - Level 0: Main concept/topic (1 node)
+   - Level 1: Major subtopics (3-5 nodes)
+   - Level 2: Key concepts under each subtopic (2-4 nodes per subtopic)
+   - Level 3: Important details or examples (1-2 nodes per concept)
+
+2. **Node Types**:
+   - concept: Main central idea (level 0)
+   - topic: Major subject areas (level 1)
+   - subtopic: Specific concepts (level 2)
+   - detail: Specific facts, formulas, or examples (level 3)
+
+3. **Edge Types**:
+   - child: Hierarchical parent-child relationship
+   - related: Concepts that are related but not hierarchical
+   - prerequisite: Concept A must be understood before concept B
+   - example: Concept illustrates or exemplifies another
+
+4. **Constraints**:
+   - Total nodes: 15-25 (keep it focused and digestible)
+   - Each node needs a concise label (2-6 words)
+   - Node descriptions are optional but helpful for detail nodes
+   - Create edges that show meaningful relationships
+
+Output format: JSON object with this exact structure:
+{
+  "title": "Brief title for the mind map",
+  "description": "One sentence describing the scope",
+  "nodes": [
+    {
+      "label": "Short node label",
+      "description": "Optional detailed description",
+      "nodeType": "concept|topic|subtopic|detail",
+      "level": 0-3
+    }
+  ],
+  "edges": [
+    {
+      "sourceNodeIndex": 0,
+      "targetNodeIndex": 1,
+      "label": "Optional relationship label",
+      "edgeType": "child|related|prerequisite|example"
+    }
+  ]
+}
+
+IMPORTANT: Output ONLY valid JSON. No markdown code blocks, no explanations, just the JSON object."""
+
+            user_prompt = f"""Create an interactive concept map for the following educational content.
+
+Scope: {scope}
+
+Content:
+{pdf_text}
+
+Generate a hierarchical mind map with 15-25 nodes that captures the key concepts and their relationships."""
+
+            # Call Claude API (non-streaming to get proper JSON)
+            chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+
+            message = client.messages.create(
+                model=chat_model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+
+            # Extract JSON from response
+            response_text = message.content[0].text.strip()
+
+            # Remove markdown code blocks if present
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+            # Parse JSON
+            mind_map_data = json.loads(response_text)
+
+            # Validate structure
+            if 'nodes' not in mind_map_data or 'edges' not in mind_map_data:
+                raise ValueError("Invalid mind map structure: missing nodes or edges")
+
+            logger.info(f"Generated mind map with {len(mind_map_data['nodes'])} nodes and {len(mind_map_data['edges'])} edges")
+
+            # Send final response
+            final_response = {
+                "type": "done",
+                "content": mind_map_data
+            }
+            yield f"data: {json.dumps(final_response)}\n\n"
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in mindmap generation: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Failed to parse mind map JSON: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+        except Exception as e:
+            logger.error(f"Error in mindmap streaming endpoint: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/chat/generate-title")
 async def generate_chat_title(request: dict):
     """
