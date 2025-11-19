@@ -22,6 +22,17 @@ import {
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { useActiveLearningMode } from '@/lib/learningMode';
+import {
+  saveSummary,
+  getLatestSummary,
+  saveFlashcardSet,
+  getLatestFlashcardSet,
+  saveQuiz,
+  getLatestQuiz,
+  startQuizAttempt,
+  submitQuizAnswer,
+  completeQuizAttempt,
+} from '@/lib/db/studyMaterials';
 
 type StudyMode = 'chat' | 'flashcards' | 'quiz' | 'summary' | 'podcast';
 
@@ -105,7 +116,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [flashcards, setFlashcards] = useState<{ front: string; back: string }[]>([]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [showFlashcardAnswer, setShowFlashcardAnswer] = useState(false);
-  const [quizQuestions, setQuizQuestions] = useState<{ question: string; options: string[]; correctIndex: number }[]>([]);
+  const [quizQuestions, setQuizQuestions] = useState<{ id?: string; question: string; options: string[]; correctIndex: number }[]>([]);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
@@ -114,6 +125,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  
+  // Study materials persistence state
+  const [currentQuizAttemptId, setCurrentQuizAttemptId] = useState<string | null>(null);
+  const [quizId, setQuizId] = useState<string | null>(null);
+  const [loadedFlashcardSetId, setLoadedFlashcardSetId] = useState<string | null>(null);
   
   // Flashcard chat state (separate from main chat)
   const [flashcardChatNodes, setFlashcardChatNodes] = useState<ChatNode[]>([]);
@@ -127,6 +143,9 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   // Study mode customization options
   const [studyModeFocus, setStudyModeFocus] = useState<string>('');
+
+  // Ref for summary container to enable auto-scroll
+  const summaryContainerRef = React.useRef<HTMLDivElement>(null);
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const flashcardChatInputRef = React.useRef<ChatInputRef>(null);
@@ -442,6 +461,51 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     }
   }, [chatId]);
 
+  // Load saved study materials when instance opens
+  useEffect(() => {
+    const loadStudyMaterials = async () => {
+      if (!activeInstance || (activeInstance.type !== 'pdf' && activeInstance.type !== 'lecture')) {
+        return;
+      }
+      
+      try {
+        // Load latest summary
+        const savedSummary = await getLatestSummary(activeInstance.id);
+        if (savedSummary) {
+          setSummary(savedSummary.content);
+        }
+        
+        // Load latest flashcard set
+        const savedFlashcardSet = await getLatestFlashcardSet(activeInstance.id);
+        if (savedFlashcardSet) {
+          setFlashcards(savedFlashcardSet.flashcards.map(card => ({
+            front: card.front,
+            back: card.back
+          })));
+          setLoadedFlashcardSetId(savedFlashcardSet.id);
+        }
+        
+        // Load latest quiz
+        const savedQuiz = await getLatestQuiz(activeInstance.id);
+        if (savedQuiz) {
+          setQuizQuestions(savedQuiz.questions.map(q => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            correctIndex: q.correctOptionIndex
+          })));
+          setQuizId(savedQuiz.id);
+          // Initialize user answers array
+          setUserAnswers(new Array(savedQuiz.questions.length).fill(null));
+        }
+      } catch (error) {
+        console.error('Error loading study materials:', error);
+      }
+    };
+    
+    loadStudyMaterials();
+  }, [activeInstance]);
+
   // Get content text for context (supports both PDF and Lecture instances)
   const getContentContext = (): string => {
     if (activeInstance?.type === 'pdf' && activeInstance.data.fullText) {
@@ -745,6 +809,23 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setFlashcards(data.flashcards || []);
       setCurrentFlashcardIndex(0);
       setShowFlashcardAnswer(false);
+      
+      // Save flashcards to database
+      if (activeInstance?.id && data.flashcards && data.flashcards.length > 0) {
+        try {
+          const savedFlashcardSet = await saveFlashcardSet(
+            activeInstance.id,
+            data.flashcards,
+            'Flashcards',
+            undefined,
+            { focus: studyModeFocus || undefined }
+          );
+          setLoadedFlashcardSetId(savedFlashcardSet.id);
+        } catch (error) {
+          console.error('Error saving flashcards:', error);
+        }
+      }
+      
       // Reset customization options for next generation
       setStudyModeFocus('');
     } catch (error) {
@@ -985,7 +1066,43 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       const data = await response.json();
       const questions = data.questions || [];
-      setQuizQuestions(questions);
+      
+      // Save quiz to database and start attempt
+      if (activeInstance?.id && questions.length > 0) {
+        try {
+          const savedQuiz = await saveQuiz(
+            activeInstance.id,
+            questions.map((q: any) => ({
+              question: q.question,
+              options: q.options,
+              correctIndex: q.correctIndex,
+            })),
+            'Quiz',
+            undefined,
+            { focus: studyModeFocus || undefined }
+          );
+          
+          // Update quiz questions with IDs from saved quiz
+          setQuizQuestions(savedQuiz.questions.map(q => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            correctIndex: q.correctOptionIndex
+          })));
+          setQuizId(savedQuiz.id);
+          
+          // Start a quiz attempt
+          const attempt = await startQuizAttempt(savedQuiz.id);
+          setCurrentQuizAttemptId(attempt.id);
+        } catch (error) {
+          console.error('Error saving quiz:', error);
+          // Still set the questions even if save fails
+          setQuizQuestions(questions);
+        }
+      } else {
+        setQuizQuestions(questions);
+      }
+      
       setCurrentQuizIndex(0);
       setSelectedAnswer(null);
       setUserAnswers(new Array(questions.length).fill(null));
@@ -1072,6 +1189,19 @@ The user is studying this flashcard and may ask questions about it, need help un
         }
       }
 
+      // Save summary to database
+      if (activeInstance?.id && fullContent) {
+        try {
+          await saveSummary(
+            activeInstance.id,
+            fullContent,
+            { focus: studyModeFocus || undefined }
+          );
+        } catch (error) {
+          console.error('Error saving summary:', error);
+        }
+      }
+
       // Reset customization options for next generation
       setStudyModeFocus('');
     } catch (error) {
@@ -1131,6 +1261,20 @@ The user is studying this flashcard and may ask questions about it, need help un
       document.removeEventListener('mouseup', handleSummaryTextSelection);
     };
   }, [handleSummaryTextSelection]);
+
+  // Auto-scroll summary as it's being generated
+  useEffect(() => {
+    if (studyMode === 'summary' && summary && generatingSummary) {
+      const container = summaryContainerRef.current;
+      if (container) {
+        // Scroll to bottom smoothly as content is generated
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [summary, studyMode, generatingSummary]);
 
   if (initializing) {
     return (
@@ -1216,7 +1360,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateFlashcards}
                   disabled={generatingFlashcards}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingFlashcards ? 'Generating...' : 'Generate Flashcards'}
                 </button>
@@ -1227,89 +1371,97 @@ The user is studying this flashcard and may ask questions about it, need help un
 
         const currentCard = flashcards[currentFlashcardIndex];
         return (
-          <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={generateFlashcards}
-                  className="text-primary hover:underline"
-                >
-                  Regenerate
-                </button>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4 pb-0">
+                <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
+                  <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={generateFlashcards}
+                      className="text-primary hover:underline"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-4 px-4">
+                <div className="w-full max-w-3xl mx-auto space-y-4">
+                  <div
+                    className="relative w-full h-[300px] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm overflow-y-auto"
+                    onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
+                  >
+                    <div className="text-center mx-auto max-w-full">
+                      <div className="text-xl font-semibold mb-4 break-words">
+                        <MarkdownRenderer content={showFlashcardAnswer ? currentCard.back : currentCard.front} />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Click to {showFlashcardAnswer ? 'hide' : 'reveal'} answer
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <button
+                      onClick={() => {
+                        setCurrentFlashcardIndex(Math.max(0, currentFlashcardIndex - 1));
+                        setShowFlashcardAnswer(false);
+                        // Keep flashcard chat when navigating - it's context-aware
+                      }}
+                      disabled={currentFlashcardIndex === 0}
+                      className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCurrentFlashcardIndex(Math.min(flashcards.length - 1, currentFlashcardIndex + 1));
+                        setShowFlashcardAnswer(false);
+                        // Keep flashcard chat when navigating - it's context-aware
+                      }}
+                      disabled={currentFlashcardIndex === flashcards.length - 1}
+                      className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                  
+                  {/* Flashcard Chat Interface */}
+                  <div className="w-full flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-foreground">Ask questions about this flashcard</p>
+                    </div>
+                    <div className="min-h-[200px] overflow-y-auto border border-border rounded-lg bg-background">
+                      <ChatMessageList
+                        messages={flashcardChatActiveBranch}
+                        workspaceContext={buildWorkspaceContext(
+                          activeInstance,
+                          instances,
+                          folders,
+                          [],
+                          {}
+                        )}
+                        onAddToChat={(text) => {
+                          if (flashcardChatInputRef.current) {
+                            flashcardChatInputRef.current.setContext(text);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex flex-col items-center gap-4 flex-1 min-h-0 w-full max-w-3xl mx-auto">
-              <div
-                className="relative w-full h-[300px] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm overflow-y-auto"
-                onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
-              >
-                <div className="text-center mx-auto max-w-full">
-                  <div className="text-xl font-semibold mb-4 break-words">
-                    <MarkdownRenderer content={showFlashcardAnswer ? currentCard.back : currentCard.front} />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Click to {showFlashcardAnswer ? 'hide' : 'reveal'} answer
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2 w-full">
-                <button
-                  onClick={() => {
-                    setCurrentFlashcardIndex(Math.max(0, currentFlashcardIndex - 1));
-                    setShowFlashcardAnswer(false);
-                    // Keep flashcard chat when navigating - it's context-aware
-                  }}
-                  disabled={currentFlashcardIndex === 0}
-                  className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => {
-                    setCurrentFlashcardIndex(Math.min(flashcards.length - 1, currentFlashcardIndex + 1));
-                    setShowFlashcardAnswer(false);
-                    // Keep flashcard chat when navigating - it's context-aware
-                  }}
-                  disabled={currentFlashcardIndex === flashcards.length - 1}
-                  className="flex-1 px-4 py-2 bg-background border border-border rounded-lg hover:bg-muted disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-              
-              {/* Flashcard Chat Interface */}
-              <div className="w-full flex flex-col gap-3 flex-1 min-h-0">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">Ask questions about this flashcard</p>
-                </div>
-                <div className="flex-1 min-h-[200px] overflow-y-auto border border-border rounded-lg bg-background">
-                  <ChatMessageList
-                    messages={flashcardChatActiveBranch}
-                    workspaceContext={buildWorkspaceContext(
-                      activeInstance,
-                      instances,
-                      folders,
-                      [],
-                      {}
-                    )}
-                    onAddToChat={(text) => {
-                      if (flashcardChatInputRef.current) {
-                        flashcardChatInputRef.current.setContext(text);
-                      }
-                    }}
-                  />
-                </div>
-                <div className="flex-shrink-0 w-full">
-                  <ChatInput
-                    ref={flashcardChatInputRef}
-                    onSend={handleFlashcardChatMessage}
-                    loading={flashcardChatLoading}
-                    instances={instances}
-                    folders={folders}
-                  />
-                </div>
-              </div>
+            
+            {/* Chat Input - Full Width at Bottom */}
+            <div className="flex-shrink-0">
+              <ChatInput
+                ref={flashcardChatInputRef}
+                onSend={handleFlashcardChatMessage}
+                loading={flashcardChatLoading}
+                instances={instances}
+                folders={folders}
+              />
             </div>
           </div>
         );
@@ -1341,7 +1493,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                     value={studyModeFocus}
                     onChange={(e) => setStudyModeFocus(e.target.value)}
                     placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
                   />
                 </div>
 
@@ -1349,7 +1501,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateQuiz}
                   disabled={generatingQuiz}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingQuiz ? 'Generating...' : 'Generate Quiz'}
                 </button>
@@ -1503,12 +1655,25 @@ The user is studying this flashcard and may ask questions about it, need help un
                   return (
                     <button
                       key={idx}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!isAnswered) {
                           const newAnswers = [...userAnswers];
                           newAnswers[currentQuizIndex] = idx;
                           setUserAnswers(newAnswers);
                           setSelectedAnswer(idx);
+                          
+                          // Save answer to database immediately
+                          if (currentQuizAttemptId && quizQuestions[currentQuizIndex].id) {
+                            try {
+                              await submitQuizAnswer(
+                                currentQuizAttemptId,
+                                quizQuestions[currentQuizIndex].id!,
+                                idx
+                              );
+                            } catch (error) {
+                              console.error('Error saving quiz answer:', error);
+                            }
+                          }
                         }
                       }}
                       disabled={isAnswered}
@@ -1576,7 +1741,18 @@ The user is studying this flashcard and may ask questions about it, need help un
                 </button>
               ) : (
                 <button
-                  onClick={() => setQuizCompleted(true)}
+                  onClick={async () => {
+                    setQuizCompleted(true);
+                    
+                    // Complete the quiz attempt in database
+                    if (currentQuizAttemptId) {
+                      try {
+                        await completeQuizAttempt(currentQuizAttemptId);
+                      } catch (error) {
+                        console.error('Error completing quiz attempt:', error);
+                      }
+                    }
+                  }}
                   disabled={!allAnswered}
                   className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all shadow-sm"
                 >
@@ -1614,7 +1790,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                     value={studyModeFocus}
                     onChange={(e) => setStudyModeFocus(e.target.value)}
                     placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
                   />
                 </div>
 
@@ -1622,7 +1798,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateSummary}
                   disabled={generatingSummary}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium"
+                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingSummary ? 'Generating...' : 'Generate Summary'}
                 </button>
@@ -1632,7 +1808,7 @@ The user is studying this flashcard and may ask questions about it, need help un
         }
 
         return (
-          <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
+          <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Document Summary</h3>
               <button
@@ -1642,7 +1818,11 @@ The user is studying this flashcard and may ask questions about it, need help un
                 Regenerate
               </button>
             </div>
-            <div className="flex-1 prose prose-sm max-w-none dark:prose-invert" data-summary-content="true">
+            <div 
+              ref={summaryContainerRef}
+              className="flex-1 prose prose-sm max-w-none dark:prose-invert overflow-y-auto" 
+              data-summary-content="true"
+            >
               <MarkdownRenderer content={summary} />
             </div>
           </div>

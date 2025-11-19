@@ -22,10 +22,43 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   const [selectedText, setSelectedText] = useState<string>('');
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const isUserScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
   
-  // Auto-scroll to bottom when messages change
+  // Track user scroll behavior
   useEffect(() => {
-    // Use a small timeout to ensure DOM has updated
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // Clear any pending timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      // User is scrolling
+      isUserScrollingRef.current = true;
+
+      // After 1 second of no scrolling, assume user is done
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false;
+      }, 1000);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-scroll to bottom when messages change or content updates
+  useEffect(() => {
+    // Don't auto-scroll if user is actively scrolling
+    if (isUserScrollingRef.current) return;
+
     const scrollToBottom = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
@@ -37,7 +70,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
     const timeoutId = setTimeout(scrollToBottom, 100);
     
     return () => clearTimeout(timeoutId);
-  }, [messages]);
+  }, [messages, messages.map(m => m.content).join('')]);
 
   // Text selection handler (only for assistant messages)
   const handleTextSelection = useCallback((event: MouseEvent) => {

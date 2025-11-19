@@ -151,6 +151,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       // Create a temporary PDF attachment with uploading status
       const tempId = `pdf-${Date.now()}-${i}`;
       const tempPdf: PdfAttachment = {
+        type: 'pdf',
         id: tempId,
         filename: file.name,
         extractedText: '',
@@ -342,33 +343,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   return (
     <div className="p-4 bg-background relative">
       {/* Autocomplete dropdown */}
-      {showAutocomplete && autocompleteItems.length > 0 && (
-        <div
-          ref={autocompleteRef}
-          className="absolute bottom-full left-4 right-4 mb-2 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50"
-        >
-          {autocompleteItems.map((item, index) => (
-            <button
-              key={`${item.type}-${item.id}`}
-              type="button"
-              onClick={() => insertMention(item)}
-              className={`
-                w-full px-3 py-2 text-left flex items-center gap-2 text-sm
-                hover:bg-muted transition-colors
-                ${index === selectedIndex ? 'bg-muted' : ''}
-              `}
-            >
-              <span className="text-muted-foreground">
-                {getIcon(item.icon)}
-              </span>
-              <span className="font-medium">{item.name}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {item.type}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+
 
       {/* Context bubble - displayed above input */}
       {contextText && (
@@ -436,6 +411,35 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
       {/* Main input container with border */}
       <div className="relative border border-input rounded-lg overflow-visible bg-background">
+        {/* Autocomplete dropdown */}
+        {showAutocomplete && autocompleteItems.length > 0 && (
+          <div
+            ref={autocompleteRef}
+            className="absolute bottom-full left-0 mb-2 w-64 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50"
+          >
+            {autocompleteItems.map((item, index) => (
+              <button
+                key={`${item.type}-${item.id}`}
+                type="button"
+                onClick={() => insertMention(item)}
+                className={`
+                  w-full px-3 py-2 text-left flex items-center gap-2 text-sm
+                  hover:bg-muted transition-colors
+                  ${index === selectedIndex ? 'bg-muted' : ''}
+                `}
+              >
+                <span className="text-muted-foreground">
+                  {getIcon(item.icon)}
+                </span>
+                <span className="font-medium">{item.name}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {item.type}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Learning mode dropdown - positioned inside input container */}
         {showModeDropdown && (
           <div

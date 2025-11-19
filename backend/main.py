@@ -748,15 +748,15 @@ Your responses support **markdown formatting** and **LaTeX math notation**:
 - For display/block math, use double dollar signs: $$equation$$
   Example:
   "The quadratic formula is:
-  $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+  $$x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$$"
 
 - Use LaTeX for mathematical expressions, equations, formulas, matrices, integrals, summations, etc.
 - Examples of when to use LaTeX:
   * Equations: $ax^2 + bx + c = 0$
-  * Fractions: $\\frac{numerator}{denominator}$
+  * Fractions: $\\frac{{numerator}}{{denominator}}$
   * Integrals: $\\int_a^b f(x) dx$
-  * Summations: $\\sum_{i=1}^n i^2$
-  * Matrices: $\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$
+  * Summations: $\\sum_{{i=1}}^n i^2$
+  * Matrices: $\\begin{{bmatrix}} a & b \\\\ c & d \\end{{bmatrix}}$
   * Greek letters: $\\alpha, \\beta, \\gamma, \\theta$
   * Special symbols: $\\infty, \\nabla, \\partial$
 

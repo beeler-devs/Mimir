@@ -26,18 +26,47 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
   
   // Suppress AbortException warnings from text layer cancellation
-  // This is expected behavior when navigating/unmounting
+  // This is expected behavior when navigating/unmounting/zooming
   const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  const isIgnorableError = (args: any[]) => {
+    const arg = args[0];
+    
+    // Check string messages
+    if (typeof arg === 'string') {
+      return (
+        arg.includes('TextLayer task cancelled') || 
+        arg.includes('AbortException') ||
+        arg.includes('cancelled')
+      );
+    }
+    
+    // Check Error objects
+    if (arg instanceof Error) {
+      return (
+        arg.message.includes('TextLayer task cancelled') || 
+        arg.message.includes('AbortException') ||
+        arg.message.includes('cancelled') ||
+        arg.name === 'AbortException'
+      );
+    }
+    
+    return false;
+  };
+
   console.warn = (...args) => {
-    // Filter out the specific TextLayer cancellation warning
-    if (
-      typeof args[0] === 'string' && 
-      (args[0].includes('TextLayer task cancelled') || 
-       args[0].includes('AbortException'))
-    ) {
+    if (isIgnorableError(args)) {
       return;
     }
     originalConsoleWarn.apply(console, args);
+  };
+
+  console.error = (...args) => {
+    if (isIgnorableError(args)) {
+      return;
+    }
+    originalConsoleError.apply(console, args);
   };
 }
 
@@ -708,7 +737,12 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
                   renderAnnotationLayer={true}
                   onRenderError={(error) => {
                     // Silently handle abort errors during rendering
-                    if (error?.message?.includes('AbortException') || error?.message?.includes('cancelled')) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    if (
+                      message.includes('AbortException') || 
+                      message.includes('cancelled') || 
+                      message.includes('TextLayer task cancelled')
+                    ) {
                       return;
                     }
                     console.error('Page render error:', error);

@@ -44,8 +44,14 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
     onClose();
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      handleCreate();
+    }
+  };
+
   return (
-    <Modal open={open} onClose={onClose} className="!max-w-xl">
+    <Modal open={open} onClose={onClose} className="!max-w-xl" containerClassName="pt-32">
       <div className="p-6 space-y-5">
         <div>
           <h2 className="text-xl font-semibold">Create instance</h2>
@@ -57,6 +63,7 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({ open, onClos
           <Input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="ex. Linear algebra notes"
             className="w-full"
           />
