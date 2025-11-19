@@ -203,10 +203,19 @@ function buildInstanceContext(
     // Only truncate if not prioritized
     base.content = isPrioritized ? content : truncateText(content, MAX_TEXT_LENGTH);
   } else if (instance.type === 'code') {
-    base.language = instance.data.language;
-    const code = instance.data.code || '';
-    // Only truncate if not prioritized
-    base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+    // Get active file's language and content
+    const activeFile = instance.data.files.find(f => f.path === instance.data.activeFilePath);
+    if (activeFile) {
+      base.language = activeFile.language;
+      const code = activeFile.content || '';
+      // Only truncate if not prioritized
+      base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+    } else if (instance.data.files.length > 0) {
+      // Fallback to first file
+      base.language = instance.data.files[0].language;
+      const code = instance.data.files[0].content || '';
+      base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+    }
   } else if (instance.type === 'pdf') {
     const fullText = instance.data.fullText || '';
     // Only truncate if not prioritized

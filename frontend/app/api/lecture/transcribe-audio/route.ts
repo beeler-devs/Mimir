@@ -161,12 +161,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Calculate total duration from the last segment (since Channel type doesn't have duration)
+    const totalDuration = segments.length > 0
+      ? segments[segments.length - 1].timestamp + segments[segments.length - 1].duration
+      : 0;
+
     return NextResponse.json({
       success: true,
       audioUrl: urlData.publicUrl,
       transcript: alternatives.transcript,
       segments,
-      duration: channel.duration || 0,
+      duration: totalDuration,
     });
 
   } catch (error) {
