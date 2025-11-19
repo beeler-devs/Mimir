@@ -3,7 +3,6 @@
 import React, { useState, useRef } from 'react';
 import { Tree, NodeRendererProps } from 'react-arborist';
 import {
-  File,
   Folder as FolderIcon,
   FolderOpen,
   ChevronRight,
@@ -331,12 +330,36 @@ const MoveFileModal: React.FC<MoveFileModalProps> = ({
 
   const [selected, setSelected] = useState<string>(currentParentId);
 
+  // Helper to check if a folder is a descendant of the node being moved
+  const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
+    if (folderId === ancestorId) return true;
+    const folder = nodes.find((n) => n.id === folderId);
+    if (!folder || !folder.parentId) return false;
+    return isDescendantOf(folder.parentId, ancestorId);
+  };
+
+  // Filter out invalid destinations (self and descendants) for folders
+  const isFolder = currentNode?.type === 'folder';
+  const validFolderOptions = isFolder
+    ? folderOptions.filter((opt) => !isDescendantOf(opt.id, nodeId))
+    : folderOptions;
+
   // Reset selection when modal opens
   React.useEffect(() => {
     if (open) {
       setSelected(currentParentId);
     }
   }, [open, currentParentId]);
+
+  // Ensure selected value is always valid (in case it was filtered out)
+  React.useEffect(() => {
+    if (open && selected !== 'root') {
+      const isValidSelection = validFolderOptions.some((opt) => opt.id === selected);
+      if (!isValidSelection) {
+        setSelected(currentParentId);
+      }
+    }
+  }, [open, selected, validFolderOptions, currentParentId]);
 
   if (!open) return null;
 
@@ -363,7 +386,7 @@ const MoveFileModal: React.FC<MoveFileModalProps> = ({
           onChange={(event) => setSelected(event.target.value)}
         >
           <option value="root">Root (no folder)</option>
-          {folderOptions.map((folder) => (
+          {validFolderOptions.map((folder) => (
             <option key={folder.id} value={folder.id}>
               {folder.label}
             </option>
