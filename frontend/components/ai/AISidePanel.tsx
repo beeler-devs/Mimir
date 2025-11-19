@@ -8,7 +8,7 @@ import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
 import { ChatTabBar } from './ChatTabBar';
 import { PanelsLeftRight, MessageSquare } from 'lucide-react';
-import { ChatActionsDropdown } from './ChatActionsDropdown';
+
 import {
   loadUserChats,
   createChat,
@@ -519,18 +519,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
           <VoiceButton size="sm" className="shrink-0 ml-auto" />
 
-          {openChatTabs.length > 0 && (
-            <ChatActionsDropdown
-              openTabs={openChatTabs}
-              activeTabId={chatId}
-              allChats={chats}
-              onSelectTab={handleSelectTab}
-              onCloseTab={handleCloseTab}
-              onNewChat={handleNewChat}
-              onRenameTab={handleRenameTab}
-            />
-          )}
-
           {collapseSidebar && (
             <button
               onClick={collapseSidebar}
@@ -542,6 +530,19 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           )}
         </div>
       </div>
+
+      {/* Chat Tab Bar */}
+      {openChatTabs.length > 0 && (
+        <ChatTabBar
+          openTabs={openChatTabs}
+          activeTabId={chatId}
+          allChats={chats}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onNewChat={handleNewChat}
+          onRenameTab={handleRenameTab}
+        />
+      )}
       
       {/* Chat Content */}
       <div className="flex-1 overflow-y-auto">
@@ -572,7 +573,6 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         activeInstance={activeInstance}
         contextText={contextText}
         onContextRemoved={onContextRemoved}
-        learningMode={activeLearningMode}
       />
     </div>
   );
