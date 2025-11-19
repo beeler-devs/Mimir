@@ -265,6 +265,7 @@ export interface LectureInstance extends BaseInstance {
       text: string;
       timestamp: number;
       duration?: number;
+      title?: string;
     }>;
     // Slides (PDF)
     slidesUrl?: string;

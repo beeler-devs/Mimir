@@ -91,54 +91,93 @@ export async function POST(request: NextRequest) {
       .from('documents')
       .getPublicUrl(filePath);
 
-    // TODO: Implement video transcription
-    // Options:
-    // 1. Extract audio from video using ffmpeg, then use OpenAI Whisper
-    // 2. Use AssemblyAI (supports video directly)
-    // 3. Use Deepgram (supports video)
-    // 4. Use Google Speech-to-Text with video
-    //
-    // Example workflow with ffmpeg + Whisper:
-    // 1. Extract audio track from video
-    //    const audioBuffer = await extractAudioFromVideo(buffer);
-    //
-    // 2. Transcribe audio with OpenAI Whisper
-    //    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    //    const audioFile = new File([audioBuffer], 'audio.mp3', { type: 'audio/mpeg' });
-    //    const transcription = await openai.audio.transcriptions.create({
-    //      file: audioFile,
-    //      model: 'whisper-1',
-    //      response_format: 'verbose_json',
-    //      timestamp_granularities: ['segment']
-    //    });
-    //
-    // 3. Get video duration (using ffprobe or similar)
-    //    const videoDuration = await getVideoDuration(buffer);
-    //
-    //    const segments = transcription.segments.map(seg => ({
-    //      text: seg.text,
-    //      timestamp: seg.start,
-    //      duration: seg.end - seg.start
-    //    }));
-    //
-    //    return NextResponse.json({
-    //      success: true,
-    //      videoUrl: urlData.publicUrl,
-    //      transcript: transcription.text,
-    //      segments,
-    //      duration: videoDuration,
-    //    });
+    // Transcribe using Deepgram (supports video files directly)
+    const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+    if (!deepgramApiKey) {
+      console.error('Deepgram API key not configured');
+      return NextResponse.json(
+        { error: 'Transcription service not configured' },
+        { status: 500 }
+      );
+    }
 
-    // TEMPORARY: Return mock data for testing
+    const { createClient } = await import('@deepgram/sdk');
+    const deepgram = createClient(deepgramApiKey);
+
+    // Deepgram can transcribe video files directly
+    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+      buffer,
+      {
+        model: 'nova-2',
+        smart_format: true,
+        punctuate: true,
+        paragraphs: true,
+        utterances: true,
+        video: true, // Enable video processing
+      }
+    );
+
+    if (error) {
+      console.error('Deepgram transcription error:', error);
+      return NextResponse.json(
+        { error: 'Failed to transcribe video', details: error.message },
+        { status: 500 }
+      );
+    }
+
+    const channel = result?.results?.channels?.[0];
+    const alternatives = channel?.alternatives?.[0];
+
+    if (!alternatives || !alternatives.words) {
+      return NextResponse.json(
+        { error: 'No transcription results available' },
+        { status: 500 }
+      );
+    }
+
+    // Group words into segments
+    const segments: Array<{ text: string; timestamp: number; duration: number }> = [];
+    let currentSegment = { text: '', timestamp: 0, words: [] as any[] };
+    const SEGMENT_DURATION = 10;
+
+    for (const word of alternatives.words) {
+      if (!currentSegment.text) {
+        currentSegment.timestamp = word.start;
+      }
+      
+      currentSegment.text += (currentSegment.text ? ' ' : '') + word.word;
+      currentSegment.words.push(word);
+
+      const shouldBreak = 
+        word.word.match(/[.!?]$/) || 
+        (word.end - currentSegment.timestamp > SEGMENT_DURATION);
+
+      if (shouldBreak && currentSegment.words.length > 0) {
+        const lastWord = currentSegment.words[currentSegment.words.length - 1];
+        segments.push({
+          text: currentSegment.text.trim(),
+          timestamp: currentSegment.timestamp,
+          duration: lastWord.end - currentSegment.timestamp
+        });
+        currentSegment = { text: '', timestamp: 0, words: [] };
+      }
+    }
+
+    if (currentSegment.words.length > 0) {
+      const lastWord = currentSegment.words[currentSegment.words.length - 1];
+      segments.push({
+        text: currentSegment.text.trim(),
+        timestamp: currentSegment.timestamp,
+        duration: lastWord.end - currentSegment.timestamp
+      });
+    }
+
     return NextResponse.json({
       success: true,
       videoUrl: urlData.publicUrl,
-      transcript: 'This is a mock transcription from video. Replace this with actual video transcription.',
-      segments: [
-        { text: 'This is a mock transcription from video.', timestamp: 0, duration: 4 },
-        { text: 'Replace this with actual video transcription.', timestamp: 4, duration: 5 },
-      ],
-      duration: 9,
+      transcript: alternatives.transcript,
+      segments,
+      duration: channel.duration || 0,
     });
 
   } catch (error) {

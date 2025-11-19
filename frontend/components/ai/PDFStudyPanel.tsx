@@ -199,7 +199,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         <div className="flex-1 flex flex-col items-center p-8 pt-24 gap-8">
           {/* Header */}
           <div className="text-center">
-            <h2 className="text-2xl font-semibold mb-2">Study Your {contentType}</h2>
+            <h2 className="text-2xl font-semibold mb-2 pt-30">Study Your {contentType}</h2>
           </div>
 
           {/* Study Mode Grid - 3-2 layout */}
@@ -1272,7 +1272,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                     value={studyModeFocus}
                     onChange={(e) => setStudyModeFocus(e.target.value)}
                     placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
                   />
                 </div>
 

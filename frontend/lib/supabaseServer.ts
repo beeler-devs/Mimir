@@ -23,5 +23,15 @@ export const supabaseServer = supabaseUrl && supabaseServiceKey
         autoRefreshToken: false,
         persistSession: false,
       },
+      global: {
+        // Increase timeout for large file uploads (5 minutes)
+        fetch: (url, options = {}) => {
+          return fetch(url, {
+            ...options,
+            // @ts-ignore - signal timeout is supported but not in types
+            signal: options.signal || AbortSignal.timeout(300000),
+          });
+        },
+      },
     })
   : null;
