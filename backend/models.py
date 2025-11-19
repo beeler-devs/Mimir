@@ -53,11 +53,12 @@ class ImageAttachment(BaseModel):
 class WorkspaceContextInstance(BaseModel):
     id: str
     title: str
-    type: Literal["text", "code", "annotate", "pdf"]
+    type: Literal["text", "code", "annotate", "pdf", "lecture"]
     folderId: Optional[str] = None
     content: Optional[str] = None  # For text instances
     code: Optional[str] = None  # For code instances
     language: Optional[str] = None  # For code instances
+    fullText: Optional[str] = None  # For PDF and lecture instances
 
 class WorkspaceContextFolder(BaseModel):
     id: str
@@ -72,6 +73,8 @@ class WorkspaceContext(BaseModel):
     attachments: Optional[List[Union[PdfAttachment, ImageAttachment]]] = None  # New unified format
     pdfContext: Optional[str] = None  # Full text of PDF for context
     currentPageImage: Optional[str] = None  # Base64 image of current PDF page
+    lectureTranscript: Optional[str] = None  # Lecture transcript when @transcript is mentioned
+    lectureSlides: Optional[str] = None  # Lecture slides full text when @slides/@pdf is mentioned
 
 class JobRequest(BaseModel):
     description: str

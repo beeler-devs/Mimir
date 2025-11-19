@@ -569,6 +569,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         loading={loading}
         instances={instances}
         folders={folders}
+        activeInstance={activeInstance}
         contextText={contextText}
         onContextRemoved={onContextRemoved}
         learningMode={activeLearningMode}

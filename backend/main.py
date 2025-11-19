@@ -715,6 +715,28 @@ async def chat_stream(request: Request):
                         text_preview += f"\n... (truncated, showing first {max_pdf_length} characters of {len(pdf_context)} total)"
                     context_parts.append("\n[PDF Document Content:]")
                     context_parts.append(text_preview)
+                
+                # Add lecture transcript context (when @transcript is mentioned)
+                if hasattr(chat_request.workspaceContext, 'lectureTranscript') and chat_request.workspaceContext.lectureTranscript:
+                    transcript = chat_request.workspaceContext.lectureTranscript
+                    # Truncate very long transcript to avoid token limits
+                    max_length = 15000  # ~15KB
+                    text_preview = transcript[:max_length]
+                    if len(transcript) > max_length:
+                        text_preview += f"\n... (truncated, showing first {max_length} characters of {len(transcript)} total)"
+                    context_parts.append("\n[Lecture Transcript:]")
+                    context_parts.append(text_preview)
+                
+                # Add lecture slides context (when @slides/@pdf is mentioned)
+                if hasattr(chat_request.workspaceContext, 'lectureSlides') and chat_request.workspaceContext.lectureSlides:
+                    slides = chat_request.workspaceContext.lectureSlides
+                    # Truncate very long slides text to avoid token limits
+                    max_length = 15000  # ~15KB
+                    text_preview = slides[:max_length]
+                    if len(slides) > max_length:
+                        text_preview += f"\n... (truncated, showing first {max_length} characters of {len(slides)} total)"
+                    context_parts.append("\n[Lecture Slides Content:]")
+                    context_parts.append(text_preview)
 
                 if context_parts:
                     context_description = "\n".join(context_parts) + "\n"

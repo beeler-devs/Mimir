@@ -29,7 +29,7 @@ import {
 import { LectureSourceType } from '@/lib/types';
 
 const LIVE_TRANSCRIPT_CHUNK_SECONDS = 3;
-const TRANSCRIPT_CHUNK_SECONDS = 60;
+const TRANSCRIPT_CHUNK_SECONDS = 30;
 
 // Configure PDF.js worker
 if (typeof window !== 'undefined') {
@@ -429,7 +429,11 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload audio');
+        // Read the error details from the API response
+        const errorData = await uploadResponse.json();
+        const errorMessage = errorData.details || errorData.error || 'Failed to upload audio';
+        console.error('Audio upload error:', errorData);
+        throw new Error(errorMessage);
       }
 
       const uploadResult = await uploadResponse.json();
@@ -1215,21 +1219,28 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
             </div>
           )}
 
-          {/* Audio Player (after recording is complete) */}
-          {audioUrl && !isRecording && (
-            <div className="flex items-center gap-4 p-4 border-b bg-muted/20">
-              <Mic className="w-8 h-8 text-blue-500 flex-shrink-0" />
-              <audio controls className="flex-1" src={audioUrl}>
-                Your browser does not support the audio element.
-              </audio>
-            </div>
-          )}
-
           {/* Streaming Transcription */}
           {(isRecording || isTranscribing || transcript || streamingTranscript.length > 0 || audioUrl) && (
             <div className="flex-1 overflow-y-auto p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold">Transcription</h3>
+                <div className="flex items-center gap-6 flex-1">
+                  <h3 className="text-xl font-semibold">Transcription</h3>
+                  {/* Show uploading/processing status inline with title */}
+                  {processing && !isRecording && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Uploading audio...</span>
+                    </div>
+                  )}
+                  {/* Show audio player inline with title after processing is complete */}
+                  {audioUrl && !isRecording && !processing && (
+                    <div className="flex items-center justify-center flex-1">
+                      <audio controls className="max-w-md w-full" src={audioUrl}>
+                        Your browser does not support the audio element.
+                      </audio>
+                    </div>
+                  )}
+                </div>
                 {isRecording && (
                   <button
                     onClick={handleStopRecording}
@@ -1245,12 +1256,6 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                 <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                   <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
                   <span className="text-sm">Recording... Speak to see live transcription.</span>
-                </div>
-              )}
-              {processing && !isRecording && (
-                <div className="flex items-center gap-2 mb-4 text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Uploading audio...</span>
                 </div>
               )}
               {streamingTranscript.length > 0 ? (

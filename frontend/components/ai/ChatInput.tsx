@@ -12,6 +12,7 @@ interface ChatInputProps {
   loading?: boolean;
   instances?: WorkspaceInstance[];
   folders?: Folder[];
+  activeInstance?: WorkspaceInstance | null;
   onPdfsChange?: (pdfs: PdfAttachment[]) => void;
   contextText?: string | null;
   onContextRemoved?: () => void;
@@ -27,6 +28,8 @@ export interface ChatInputRef {
  * Input component for sending chat messages
  * Redesigned with bottom action bar separated by a line
  * Supports @ mentions for instances and folders
+ * Supports special lecture mentions: @transcript, @slides, @pdf
+ * Auto-detects lecture keywords and converts to mentions in lecture context
  * Supports PDF attachments with text extraction
  */
 export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
@@ -35,6 +38,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   loading = false,
   instances = [],
   folders = [],
+  activeInstance = null,
   onPdfsChange,
   contextText: externalContextText,
   onContextRemoved,
@@ -97,19 +101,39 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   // Update autocomplete when query changes
   useEffect(() => {
     if (autocompleteQuery && showAutocomplete) {
-      const items = findMentionableItems(instances, folders, autocompleteQuery);
+      const items = findMentionableItems(instances, folders, autocompleteQuery, activeInstance);
       setAutocompleteItems(items);
       setSelectedIndex(0);
     } else {
       setAutocompleteItems([]);
     }
-  }, [autocompleteQuery, showAutocomplete, instances, folders]);
+  }, [autocompleteQuery, showAutocomplete, instances, folders, activeInstance]);
 
   const handleSend = () => {
     if (message.trim() && !loading) {
+      let messageToSend = message.trim();
+      
+      // Auto-detect lecture keywords and add mentions if in lecture context
+      if (activeInstance?.type === 'lecture') {
+        const hasAtTranscript = /@transcript\b/i.test(messageToSend);
+        const hasAtSlides = /@(slides|pdf)\b/i.test(messageToSend);
+        const hasTranscriptKeyword = /\btranscript\b/i.test(messageToSend);
+        const hasSlidesKeyword = /\b(slides|pdf)\b/i.test(messageToSend);
+        
+        // Add @transcript if user mentioned transcript without @
+        if (!hasAtTranscript && hasTranscriptKeyword) {
+          messageToSend = messageToSend.replace(/\btranscript\b/i, '@transcript');
+        }
+        
+        // Add @slides if user mentioned slides or pdf without @
+        if (!hasAtSlides && hasSlidesKeyword) {
+          messageToSend = messageToSend.replace(/\b(slides|pdf)\b/i, '@$1');
+        }
+      }
+      
       const finalMessage = contextText 
-        ? `Context: ${contextText}\n\n${message.trim()}`
-        : message.trim();
+        ? `Context: ${contextText}\n\n${messageToSend}`
+        : messageToSend;
       onSend(finalMessage, activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined);
       setMessage('');
       setContextText('');

@@ -3,6 +3,7 @@ import { Mention, WorkspaceInstance, Folder, MentionableItem } from '@/lib/types
 /**
  * Parse @ mentions from text
  * Finds all @ mentions in format @instance-name or @folder-name
+ * Also supports special lecture mentions: @transcript, @slides, @pdf
  */
 export function parseMentions(text: string): Mention[] {
   const mentionRegex = /@([\w\s-]+)/g;
@@ -12,12 +13,29 @@ export function parseMentions(text: string): Mention[] {
   while ((match = mentionRegex.exec(text)) !== null) {
     const name = match[1].trim();
     if (name) {
-      // We'll resolve the type and id later when we have instances/folders
-      mentions.push({
-        type: 'instance', // Default, will be resolved
-        id: '', // Will be resolved
-        name,
-      });
+      const nameLower = name.toLowerCase();
+      
+      // Check for special lecture mentions
+      if (nameLower === 'transcript') {
+        mentions.push({
+          type: 'lecture_transcript',
+          id: 'transcript',
+          name: 'transcript',
+        });
+      } else if (nameLower === 'slides' || nameLower === 'pdf') {
+        mentions.push({
+          type: 'lecture_slides',
+          id: 'slides',
+          name: nameLower,
+        });
+      } else {
+        // We'll resolve the type and id later when we have instances/folders
+        mentions.push({
+          type: 'instance', // Default, will be resolved
+          id: '', // Will be resolved
+          name,
+        });
+      }
     }
   }
 
@@ -145,14 +163,46 @@ export function resolveMentions(
  * Find mentionable items (instances and folders) matching a query
  * Used for autocomplete dropdown
  * Handles duplicate names by showing all matches
+ * @param instances - All workspace instances
+ * @param folders - All folders
+ * @param query - Search query
+ * @param activeInstance - Current active instance (for lecture-specific mentions)
  */
 export function findMentionableItems(
   instances: WorkspaceInstance[],
   folders: Folder[],
-  query: string
+  query: string,
+  activeInstance?: WorkspaceInstance | null
 ): MentionableItem[] {
   const lowerQuery = query.toLowerCase();
   const items: MentionableItem[] = [];
+
+  // Add special lecture mentions if in a lecture instance
+  if (activeInstance?.type === 'lecture') {
+    // Add @transcript if available
+    if (activeInstance.data.transcript || activeInstance.data.transcriptSegments) {
+      if ('transcript'.includes(lowerQuery) || lowerQuery === '') {
+        items.push({
+          type: 'lecture_transcript' as any,
+          id: 'transcript',
+          name: 'transcript',
+          icon: 'FileText',
+        });
+      }
+    }
+    
+    // Add @slides if available
+    if (activeInstance.data.slidesUrl || activeInstance.data.slidesFullText) {
+      if ('slides'.includes(lowerQuery) || 'pdf'.includes(lowerQuery) || lowerQuery === '') {
+        items.push({
+          type: 'lecture_slides' as any,
+          id: 'slides',
+          name: 'slides',
+          icon: 'FileText',
+        });
+      }
+    }
+  }
 
   // Add matching instances (includes partial matches)
   instances.forEach((instance) => {

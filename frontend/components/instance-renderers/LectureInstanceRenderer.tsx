@@ -62,6 +62,7 @@ export const LectureInstanceRenderer: React.FC<LectureInstanceRendererProps> = (
           slidesUrl={instance.data.slidesUrl}
           slidesFileName={instance.data.slidesFileName}
           slidesPageCount={instance.data.slidesPageCount}
+          slidesFullText={instance.data.slidesFullText}
           audioUrl={instance.data.audioUrl}
           metadata={instance.data.metadata}
           onUpload={onUpload}
