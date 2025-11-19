@@ -19,6 +19,7 @@ import {
   Video
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
+import { useResize } from '@/contexts/ResizeContext';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -65,7 +66,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<'instance' | 'folder' | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
@@ -75,21 +75,22 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
-  
+
   // Store refs for menu buttons - using useRef to hold a Map of refs
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
+  // Use resize context for collapsed state
+  const { leftCollapsed: collapsed, toggleLeftCollapsed } = useResize();
+
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      if (next) {
-        setEditingId(null);
-        setEditingType(null);
-        setDraftTitle('');
-        setMenuOpenId(null);
-      }
-      return next;
-    });
+    toggleLeftCollapsed();
+    if (!collapsed) {
+      // When collapsing, clear editing state
+      setEditingId(null);
+      setEditingType(null);
+      setDraftTitle('');
+      setMenuOpenId(null);
+    }
   };
 
 
@@ -482,7 +483,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   if (collapsed) {
     return (
       <>
-        <aside className="w-16 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+        <aside className="w-full h-full border-r border-border bg-card/80 backdrop-blur-xl flex flex-col">
           <div className="px-2 pt-5 pb-4 flex items-center justify-center">
             <button
               onClick={toggleCollapsed}
@@ -519,7 +520,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-    <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+    <aside className="w-full h-full border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col overflow-hidden">
       <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
         <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
         <button
