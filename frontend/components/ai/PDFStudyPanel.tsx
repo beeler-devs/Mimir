@@ -1241,13 +1241,13 @@ The user is studying this flashcard and may ask questions about it, need help un
             </div>
             <div className="flex flex-col items-center gap-4 flex-1 min-h-0 w-full max-w-3xl mx-auto">
               <div
-                className="relative w-full h-[300px] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm"
+                className="relative w-full h-[300px] flex items-center justify-center p-8 bg-muted/30 rounded-2xl cursor-pointer border-2 border-border hover:border-primary transition-colors shadow-sm overflow-y-auto"
                 onClick={() => setShowFlashcardAnswer(!showFlashcardAnswer)}
               >
                 <div className="text-center mx-auto max-w-full">
-                  <p className="text-xl font-semibold mb-4 break-words">
-                    {showFlashcardAnswer ? currentCard.back : currentCard.front}
-                  </p>
+                  <div className="text-xl font-semibold mb-4 break-words">
+                    <MarkdownRenderer content={showFlashcardAnswer ? currentCard.back : currentCard.front} />
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     Click to {showFlashcardAnswer ? 'hide' : 'reveal'} answer
                   </p>
@@ -1469,7 +1469,9 @@ The user is studying this flashcard and may ask questions about it, need help un
             {/* Question card */}
             <div className="flex-1 flex flex-col gap-3">
               <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-4 rounded-lg border border-primary/20">
-                <p className="text-sm font-medium leading-relaxed">{currentQuestion.question}</p>
+                <div className="text-sm font-medium leading-relaxed">
+                  <MarkdownRenderer content={currentQuestion.question} />
+                </div>
               </div>
 
               {/* Answer options */}
@@ -1520,7 +1522,9 @@ The user is studying this flashcard and may ask questions about it, need help un
                         }`}>
                           {icon || String.fromCharCode(65 + idx)}
                         </div>
-                        <span className="flex-1">{option}</span>
+                        <div className="flex-1 text-left">
+                          <MarkdownRenderer content={option} />
+                        </div>
                       </div>
                     </button>
                   );

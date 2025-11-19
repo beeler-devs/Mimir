@@ -312,7 +312,7 @@ export interface ManimRenderResponse {
 }
 
 // Study Materials types
-export type StudyMaterialType = 'quiz' | 'flashcard_set' | 'summary';
+export type StudyMaterialType = 'quiz' | 'flashcard_set' | 'summary' | 'mind_map';
 
 export interface StudyMaterial {
   id: string;
@@ -465,4 +465,103 @@ export interface StudyMaterialsOverview {
   summaries: SummaryWithMaterial[];
   flashcardSets: FlashcardSetWithCards[];
   quizzes: QuizWithQuestions[];
+  mindMaps?: MindMapWithNodes[];
+}
+
+// Mind Map types
+export interface MindMap {
+  id: string;
+  studyMaterialId: string;
+  title: string | null;
+  description: string | null;
+  rootNodeId: string | null;
+  layoutAlgorithm: 'dagre' | 'elk' | 'manual';
+  nodeCount: number;
+  edgeCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MindMapNode {
+  id: string;
+  mindMapId: string;
+  label: string;
+  description: string | null;
+  nodeType: 'concept' | 'topic' | 'subtopic' | 'detail';
+  level: number;
+  positionX: number | null;
+  positionY: number | null;
+  width: number;
+  height: number;
+  style: {
+    backgroundColor?: string;
+    borderColor?: string;
+    fontSize?: number;
+    textColor?: string;
+  } | null;
+  metadata: {
+    sourceContentRef?: string;
+    importance?: number;
+    keywords?: string[];
+  } | null;
+  createdAt: string;
+}
+
+export interface MindMapEdge {
+  id: string;
+  mindMapId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  label: string | null;
+  edgeType: 'child' | 'related' | 'prerequisite' | 'example';
+  style: {
+    strokeColor?: string;
+    strokeWidth?: number;
+    dashed?: boolean;
+  } | null;
+  metadata: Record<string, any> | null;
+  createdAt: string;
+}
+
+export interface MindMapWithNodes extends MindMap {
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+  studyMaterial?: StudyMaterial;
+}
+
+export interface MindMapInteraction {
+  id: string;
+  mindMapId: string;
+  userId: string;
+  nodeId: string | null;
+  interactionType: 'view' | 'expand' | 'collapse' | 'ask_question';
+  interactionData: Record<string, any> | null;
+  createdAt: string;
+}
+
+// React Flow types for frontend rendering
+export interface ReactFlowNode {
+  id: string;
+  type: 'mindMapNode';
+  position: { x: number; y: number };
+  data: {
+    label: string;
+    description?: string;
+    nodeType: 'concept' | 'topic' | 'subtopic' | 'detail';
+    level: number;
+    isExpanded: boolean;
+    onExpand?: () => void;
+    onAskQuestion?: () => void;
+  };
+  style?: Record<string, any>;
+}
+
+export interface ReactFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  type?: string;
+  style?: Record<string, any>;
+  animated?: boolean;
 }

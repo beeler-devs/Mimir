@@ -733,6 +733,35 @@ async def chat_stream(request: Request):
 3. Use analogies and examples when helpful
 4. Reference the user's workspace context when relevant to help them understand their work
 
+=== FORMATTING YOUR RESPONSES ===
+
+Your responses support **markdown formatting** and **LaTeX math notation**:
+
+**Markdown formatting:**
+- Use headers (## Header), bold (**text**), italic (*text*), lists, code blocks, etc.
+- Format your responses with clear structure and visual hierarchy
+
+**LaTeX math notation:**
+- For inline math, use single dollar signs: $equation$
+  Example: "The formula is $E = mc^2$ where..."
+
+- For display/block math, use double dollar signs: $$equation$$
+  Example:
+  "The quadratic formula is:
+  $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+
+- Use LaTeX for mathematical expressions, equations, formulas, matrices, integrals, summations, etc.
+- Examples of when to use LaTeX:
+  * Equations: $ax^2 + bx + c = 0$
+  * Fractions: $\\frac{numerator}{denominator}$
+  * Integrals: $\\int_a^b f(x) dx$
+  * Summations: $\\sum_{i=1}^n i^2$
+  * Matrices: $\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$
+  * Greek letters: $\\alpha, \\beta, \\gamma, \\theta$
+  * Special symbols: $\\infty, \\nabla, \\partial$
+
+Use LaTeX whenever it makes mathematical content clearer and more readable. The rest of your response should use standard markdown.
+
 === READING IMAGES AND EQUATIONS ===
 
 When the user includes images (especially annotation canvases with handwritten or drawn content), carefully examine them:
@@ -1381,18 +1410,26 @@ Guidelines:
 5. Vary question types: definitions, applications, examples, comparisons
 6. Keep each card focused on ONE concept
 7. Use clear, student-friendly language
+8. Use LaTeX for mathematical notation:
+   - Inline math: $equation$ (e.g., $E = mc^2$)
+   - Display math: $$equation$$ (e.g., $$\\int_a^b f(x) dx$$)
+   - Examples: $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$, $x^2$
 
 Output format: Return ONLY a JSON array of flashcards, no other text.
 
 Example output:
 [
   {
-    "front": "What is the derivative of x^2?",
-    "back": "2x"
+    "front": "What is the derivative of $x^2$?",
+    "back": "$2x$"
   },
   {
     "front": "Define photosynthesis",
     "back": "The process by which plants convert light energy into chemical energy stored in glucose"
+  },
+  {
+    "front": "What is the quadratic formula?",
+    "back": "$$x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a}$$"
   }
 ]"""
 
@@ -1485,6 +1522,9 @@ Guidelines:
 5. Test various levels: recall, comprehension, application
 6. Questions should be clear and unambiguous
 7. Answers should be concise
+8. Use LaTeX for mathematical notation in questions and options:
+   - Inline math: $equation$ (e.g., $E = mc^2$)
+   - Examples: $x^2$, $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$
 
 Output format: Return ONLY a JSON array of questions, no other text.
 
@@ -1494,6 +1534,11 @@ Example output:
     "question": "What is the capital of France?",
     "options": ["London", "Paris", "Berlin", "Madrid"],
     "correctIndex": 1
+  },
+  {
+    "question": "What is the derivative of $f(x) = x^3$?",
+    "options": ["$3x^2$", "$x^2$", "$3x$", "$x^3$"],
+    "correctIndex": 0
   }
 ]"""
 
@@ -1663,7 +1708,7 @@ Your task: Generate a clear, engaging summary that helps students understand and
 
 Guidelines:
 1. **Opening Overview**: Start with 2-3 sentences capturing the document's main theme and purpose
-2. **Hierarchical Structure**: 
+2. **Hierarchical Structure**:
    - Use markdown headers (##, ###) to organize topics
    - Group related concepts together logically
    - Progress from foundational to advanced ideas
@@ -1685,14 +1730,18 @@ Guidelines:
    - Don't omit important details, but stay concise
    - Prioritize understanding over exhaustive coverage
 
-Output format: Well-formatted markdown with:
+Output format: Well-formatted markdown with LaTeX support:
 - ## for main sections
 - ### for subsections
 - Bullet points for lists
 - **Bold** for key terms
-- Code blocks for formulas/equations when appropriate
+- LaTeX for mathematical expressions:
+  * Inline math: $equation$ (e.g., $E = mc^2$)
+  * Display math: $$equation$$ (e.g., $$\\int_a^b f(x) dx$$)
+  * Use LaTeX for all formulas, equations, integrals, summations, matrices, etc.
+  * Examples: $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$, $\\theta$, $\\nabla$
 
-Remember: Your goal is to create a study resource that students can review to quickly grasp the material's core ideas and structure."""
+Remember: Your goal is to create a study resource that students can review to quickly grasp the material's core ideas and structure. Use LaTeX for all mathematical notation to ensure clarity and professionalism."""
 
             user_prompt = f"""Create a comprehensive, well-structured summary of the following educational content:
 
@@ -1730,6 +1779,167 @@ Focus on clarity, organization, and helping students understand the key concepts
         except Exception as e:
             logger.error(
                 f"Error in summary streaming endpoint: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/study-tools/mindmap/stream")
+async def generate_mindmap_stream(request: dict):
+    """
+    Generate a mind map from PDF text using Claude AI with streaming
+
+    Args:
+        request: dict with 'pdfText' field containing the PDF content and optional 'scope' for topic focus
+
+    Returns:
+        StreamingResponse with SSE format containing mind map data
+    """
+    def generate():
+        try:
+            pdf_text = request.get('pdfText', '')
+            scope = request.get('scope', 'full document')
+
+            if not pdf_text:
+                error_response = {
+                    "type": "error",
+                    "content": "PDF text is required"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Get Claude API key from environment
+            claude_api_key = os.getenv("CLAUDE_API_KEY")
+            if not claude_api_key:
+                error_response = {
+                    "type": "error",
+                    "content": "CLAUDE_API_KEY not configured"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Initialize Anthropic client
+            client = Anthropic(api_key=claude_api_key)
+
+            # Limit PDF text to avoid token limits
+            max_text_length = 30000
+            if len(pdf_text) > max_text_length:
+                pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+            # System prompt for mind map generation
+            system_prompt = """You are an expert at creating interactive concept maps from educational content.
+
+Your task: Generate a hierarchical mind map that visualizes the key concepts and their relationships.
+
+Guidelines:
+1. **Hierarchical Structure**:
+   - Level 0: Main concept/topic (1 node)
+   - Level 1: Major subtopics (3-5 nodes)
+   - Level 2: Key concepts under each subtopic (2-4 nodes per subtopic)
+   - Level 3: Important details or examples (1-2 nodes per concept)
+
+2. **Node Types**:
+   - concept: Main central idea (level 0)
+   - topic: Major subject areas (level 1)
+   - subtopic: Specific concepts (level 2)
+   - detail: Specific facts, formulas, or examples (level 3)
+
+3. **Edge Types**:
+   - child: Hierarchical parent-child relationship
+   - related: Concepts that are related but not hierarchical
+   - prerequisite: Concept A must be understood before concept B
+   - example: Concept illustrates or exemplifies another
+
+4. **Constraints**:
+   - Total nodes: 15-25 (keep it focused and digestible)
+   - Each node needs a concise label (2-6 words)
+   - Node descriptions are optional but helpful for detail nodes
+   - Create edges that show meaningful relationships
+
+Output format: JSON object with this exact structure:
+{
+  "title": "Brief title for the mind map",
+  "description": "One sentence describing the scope",
+  "nodes": [
+    {
+      "label": "Short node label",
+      "description": "Optional detailed description",
+      "nodeType": "concept|topic|subtopic|detail",
+      "level": 0-3
+    }
+  ],
+  "edges": [
+    {
+      "sourceNodeIndex": 0,
+      "targetNodeIndex": 1,
+      "label": "Optional relationship label",
+      "edgeType": "child|related|prerequisite|example"
+    }
+  ]
+}
+
+IMPORTANT: Output ONLY valid JSON. No markdown code blocks, no explanations, just the JSON object."""
+
+            user_prompt = f"""Create an interactive concept map for the following educational content.
+
+Scope: {scope}
+
+Content:
+{pdf_text}
+
+Generate a hierarchical mind map with 15-25 nodes that captures the key concepts and their relationships."""
+
+            # Call Claude API (non-streaming to get proper JSON)
+            chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+
+            message = client.messages.create(
+                model=chat_model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+
+            # Extract JSON from response
+            response_text = message.content[0].text.strip()
+
+            # Remove markdown code blocks if present
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+            # Parse JSON
+            mind_map_data = json.loads(response_text)
+
+            # Validate structure
+            if 'nodes' not in mind_map_data or 'edges' not in mind_map_data:
+                raise ValueError("Invalid mind map structure: missing nodes or edges")
+
+            logger.info(f"Generated mind map with {len(mind_map_data['nodes'])} nodes and {len(mind_map_data['edges'])} edges")
+
+            # Send final response
+            final_response = {
+                "type": "done",
+                "content": mind_map_data
+            }
+            yield f"data: {json.dumps(final_response)}\n\n"
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in mindmap generation: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Failed to parse mind map JSON: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+        except Exception as e:
+            logger.error(f"Error in mindmap streaming endpoint: {e}", exc_info=True)
             error_response = {
                 "type": "error",
                 "content": f"Error: {str(e)}"
