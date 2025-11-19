@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { InstanceSidebar, NewInstanceModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
+import { InstanceSidebar, InstanceCreationModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
@@ -89,7 +89,7 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         onSelect={selectInstance}
       />
 
-      <NewInstanceModal
+      <InstanceCreationModal
         open={newInstanceOpen}
         onClose={() => setNewInstanceOpen(false)}
         onCreate={createInstance}
