@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { LectureSourceType } from '@/lib/types';
 
+const LIVE_TRANSCRIPT_CHUNK_SECONDS = 3;
 const TRANSCRIPT_CHUNK_SECONDS = 60;
 
 // Configure PDF.js worker
@@ -128,7 +129,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   const deepgramSocketRef = useRef<WebSocket | null>(null);
   const streamingTranscriptRef = useRef<TranscriptSegment[]>([]);
   const latestSelectedMethodRef = useRef<LectureSourceType | null>(null);
-  const recordingStartTimeRef = useRef<number | null>(null);
+  const transcriptClockRef = useRef<number>(0);
 
   // Video player state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -299,35 +300,34 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               const isFinal = data.is_final;
               
               if (isFinal) {
-                const now = Date.now();
-                const startTime = recordingStartTimeRef.current ?? now;
-                if (!recordingStartTimeRef.current) {
-                  recordingStartTimeRef.current = now;
-                }
-                const elapsedSeconds = Math.max(0, Math.floor((now - startTime) / 1000));
-                const bucketStart = Math.floor(elapsedSeconds / TRANSCRIPT_CHUNK_SECONDS) * TRANSCRIPT_CHUNK_SECONDS;
+                const segmentTimestamp = transcriptClockRef.current;
+                const bucketStart = Math.floor(segmentTimestamp / TRANSCRIPT_CHUNK_SECONDS) * TRANSCRIPT_CHUNK_SECONDS;
+                const nextTimestamp = segmentTimestamp + LIVE_TRANSCRIPT_CHUNK_SECONDS;
 
-                // Group final transcripts into minute buckets
+                // Group final transcripts into minute buckets while preserving 3s cadence internally
                 setStreamingTranscript((prev) => {
                   const updated = [...prev];
                   const lastSegment = updated[updated.length - 1];
+                  const newDuration = Math.min(bucketStart + TRANSCRIPT_CHUNK_SECONDS, nextTimestamp) - bucketStart;
 
                   if (lastSegment && lastSegment.timestamp === bucketStart) {
                     updated[updated.length - 1] = {
                       ...lastSegment,
                       text: `${lastSegment.text} ${transcript}`.trim(),
-                      duration: TRANSCRIPT_CHUNK_SECONDS,
+                      duration: Math.max(lastSegment.duration ?? 0, newDuration),
                     };
                   } else {
                     updated.push({
                       text: transcript,
                       timestamp: bucketStart,
-                      duration: TRANSCRIPT_CHUNK_SECONDS,
+                      duration: newDuration,
                     });
                   }
 
                   return updated;
                 });
+
+                transcriptClockRef.current = nextTimestamp;
               } else {
                 // Interim transcripts are ignored for now; we only store finalized minute buckets
               }
@@ -366,7 +366,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        recordingStartTimeRef.current = null;
+        transcriptClockRef.current = 0;
         
         // Close WebSocket
         if (socket.readyState === WebSocket.OPEN) {
@@ -384,7 +384,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       setAudioChunks(chunks);
       setIsRecording(true);
       setStreamingTranscript([]); // Clear previous transcripts
-      recordingStartTimeRef.current = Date.now();
+      transcriptClockRef.current = 0;
 
       // If we're in slides mode, update to slides-recording
       const isSlidesContext = selectedMethod === 'slides' || selectedMethod === 'slides-recording' || sourceType === 'slides' || sourceType === 'slides-recording' || Boolean(slidesUrl);
@@ -438,8 +438,9 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
       // Use the live transcription data from WebSocket
       const allSegments = streamingTranscriptRef.current;
       const finalTranscript = allSegments.map(s => s.text).join(' ');
+      const lastSegment = allSegments[allSegments.length - 1];
       const finalDuration = allSegments.length > 0 
-        ? allSegments[allSegments.length - 1].timestamp + TRANSCRIPT_CHUNK_SECONDS 
+        ? lastSegment.timestamp + (lastSegment.duration ?? TRANSCRIPT_CHUNK_SECONDS)
         : 0;
 
       // Keep the source type as slides-recording if we're in that mode

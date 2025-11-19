@@ -1208,7 +1208,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                     value={studyModeFocus}
                     onChange={(e) => setStudyModeFocus(e.target.value)}
                     placeholder="e.g. focus on key definitions, formulas, or specific concepts..."
-                    className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
                   />
                 </div>
 
