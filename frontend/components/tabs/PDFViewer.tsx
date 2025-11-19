@@ -674,9 +674,9 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       )}
 
       {/* PDF Display - Continuous Scroll */}
-      <div 
+      <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8"
+        className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8 scrollbar-hide-show"
       >
         <div className="flex flex-col gap-4">
           <Document

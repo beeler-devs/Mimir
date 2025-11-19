@@ -578,7 +578,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       </div>
 
       <div
-        className="flex-1 overflow-y-auto px-4 py-3 space-y-1"
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-1 scrollbar-hide-show"
         onDragOver={(event) => {
           if (!draggingInstanceId) return;
           event.preventDefault();
