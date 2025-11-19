@@ -9,6 +9,7 @@ import { MultiFileEditor } from './MultiFileEditor';
 import { OutputConsole } from './OutputConsole';
 import { CodeFile, FileTreeNode, CodeLanguage, CodeExecutionResult } from '@/lib/types';
 import { nanoid } from 'nanoid';
+import { executeCode, requiresServerExecution, isExecutionSupported } from '@/lib/api/execute';
 
 interface CodeWorkspaceProps {
   initialFiles?: CodeFile[];
@@ -74,46 +75,79 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
+  const isRunningRef = useRef(false); // Ref to prevent race conditions on double-click
 
   // Initialize Pyodide worker
   useEffect(() => {
     // Only initialize worker in browser environment
     if (typeof window === 'undefined') return;
 
-    workerRef.current = new Worker(
-      new URL('../../workers/python.worker.ts', import.meta.url)
-    );
+    const initWorker = () => {
+      workerRef.current = new Worker(
+        new URL('../../workers/python.worker.ts', import.meta.url)
+      );
 
-    workerRef.current.onmessage = (event: MessageEvent) => {
-      const { type, output, error, executionTime } = event.data;
+      workerRef.current.onmessage = (event: MessageEvent) => {
+        const { type, stdout, stderr, output, error, executionTime } = event.data;
 
-      switch (type) {
-        case 'ready':
-          console.log('Pyodide initialized and ready');
-          break;
+        switch (type) {
+          case 'ready':
+            console.log('Pyodide initialized and ready');
+            break;
 
-        case 'success':
-          setExecutionResult({
-            status: 'success',
-            output,
-            executionTime,
-          });
-          setIsRunning(false);
-          break;
+          case 'success':
+            setExecutionResult({
+              status: 'success',
+              stdout,
+              stderr,
+              output: output || stdout || '',
+              executionTime,
+            });
+            setIsRunning(false);
+            isRunningRef.current = false;
+            break;
 
-        case 'error':
-          setExecutionResult({
-            status: 'error',
-            output,
-            error,
-            executionTime,
-          });
-          setIsRunning(false);
-          break;
-      }
+          case 'error':
+            setExecutionResult({
+              status: 'error',
+              stdout,
+              stderr,
+              output,
+              error,
+              executionTime,
+            });
+            setIsRunning(false);
+            isRunningRef.current = false;
+            break;
+
+          case 'installing':
+            setExecutionResult({
+              status: 'running',
+              output: output || 'Installing packages...',
+            });
+            break;
+        }
+      };
+
+      // Handle worker errors (e.g., crashes)
+      workerRef.current.onerror = (error) => {
+        console.error('Worker error:', error);
+        setExecutionResult({
+          status: 'error',
+          error: `Worker error: ${error.message || 'Unknown error'}`,
+        });
+        setIsRunning(false);
+        isRunningRef.current = false;
+
+        // Attempt to restart worker
+        workerRef.current?.terminate();
+        initWorker();
+      };
+
+      workerRef.current.postMessage({ type: 'init' });
     };
 
-    workerRef.current.postMessage({ type: 'init' });
+    initWorker();
 
     return () => {
       workerRef.current?.terminate();
@@ -147,6 +181,11 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
       case 'cc':
       case 'cxx':
         return 'cpp';
+      case 'c':
+      case 'h':
+        return 'c';
+      case 'rs':
+        return 'rust';
       default:
         return 'python';
     }
@@ -320,30 +359,94 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
     );
   }, []);
 
-  const handleRunCode = useCallback(() => {
+  const handleRunCode = useCallback(async () => {
+    // Prevent concurrent executions using ref (avoids race condition on double-click)
+    if (isRunningRef.current) return;
     if (!activeFilePath) return;
 
     const activeFile = files.find((f) => f.path === activeFilePath);
     if (!activeFile) return;
 
-    // Only support Python for now
-    if (activeFile.language !== 'python') {
+    // Check if language is supported
+    if (!isExecutionSupported(activeFile.language)) {
       setExecutionResult({
         status: 'error',
-        error: `Code execution for ${activeFile.language} is not yet supported. Only Python is currently available.`,
+        error: `Code execution for ${activeFile.language} is not yet supported.`,
       });
       return;
     }
 
+    // Set running state immediately using ref to prevent race conditions
+    isRunningRef.current = true;
     setIsRunning(true);
     setExecutionResult(null);
     setIsConsoleCollapsed(false); // Open console when running
 
-    workerRef.current?.postMessage({
-      type: 'run',
-      code: activeFile.content,
-      timeout: 30000,
-    });
+    // Route execution based on language
+    if (requiresServerExecution(activeFile.language)) {
+      // Server-side execution for compiled languages (C, C++, Java, Rust)
+      try {
+        // Filter files by language for the execution
+        const languageFiles = files
+          .filter((f) => f.language === activeFile.language)
+          .map((f) => ({ path: f.path, content: f.content }));
+
+        const result = await executeCode({
+          language: activeFile.language,
+          entryPoint: activeFile.path,
+          files: languageFiles,
+          timeout: 30000,
+        });
+
+        setExecutionResult({
+          status: result.status,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          output: result.stdout + (result.stderr ? `\n${result.stderr}` : ''),
+          executionTime: result.executionTime,
+          compilationOutput: result.compilationOutput,
+        });
+      } catch (error: any) {
+        setExecutionResult({
+          status: 'error',
+          error: error.message || 'Execution failed',
+        });
+      } finally {
+        setIsRunning(false);
+        isRunningRef.current = false;
+      }
+    } else if (activeFile.language === 'python') {
+      // Client-side execution for Python using Pyodide
+      // Get all Python files for multi-file support
+      const pythonFiles = files
+        .filter((f) => f.language === 'python')
+        .map((f) => ({ path: f.path, content: f.content }));
+
+      if (!workerRef.current) {
+        setExecutionResult({
+          status: 'error',
+          error: 'Python worker not initialized. Please refresh the page.',
+        });
+        setIsRunning(false);
+        isRunningRef.current = false;
+        return;
+      }
+
+      workerRef.current.postMessage({
+        type: 'run',
+        entryPoint: activeFile.path,
+        files: pythonFiles,
+        timeout: 30000,
+      });
+      // Note: isRunning will be set to false by the worker message handler
+    } else {
+      setExecutionResult({
+        status: 'error',
+        error: `Code execution for ${activeFile.language} is not yet supported.`,
+      });
+      setIsRunning(false);
+      isRunningRef.current = false;
+    }
   }, [activeFilePath, files]);
 
   const handleClearOutput = useCallback(() => {

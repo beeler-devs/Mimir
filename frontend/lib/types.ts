@@ -150,7 +150,7 @@ export interface ChatResponse {
 }
 
 // Code editor types
-export type CodeLanguage = 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';
+export type CodeLanguage = 'python' | 'javascript' | 'typescript' | 'java' | 'cpp' | 'c' | 'rust';
 
 export interface CodeEditorState {
   language: CodeLanguage;
@@ -178,10 +178,29 @@ export interface FileTreeNode {
 }
 
 export interface CodeExecutionResult {
-  status: 'success' | 'error';
-  output?: string;
+  status: 'success' | 'error' | 'timeout' | 'running';
+  stdout?: string;
+  stderr?: string;
+  output?: string; // Combined output (backwards compatibility)
   error?: string;
   executionTime?: number;
+  compilationOutput?: string; // For compiled languages
+}
+
+// Execution request types for backend
+export interface ExecuteRequest {
+  language: CodeLanguage;
+  entryPoint: string;
+  files: Array<{ path: string; content: string }>;
+  timeout?: number;
+}
+
+export interface ExecuteResponse {
+  status: 'success' | 'error' | 'timeout';
+  stdout: string;
+  stderr: string;
+  executionTime: number;
+  compilationOutput?: string;
 }
 
 // Folder types
