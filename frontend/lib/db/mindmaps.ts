@@ -3,7 +3,8 @@
  * Handles interactive concept maps with nodes and edges
  */
 
-import { supabase } from '../supabaseClient';
+import { supabase as supabaseClient } from '../supabaseClient';
+import { SupabaseClient } from '@supabase/supabase-js';
 import {
   MindMap,
   MindMapNode,
@@ -46,12 +47,14 @@ export async function saveMindMap(
   title?: string,
   description?: string,
   layoutAlgorithm: 'dagre' | 'elk' | 'manual' = 'dagre',
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  client?: SupabaseClient
 ): Promise<MindMapWithNodes> {
+  const supabase = client || supabaseClient;
   const contentHash = calculateContentHash(JSON.stringify({ nodes, edges }));
 
   // Create study material
-  const studyMaterial = await createStudyMaterial(instanceId, 'mind_map', contentHash, metadata);
+  const studyMaterial = await createStudyMaterial(instanceId, 'mind_map', contentHash, metadata, client);
 
   // Create mind map (without root_node_id initially)
   const { data: mindMapData, error: mindMapError } = await supabase
@@ -129,7 +132,7 @@ export async function getLatestMindMap(instanceId: string): Promise<MindMapWithN
   const studyMaterial = await getLatestStudyMaterial(instanceId, 'mind_map');
   if (!studyMaterial) return null;
 
-  const { data: mindMapData, error: mindMapError } = await supabase
+  const { data: mindMapData, error: mindMapError } = await supabaseClient
     .from('mind_maps')
     .select('*')
     .eq('study_material_id', studyMaterial.id)
@@ -141,7 +144,7 @@ export async function getLatestMindMap(instanceId: string): Promise<MindMapWithN
   }
 
   // Get nodes
-  const { data: nodesData, error: nodesError } = await supabase
+  const { data: nodesData, error: nodesError } = await supabaseClient
     .from('mind_map_nodes')
     .select('*')
     .eq('mind_map_id', mindMapData.id)
@@ -151,7 +154,7 @@ export async function getLatestMindMap(instanceId: string): Promise<MindMapWithN
   if (nodesError) throw nodesError;
 
   // Get edges
-  const { data: edgesData, error: edgesError } = await supabase
+  const { data: edgesData, error: edgesError } = await supabaseClient
     .from('mind_map_edges')
     .select('*')
     .eq('mind_map_id', mindMapData.id);
@@ -170,7 +173,7 @@ export async function getLatestMindMap(instanceId: string): Promise<MindMapWithN
  * Get a mind map by ID
  */
 export async function getMindMapById(mindMapId: string): Promise<MindMapWithNodes | null> {
-  const { data: mindMapData, error: mindMapError } = await supabase
+  const { data: mindMapData, error: mindMapError } = await supabaseClient
     .from('mind_maps')
     .select('*')
     .eq('id', mindMapId)
@@ -182,7 +185,7 @@ export async function getMindMapById(mindMapId: string): Promise<MindMapWithNode
   }
 
   // Get nodes
-  const { data: nodesData, error: nodesError } = await supabase
+  const { data: nodesData, error: nodesError } = await supabaseClient
     .from('mind_map_nodes')
     .select('*')
     .eq('mind_map_id', mindMapId)
@@ -192,7 +195,7 @@ export async function getMindMapById(mindMapId: string): Promise<MindMapWithNode
   if (nodesError) throw nodesError;
 
   // Get edges
-  const { data: edgesData, error: edgesError } = await supabase
+  const { data: edgesData, error: edgesError } = await supabaseClient
     .from('mind_map_edges')
     .select('*')
     .eq('mind_map_id', mindMapId);
@@ -213,7 +216,7 @@ export async function updateNodePositions(
   updates: Array<{ nodeId: string; x: number; y: number }>
 ): Promise<void> {
   const updatePromises = updates.map((update) =>
-    supabase
+    supabaseClient
       .from('mind_map_nodes')
       .update({
         position_x: update.x,
@@ -232,7 +235,7 @@ export async function updateMindMapLayout(
   mindMapId: string,
   layoutAlgorithm: 'dagre' | 'elk' | 'manual'
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await supabaseClient
     .from('mind_maps')
     .update({ layout_algorithm: layoutAlgorithm })
     .eq('id', mindMapId);
@@ -244,7 +247,7 @@ export async function updateMindMapLayout(
  * Delete a mind map
  */
 export async function deleteMindMap(mindMapId: string): Promise<void> {
-  const { error } = await supabase.from('mind_maps').delete().eq('id', mindMapId);
+  const { error } = await supabaseClient.from('mind_maps').delete().eq('id', mindMapId);
 
   if (error) throw error;
 }
@@ -264,10 +267,10 @@ export async function recordMindMapInteraction(
 ): Promise<void> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
-  const { error } = await supabase.from('mind_map_interactions').insert({
+  const { error } = await supabaseClient.from('mind_map_interactions').insert({
     mind_map_id: mindMapId,
     user_id: user.id,
     node_id: nodeId || null,
@@ -284,10 +287,10 @@ export async function recordMindMapInteraction(
 export async function getMindMapInteractions(mindMapId: string): Promise<MindMapInteraction[]> {
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabaseClient.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from('mind_map_interactions')
     .select('*')
     .eq('mind_map_id', mindMapId)

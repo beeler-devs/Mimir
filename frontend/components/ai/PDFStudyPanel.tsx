@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, RefObject, useCallback } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment, MindMapWithNodes } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
 import { ChatTabBar } from './ChatTabBar';
-import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus } from 'lucide-react';
+import MindMapViewer from './MindMapViewer';
+import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus, Network, RotateCw, Loader2 } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import {
   loadUserChats,
@@ -22,8 +23,9 @@ import {
 import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/mentions';
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { useActiveLearningMode } from '@/lib/learningMode';
+import { supabase } from '@/lib/supabaseClient';
 
-type StudyMode = 'chat' | 'flashcards' | 'quiz' | 'summary' | 'podcast';
+type StudyMode = 'chat' | 'flashcards' | 'quiz' | 'summary' | 'podcast' | 'mindmap';
 
 interface PDFStudyPanelProps {
   collapseSidebar?: () => void;
@@ -114,7 +116,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  
+
   // Flashcard chat state (separate from main chat)
   const [flashcardChatNodes, setFlashcardChatNodes] = useState<ChatNode[]>([]);
   const [flashcardChatActiveNodeId, setFlashcardChatActiveNodeId] = useState<string | null>(null);
@@ -127,6 +129,12 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   // Study mode customization options
   const [studyModeFocus, setStudyModeFocus] = useState<string>('');
+
+  // Mind map state
+  const [mindMap, setMindMap] = useState<MindMapWithNodes | null>(null);
+  const [generatingMindMap, setGeneratingMindMap] = useState(false);
+  const [mindMapScopeType, setMindMapScopeType] = useState<'full' | 'custom'>('full');
+  const mindMapThinkingMessage = useThinkingMessage(generatingMindMap);
 
   const chatInputRef = React.useRef<ChatInputRef>(null);
   const flashcardChatInputRef = React.useRef<ChatInputRef>(null);
@@ -176,6 +184,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         description: 'Listen to AI summary (coming soon)',
         action: () => setStudyMode('podcast'),
         disabled: true
+      },
+      {
+        id: 'mindmap' as StudyMode,
+        label: 'Mind Map',
+        icon: Network,
+        description: 'Visual concept map',
+        action: () => setStudyMode('mindmap')
       },
     ];
 
@@ -316,13 +331,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setChatId(newChat.id);
       localStorage.setItem('mimir.activeChatId', newChat.id);
       setStudyMode('chat');
-      
+
       // Add new chat to tabs
       setOpenChatTabs(prev => [...prev, {
         id: newChat.id,
         title: 'New Chat'
       }]);
-      
+
       // Reload chats list
       const userChats = await loadUserChats();
       setChats(userChats);
@@ -338,13 +353,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setNodes(messages);
       setChatId(selectedChatId);
       localStorage.setItem('mimir.activeChatId', selectedChatId);
-      
+
       if (messages.length > 0) {
         setActiveNodeId(messages[messages.length - 1].id);
       } else {
         setActiveNodeId(null);
       }
-      
+
       const selectedChat = chats.find(c => c.id === selectedChatId);
       if (selectedChat) {
         const tabExists = openChatTabs.some(tab => tab.id === selectedChatId);
@@ -386,11 +401,11 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const handleRenameTab = async (renamedChatId: string, newTitle: string) => {
     try {
       await updateChatTitle(renamedChatId, newTitle);
-      
+
       setOpenChatTabs(prev => prev.map(tab =>
         tab.id === renamedChatId ? { ...tab, title: newTitle } : tab
       ));
-      
+
       const userChats = await loadUserChats();
       setChats(userChats);
     } catch (error) {
@@ -520,7 +535,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       if (nodes.length === 0) {
         const simpleTitle = generateChatTitle(content);
         await updateChatTitle(chatId, simpleTitle);
-        
+
         setOpenChatTabs(prev => prev.map(tab =>
           tab.id === chatId ? { ...tab, title: simpleTitle } : tab
         ));
@@ -646,21 +661,21 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
                     : node
                 ));
                 setActiveNodeId(savedAIMessage.id);
-                
+
                 // Generate AI title after first assistant response
                 if (updatedNodes.length <= 1) {
                   const titleMessages = [
                     { role: 'user', content: savedUserMessage.content || '' },
                     { role: 'assistant', content: fullContent }
                   ];
-                  
+
                   generateAIChatTitle(titleMessages).then(async (aiTitle) => {
                     await updateChatTitle(chatId, aiTitle);
-                    
+
                     setOpenChatTabs(prev => prev.map(tab =>
                       tab.id === chatId ? { ...tab, title: aiTitle } : tab
                     ));
-                    
+
                     const userChats = await loadUserChats();
                     setChats(userChats);
                   }).catch(error => {
@@ -767,7 +782,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
     try {
       const currentCard = flashcards[currentFlashcardIndex];
-      
+
       // Build flashcard context message
       const flashcardContext = `Context: You are helping the user with a flashcard from their PDF study session.
 
@@ -1083,6 +1098,55 @@ The user is studying this flashcard and may ask questions about it, need help un
     }
   };
 
+  // Generate mind map from content
+  const generateMindMap = async () => {
+    setGeneratingMindMap(true);
+    setMindMap(null); // Clear previous mind map
+    try {
+      const contentContext = getContentContext();
+
+      if (!contentContext || contentContext.trim().length === 0) {
+        alert('No content available. Please upload a PDF or lecture first.');
+        return;
+      }
+
+      // Call the frontend API endpoint
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch('/api/study-materials/mindmap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({
+          pdfText: contentContext,
+          instanceId: activeInstance?.id,
+          scope: mindMapScopeType === 'custom' && studyModeFocus.trim()
+            ? studyModeFocus.trim()
+            : 'full document'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to generate mind map');
+      }
+
+      const data = await response.json();
+      setMindMap(data.mindMap);
+
+      // Reset customization options for next generation
+      setStudyModeFocus('');
+    } catch (error) {
+      console.error('Error generating mind map:', error);
+      alert(error instanceof Error ? error.message : 'Failed to generate mind map. Please ensure the backend server is running.');
+      setMindMap(null);
+    } finally {
+      setGeneratingMindMap(false);
+    }
+  };
+
   // Text selection handler for summary (only when in summary mode)
   const handleSummaryTextSelection = useCallback((event: MouseEvent) => {
     if (studyMode !== 'summary') return;
@@ -1094,7 +1158,7 @@ The user is studying this flashcard and may ask questions about it, need help un
       // Check if the selection is within the summary content
       const target = event.target as HTMLElement;
       const summaryContent = target.closest('[data-summary-content="true"]');
-      
+
       if (summaryContent) {
         setSelectedSummaryText(text);
         const range = selection?.getRangeAt(0);
@@ -1277,7 +1341,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                   Next
                 </button>
               </div>
-              
+
               {/* Flashcard Chat Interface */}
               <div className="w-full flex flex-col gap-3 flex-1 min-h-0">
                 <div className="flex items-center justify-between">
@@ -1515,11 +1579,10 @@ The user is studying this flashcard and may ask questions about it, need help un
                       className={className}
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                          showResult
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${showResult
                             ? (isCorrect ? 'bg-green-600 text-white' : isSelected ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground')
                             : isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                        }`}>
+                          }`}>
                           {icon || String.fromCharCode(65 + idx)}
                         </div>
                         <div className="flex-1 text-left">
@@ -1533,16 +1596,14 @@ The user is studying this flashcard and may ask questions about it, need help un
 
               {/* Feedback message */}
               {isAnswered && (
-                <div className={`p-3 rounded-lg ${
-                  currentUserAnswer === currentQuestion.correctIndex
+                <div className={`p-3 rounded-lg ${currentUserAnswer === currentQuestion.correctIndex
                     ? 'bg-[#D9F4E4] border border-green-300'
                     : 'bg-[#F9A0A0] border border-red-300'
-                }`}>
-                  <p className={`text-sm font-medium ${
-                    currentUserAnswer === currentQuestion.correctIndex
+                  }`}>
+                  <p className={`text-sm font-medium ${currentUserAnswer === currentQuestion.correctIndex
                       ? 'text-green-900'
                       : 'text-red-900'
-                  }`}>
+                    }`}>
                     {currentUserAnswer === currentQuestion.correctIndex
                       ? '🎉 Correct! Well done!'
                       : `The correct answer is: ${currentQuestion.options[currentQuestion.correctIndex]}`}
@@ -1661,6 +1722,121 @@ The user is studying this flashcard and may ask questions about it, need help un
           </div>
         );
 
+      case 'mindmap':
+        if (generatingMindMap) {
+          return (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
+                <div className="text-sm text-muted-foreground">{mindMapThinkingMessage || 'Generating mind map...'}</div>
+              </div>
+            </div>
+          );
+        }
+
+        if (!mindMap) {
+          return (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
+              <div className="text-center">
+                <Network className="h-12 w-12 mx-auto mb-4 text-purple-500" />
+                <h3 className="text-lg font-semibold mb-2">Generate Mind Map</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Create an interactive concept map to visualize key ideas and their relationships
+                </p>
+              </div>
+
+              <div className="w-full max-w-md space-y-4">
+                {/* Scope Type Selection */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setMindMapScopeType('full')}
+                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${mindMapScopeType === 'full'
+                        ? 'bg-purple-500 text-white border-purple-500'
+                        : 'bg-background border-border hover:bg-muted/50'
+                      }`}
+                  >
+                    Full Document
+                  </button>
+                  <button
+                    onClick={() => setMindMapScopeType('custom')}
+                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors text-sm font-medium ${mindMapScopeType === 'custom'
+                        ? 'bg-purple-500 text-white border-purple-500'
+                        : 'bg-background border-border hover:bg-muted/50'
+                      }`}
+                  >
+                    Custom Scope
+                  </button>
+                </div>
+
+                {/* Focus Area Input (only for custom scope) */}
+                {mindMapScopeType === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Focus Area</label>
+                    <textarea
+                      value={studyModeFocus}
+                      onChange={(e) => setStudyModeFocus(e.target.value)}
+                      placeholder="e.g., 'Chapter 3' or 'Recursion concepts'"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 min-h-[80px]"
+                    />
+                  </div>
+                )}
+
+                {/* Generate Button */}
+                <button
+                  onClick={generateMindMap}
+                  disabled={generatingMindMap}
+                  className="w-full px-4 py-3 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:opacity-50 font-medium transition-colors"
+                >
+                  {generatingMindMap ? 'Generating...' : 'Generate Mind Map'}
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Header with info and regenerate button */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <Network className="h-5 w-5 text-purple-500" />
+                <div>
+                  <h3 className="font-semibold text-sm">{mindMap.title || 'Concept Map'}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {mindMap.nodeCount} nodes · {mindMap.edgeCount} connections
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={generateMindMap}
+                className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted/50 transition-colors flex items-center gap-2"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                Regenerate
+              </button>
+            </div>
+
+            {/* Mind Map Viewer */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <MindMapViewer
+                mindMap={mindMap}
+                onAskAboutNode={(nodeId, label, description) => {
+                  // Switch to chat mode and add context
+                  setStudyMode('chat');
+                  // Add the node info as context for the chat
+                  const contextMessage = `Tell me more about: **${label}**${description ? `\n\nContext: ${description}` : ''
+                    }`;
+                  // Set in chat input if available
+                  if (chatInputRef.current) {
+                    chatInputRef.current.setMessage(contextMessage);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        );
+
       default:
         return null;
     }
@@ -1678,6 +1854,7 @@ The user is studying this flashcard and may ask questions about it, need help un
               { id: 'flashcards' as StudyMode, label: 'Flashcards', icon: BookOpen },
               { id: 'quiz' as StudyMode, label: 'Quiz', icon: FileQuestion },
               { id: 'summary' as StudyMode, label: 'Summary', icon: FileText },
+              { id: 'mindmap' as StudyMode, label: 'Mind Map', icon: Network },
               { id: 'podcast' as StudyMode, label: 'Podcast', icon: Podcast },
             ].map(({ id, label, icon: Icon }) => {
               const active = studyMode === id;
