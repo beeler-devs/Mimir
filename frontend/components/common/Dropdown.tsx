@@ -6,6 +6,7 @@ import { ChevronDown } from 'lucide-react';
 export interface DropdownOption {
   value: string;
   label: string;
+  description?: string;
 }
 
 interface DropdownProps {
@@ -13,6 +14,7 @@ interface DropdownProps {
   value: string;
   onChange: (value: string) => void;
   ariaLabel?: string;
+  className?: string;
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -20,6 +22,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   value,
   onChange,
   ariaLabel = 'Select an option',
+  className = 'w-48',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -44,7 +47,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   }, []);
 
   return (
-    <div className="relative w-48" ref={dropdownRef}>
+    <div className={`relative ${className}`} ref={dropdownRef}>
       <button
         type="button"
         onClick={handleToggle}
@@ -53,13 +56,21 @@ export const Dropdown: React.FC<DropdownProps> = ({
           border border-border rounded-xl bg-background
           text-sm text-foreground
           hover:border-primary/60 transition-colors
+          text-left
         "
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={ariaLabel}
       >
-        <span>{selectedOption?.label || 'Select...'}</span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <div className="flex flex-col overflow-hidden">
+          <span className="truncate font-medium">{selectedOption?.label || 'Select...'}</span>
+          {selectedOption?.description && (
+            <span className="text-xs text-muted-foreground truncate">
+              {selectedOption.description}
+            </span>
+          )}
+        </div>
+        <ChevronDown className={`h-4 w-4 flex-shrink-0 ml-2 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
@@ -67,7 +78,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
           className="
             absolute z-10 mt-1 w-full
             bg-background border border-border rounded-xl shadow-lg
-            py-1
+            py-1 max-h-64 overflow-y-auto
           "
           role="listbox"
         >
@@ -79,12 +90,19 @@ export const Dropdown: React.FC<DropdownProps> = ({
               className={`
                 w-full text-left px-4 py-2 text-sm
                 hover:bg-muted transition-colors
-                ${option.value === value ? 'font-semibold text-primary' : ''}
+                ${option.value === value ? 'bg-primary/5' : ''}
               `}
               role="option"
               aria-selected={option.value === value}
             >
-              {option.label}
+              <div className="font-medium text-foreground">
+                {option.label}
+              </div>
+              {option.description && (
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {option.description}
+                </div>
+              )}
             </button>
           ))}
         </div>

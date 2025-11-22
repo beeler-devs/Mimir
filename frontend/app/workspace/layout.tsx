@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { InstanceSidebar, NewInstanceModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 import { ResizeProvider, useResize } from '@/contexts/ResizeContext';
@@ -54,6 +55,9 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const pathname = usePathname();
+  const isFocusView = pathname?.includes('/workspace/focus');
+
   // Keep the chrome rendered even while individual pages change
   return (
     <>
@@ -68,30 +72,32 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
         } as React.CSSProperties}
       >
         {/* Left Sidebar with resize handle */}
-        <div
-          className={`
-            relative flex-shrink-0
-            ${isDragging ? '' : 'transition-[width] duration-300'}
-          `}
-          style={{ width: `${leftWidth}px` }}
-        >
-          <InstanceSidebar
-            instances={instances}
-            folders={folders}
-            activeInstanceId={activeInstanceId}
-            onSelect={selectInstance}
-            onCreateInstance={() => setNewInstanceOpen(true)}
-            onRename={renameInstance}
-            onDelete={deleteInstance}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onCreateFolder={createFolder}
-            onRenameFolder={renameFolder}
-            onDeleteFolder={deleteFolder}
-            onMoveToFolder={moveInstanceToFolder}
-            onMoveFolder={moveFolder}
-          />
-          {!leftCollapsed && <ResizeHandle position="left" />}
-        </div>
+        {!isFocusView && (
+          <div
+            className={`
+              relative flex-shrink-0
+              ${isDragging ? '' : 'transition-[width] duration-300'}
+            `}
+            style={{ width: `${leftWidth}px` }}
+          >
+            <InstanceSidebar
+              instances={instances}
+              folders={folders}
+              activeInstanceId={activeInstanceId}
+              onSelect={selectInstance}
+              onCreateInstance={() => setNewInstanceOpen(true)}
+              onRename={renameInstance}
+              onDelete={deleteInstance}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onCreateFolder={createFolder}
+              onRenameFolder={renameFolder}
+              onDeleteFolder={deleteFolder}
+              onMoveToFolder={moveInstanceToFolder}
+              onMoveFolder={moveFolder}
+            />
+            {!leftCollapsed && <ResizeHandle position="left" />}
+          </div>
+        )}
 
         {/* Main Content Area */}
         <div className="flex-1 h-full overflow-hidden min-w-0">

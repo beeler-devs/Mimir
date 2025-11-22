@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Tree, NodeRendererProps } from 'react-arborist';
 import { Button, Input, Modal, ContextMenu } from '@/components/common';
 import {
@@ -17,10 +18,14 @@ import {
   ChevronRight,
   ChevronDown,
   Search,
-  Video
+  Video,
+  Focus,
+  LogOut
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
 import { useResize } from '@/contexts/ResizeContext';
+import { createFocusViewStorage } from '@/lib/storage/focusViewStorage';
+import { useAuth } from '@/lib/auth';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -134,15 +139,51 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
+  const [focusViewEnabled, setFocusViewEnabled] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+
+  const router = useRouter();
+  const storage = createFocusViewStorage();
+  const { signOut } = useAuth();
 
   // Store refs for menu buttons
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const collapsedSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Use resize context for collapsed state
   const { leftCollapsed: collapsed, toggleLeftCollapsed } = useResize();
 
   // Build tree data
   const treeData = useMemo(() => buildTreeData(instances, folders), [instances, folders]);
+
+  // Check focus view status
+  useEffect(() => {
+    const checkFocusView = async () => {
+      const enabled = await storage.isEnabled();
+      setFocusViewEnabled(enabled);
+    };
+    checkFocusView();
+  }, []);
+
+  const handleFocusViewToggle = async () => {
+    const newState = !focusViewEnabled;
+    await storage.setEnabled(newState);
+    setFocusViewEnabled(newState);
+    
+    if (newState) {
+      router.push('/workspace/focus');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.push('/login');
+    } catch (error) {
+      console.error('Failed to log out:', error);
+    }
+  };
 
   const toggleCollapsed = () => {
     toggleLeftCollapsed();
@@ -274,6 +315,13 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       Icon = File;
     }
 
+    // Create stable ref object for ContextMenu positioning
+    const menuTriggerRef = useMemo(() => ({
+      get current() {
+        return menuButtonRefs.current.get(node.data.id) ?? null;
+      }
+    }), [node.data.id]);
+
     return (
       <div
         ref={dragHandle}
@@ -374,7 +422,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             <ContextMenu
               isOpen={isMenuOpen}
               onClose={() => setMenuOpenId(null)}
-              triggerRef={{ current: menuButtonRefs.current.get(node.data.id) ?? null } as React.RefObject<HTMLElement>}
+              triggerRef={menuTriggerRef as React.RefObject<HTMLElement>}
               align="right"
             >
               <button
@@ -424,8 +472,8 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   if (collapsed) {
     return (
       <>
-        <aside className="w-full h-full border-r border-border bg-card/80 backdrop-blur-xl flex flex-col">
-          <div className="px-2 pt-5 pb-4 flex items-center justify-center">
+        <aside className="w-full h-full border-r border-border bg-card/80 dark:bg-[#181818] backdrop-blur-xl flex flex-col">
+          <div className="px-2 pt-5 pb-4 flex flex-col items-center gap-2">
             <button
               onClick={toggleCollapsed}
               className="group h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xl font-semibold tracking-tight"
@@ -434,13 +482,29 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <span className="group-hover:hidden">M</span>
               <PanelsLeftRight className="h-4 w-4 hidden group-hover:block text-muted-foreground" />
             </button>
+            <button
+              onClick={handleFocusViewToggle}
+              className={`
+                h-10 w-10 rounded-lg border border-border transition-colors
+                flex items-center justify-center
+                ${focusViewEnabled 
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                  : 'bg-background hover:bg-muted'
+                }
+              `}
+              aria-label="Toggle Focus View"
+              title="Focus View"
+            >
+              <Focus className="h-4 w-4" />
+            </button>
           </div>
           <div className="flex-1" />
           <div className="p-3 border-t border-border flex items-center justify-center">
             <button
-              onClick={onOpenSettings}
+              ref={collapsedSettingsButtonRef}
+              onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
               className="h-10 w-10 rounded-lg border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center"
-              aria-label="Open settings"
+              aria-label="Open settings menu"
             >
               <Settings2 className="h-4 w-4" />
             </button>
@@ -461,16 +525,33 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-      <aside className="w-full h-full border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col overflow-hidden">
+      <aside className="w-full h-full border-r border-border bg-[var(--sidebar-bg)] dark:bg-[#181818] backdrop-blur-xl flex flex-col overflow-hidden">
         <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
           <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
-          <button
-            onClick={toggleCollapsed}
-            className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
-            aria-label="Collapse sidebar"
-          >
-            <PanelsLeftRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleFocusViewToggle}
+              className={`
+                p-2 rounded-lg border border-border transition-colors
+                flex items-center justify-center
+                ${focusViewEnabled 
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                  : 'bg-background hover:bg-muted'
+                }
+              `}
+              aria-label="Toggle Focus View"
+              title="Focus View"
+            >
+              <Focus className="h-4 w-4" />
+            </button>
+            <button
+              onClick={toggleCollapsed}
+              className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+              aria-label="Collapse sidebar"
+            >
+              <PanelsLeftRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="px-4 pt-4 space-y-2">
@@ -554,7 +635,8 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
         <div className="p-4 border-t border-border">
           <button
-            onClick={onOpenSettings}
+            ref={settingsButtonRef}
+            onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
             className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-muted/40 hover:bg-muted transition"
           >
             <div className="flex items-center gap-3">
@@ -586,6 +668,16 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           onSelect(id);
           setSearchModalOpen(false);
         }}
+      />
+      <SettingsMenu
+        isOpen={settingsMenuOpen}
+        onClose={() => setSettingsMenuOpen(false)}
+        triggerRef={collapsed ? collapsedSettingsButtonRef : settingsButtonRef}
+        onOpenSettings={() => {
+          setSettingsMenuOpen(false);
+          onOpenSettings();
+        }}
+        onLogout={handleLogout}
       />
     </>
   );

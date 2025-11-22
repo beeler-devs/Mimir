@@ -32,14 +32,14 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, children, className
   }
 
   return (
-    <div className={`fixed inset-0 z-40 flex items-start justify-center px-4 ${containerClassName ?? 'pt-60'}`}>
+    <div className={`fixed inset-0 z-50 flex justify-center px-4 ${containerClassName ?? 'items-start pt-60'}`}>
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
       <div
         className={`
-          relative z-10 w-full max-w-4xl
+          relative z-10 w-auto max-w-4xl
           bg-card border border-border rounded-3xl
           shadow-2xl overflow-hidden
           ${className}

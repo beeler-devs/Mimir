@@ -71,6 +71,14 @@ const accentColorOptions: DropdownOption[] = [
   { value: 'sky', label: 'Sky' },
 ];
 
+const learningModeOptions: DropdownOption[] = [
+  { value: 'socratic', label: 'Socratic', description: 'Guided questions and discovery' },
+  { value: 'direct', label: 'Direct Answers', description: 'Concise, direct solutions' },
+  { value: 'guided', label: 'Guided Learning', description: 'Step-by-step explanations' },
+  { value: 'exploratory', label: 'Exploratory', description: 'Experimentation with hints' },
+  { value: 'conceptual', label: 'Conceptual Deep-Dive', description: 'Theory and principles' },
+];
+
 /**
  * Settings modal inspired by the reference screenshot
  */
@@ -81,7 +89,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onThemeChange,
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuItemId>('general');
-  const [showAdditionalModels, setShowAdditionalModels] = useState(false);
   const [accent, setAccent] = useState('default');
   const { signOut } = useAuth();
   const router = useRouter();
@@ -100,9 +107,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <div className="flex h-[520px]">
-        <div className="w-64 border-r border-border bg-card/80 p-4 flex flex-col">
+    <Modal open={open} onClose={onClose} containerClassName="items-center pt-0">
+      <div className="flex h-[520px] w-[800px] max-w-full">
+        <div className="w-64 border-r border-border bg-card/80 dark:bg-[#1E1E1E] p-4 flex flex-col">
           <div className="flex-1 space-y-1">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -135,14 +142,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 p-8 space-y-8 overflow-y-auto">
+        <div className="flex-1 p-8 space-y-8 overflow-y-auto dark:bg-[#212121] text-sm">
           {/* General Tab */}
           {activeMenu === 'general' && (
             <>
-              <div>
-                <h2 className="text-2xl font-semibold">General</h2>
-              </div>
-
               <section className="space-y-4">
                 <div className="flex items-center justify-between gap-6">
                   <p className="font-semibold">Appearance</p>
@@ -163,49 +166,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ariaLabel="Select accent color"
                   />
                 </div>
-
-                <div className="flex items-center justify-between gap-6 border-t border-border pt-4">
-                  <p className="font-semibold">Show additional models</p>
-                  <ToggleControl value={showAdditionalModels} onChange={setShowAdditionalModels} />
-                </div>
               </section>
             </>
           )}
 
+
+
           {/* Personalization Tab */}
           {activeMenu === 'personalization' && (
             <>
-              <div>
-                <h2 className="text-2xl font-semibold">Personalization</h2>
-                <p className="text-sm text-muted-foreground">Customize how Mimir teaches and interacts with you.</p>
-              </div>
-
               <section className="space-y-4">
                 <div>
-                  <p className="font-semibold mb-2">Default Learning Mode</p>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Choose your preferred teaching style. You can override this for specific questions in the chat.
+                  <p className="font-semibold mb-1">Default Learning Mode</p>
+                  <p className="text-muted-foreground mb-4">
+                    Choose your preferred teaching style
                   </p>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {allModes.map((mode) => (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setDefaultLearningMode(mode.id)}
-                        className={`
-                          border rounded-2xl p-4 text-left transition-colors
-                          ${defaultLearningMode === mode.id
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border hover:border-primary/60'
-                          }
-                        `}
-                      >
-                        <p className="font-medium">{mode.name}</p>
-                        <p className="text-sm text-muted-foreground mt-1">{mode.description}</p>
-                      </button>
-                    ))}
-                  </div>
+                  <Dropdown
+                    options={learningModeOptions}
+                    value={defaultLearningMode}
+                    onChange={(value) => setDefaultLearningMode(value as any)}
+                    className="w-full"
+                    ariaLabel="Select learning mode"
+                  />
                 </div>
               </section>
             </>
@@ -214,13 +197,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Advanced Tab */}
           {activeMenu === 'advanced' && (
             <>
-              <div>
-                <h2 className="text-2xl font-semibold">Advanced</h2>
-                <p className="text-sm text-muted-foreground">Experimental features and advanced settings.</p>
-              </div>
-
               <section className="space-y-4">
-                <p className="text-sm text-muted-foreground">More settings coming soon...</p>
+                <p className="text-muted-foreground">More settings coming soon...</p>
               </section>
             </>
           )}
@@ -228,8 +206,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Other tabs placeholder */}
           {activeMenu !== 'general' && activeMenu !== 'personalization' && activeMenu !== 'advanced' && (
             <div>
-              <h2 className="text-2xl font-semibold capitalize">{activeMenu}</h2>
-              <p className="text-sm text-muted-foreground mt-2">Coming soon...</p>
+              <p className="text-muted-foreground">Coming soon...</p>
             </div>
           )}
 

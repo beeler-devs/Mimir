@@ -10,6 +10,7 @@ import { ConfigurationPanel } from './ConfigurationPanel';
 import { FocusViewGridCell } from './FocusViewGridCell';
 import { ClearAllConfirmModal } from './ClearAllConfirmModal';
 import { ComponentPalette } from './ComponentPalette';
+import { SaveLayoutModal } from './SaveLayoutModal';
 
 interface FocusViewGridProps {
   components: GridComponent[];
@@ -33,6 +34,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
 }) => {
   const [isPlacementModalOpen, setIsPlacementModalOpen] = useState(false);
   const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [isToolbarVisible, setIsToolbarVisible] = useState(false);
@@ -340,17 +342,15 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
             onDropdownStateChange={setIsDropdownOpen}
           />
 
-          {onSaveConfiguration && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onSaveConfiguration}
-              className="gap-2"
-            >
-              <Save className="h-4 w-4" />
-              Save Layout
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsSaveModalOpen(true)}
+            className="gap-2"
+          >
+            <Save className="h-4 w-4" />
+            Save Layout
+          </Button>
 
           {components.length > 0 && (
             <Button
@@ -454,6 +454,13 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
           currentComponents={components}
         />
       )}
+
+      {/* Save Layout Modal */}
+      <SaveLayoutModal
+        open={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        currentComponents={components}
+      />
 
       {/* Clear All Confirmation Modal */}
       <ClearAllConfirmModal
