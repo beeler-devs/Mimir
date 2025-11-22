@@ -20,6 +20,7 @@ import {
   Paintbrush,
   ChevronDown,
 } from 'lucide-react';
+import { Button } from '@/components/common';
 
 const COMPONENT_ICONS: Record<ComponentType, React.ComponentType<{ className?: string }>> = {
   'chat': MessageSquare,
@@ -38,17 +39,33 @@ const COMPONENT_ICONS: Record<ComponentType, React.ComponentType<{ className?: s
 
 interface ComponentPaletteProps {
   onSelectComponent: (type: ComponentType) => void;
+  variant?: 'ghost' | 'outline' | 'primary' | 'secondary';
+  size?: 'sm' | 'md' | 'lg';
+  onDropdownStateChange?: (isOpen: boolean) => void;
+  dropdownClassName?: string;
 }
 
 /**
  * Component palette dropdown for selecting component types
  */
-export const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onSelectComponent }) => {
+export const ComponentPalette: React.FC<ComponentPaletteProps> = ({ 
+  onSelectComponent,
+  variant = 'ghost',
+  size = 'sm',
+  onDropdownStateChange,
+  dropdownClassName,
+}) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [dropdownPosition, setDropdownPosition] = React.useState<'bottom' | 'top'>('bottom');
   const buttonRef = React.useRef<HTMLButtonElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
 
   const availableComponents = Object.values(COMPONENT_REGISTRY);
+
+  // Notify parent of dropdown state changes
+  React.useEffect(() => {
+    onDropdownStateChange?.(isOpen);
+  }, [isOpen, onDropdownStateChange]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -63,6 +80,20 @@ export const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onSelectComp
     };
 
     if (isOpen) {
+      // Calculate if dropdown should appear above or below
+      if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        const estimatedDropdownHeight = 400; // Approximate height
+        
+        if (spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow) {
+          setDropdownPosition('top');
+        } else {
+          setDropdownPosition('bottom');
+        }
+      }
+      
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
@@ -75,19 +106,29 @@ export const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onSelectComp
 
   return (
     <div className="relative">
-      <button
+      <Button
         ref={buttonRef}
+        variant={variant}
+        size={size}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-muted transition-colors text-sm"
+        className="gap-2"
       >
         <span>Add Component</span>
         <ChevronDown className="h-4 w-4" />
-      </button>
+      </Button>
 
       {isOpen && (
         <div
           ref={dropdownRef}
-          className="absolute top-full left-0 mt-2 w-64 bg-card border border-border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
+          data-dropdown
+          onMouseEnter={() => setIsOpen(true)}
+          onMouseLeave={() => setIsOpen(false)}
+          className={`absolute left-0 w-64 bg-card border border-border rounded-lg shadow-lg z-50 overflow-y-auto scrollbar-hide-show ${
+            dropdownPosition === 'top' 
+              ? 'bottom-full mb-2' 
+              : 'top-full mt-2'
+          } ${dropdownClassName || ''}`}
+          style={{ maxHeight: dropdownClassName?.includes('max-h-') ? undefined : 'calc(100vh - 200px)' }}
         >
           <div className="p-2">
             {availableComponents.map((component) => {

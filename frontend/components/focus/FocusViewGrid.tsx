@@ -36,12 +36,23 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [isToolbarVisible, setIsToolbarVisible] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [draggingComponentId, setDraggingComponentId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const [highlightedPosition, setHighlightedPosition] = useState<GridPosition | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const hoverZoneRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   /**
    * Detect grid position from mouse coordinates
@@ -180,22 +191,42 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   }, [onComponentsChange]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    // If dropdown is open, don't hide toolbar based on mouse position
+    if (isDropdownOpen) return;
+
     const y = e.clientY;
     // Show toolbar when cursor is within top 80px of screen
     if (y <= 80) {
-      setIsToolbarVisible(true);
+      if (!isToolbarVisible && !hoverTimeoutRef.current) {
+        hoverTimeoutRef.current = setTimeout(() => {
+          setIsToolbarVisible(true);
+          hoverTimeoutRef.current = null;
+        }, 1000);
+      }
     } else {
-      setIsToolbarVisible(false);
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+        hoverTimeoutRef.current = null;
+      }
+      if (isToolbarVisible) {
+        setIsToolbarVisible(false);
+      }
     }
-  }, []);
+  }, [isDropdownOpen, isToolbarVisible]);
 
   const handleToolbarMouseEnter = useCallback(() => {
     setIsToolbarVisible(true);
   }, []);
 
-  const handleToolbarMouseLeave = useCallback(() => {
-    setIsToolbarVisible(false);
-  }, []);
+  const handleToolbarMouseLeave = useCallback((e: React.MouseEvent) => {
+    // Don't hide toolbar if dropdown is open or if mouse is moving to dropdown
+    const relatedTarget = e.relatedTarget;
+    const isMovingToDropdown = relatedTarget instanceof HTMLElement && relatedTarget.closest('[data-dropdown]');
+    
+    if (!isDropdownOpen && !isMovingToDropdown) {
+      setIsToolbarVisible(false);
+    }
+  }, [isDropdownOpen]);
 
   /**
    * Handle mouse move during drag
@@ -304,7 +335,10 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
             Templates
           </Button>
 
-          <ComponentPalette onSelectComponent={handleSelectComponent} />
+          <ComponentPalette 
+            onSelectComponent={handleSelectComponent}
+            onDropdownStateChange={setIsDropdownOpen}
+          />
 
           {onSaveConfiguration && (
             <Button
@@ -343,7 +377,12 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
               <h2 className="text-2xl font-semibold mb-2">Your Focus Workspace</h2>
 
               <div className="flex gap-3 justify-center">
-                <ComponentPalette onSelectComponent={handleSelectComponent} />
+                <ComponentPalette 
+                  onSelectComponent={handleSelectComponent}
+                  variant="outline"
+                  size="md"
+                  dropdownClassName="max-h-64"
+                />
                 <Button
                   variant="outline"
                   onClick={() => setIsConfigPanelOpen(true)}

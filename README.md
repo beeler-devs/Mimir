@@ -1,37 +1,27 @@
 # Mimir
 
-**An AI-native, college-level education platform**
+**🏆 Winner of the CMU Claude Builder Hackathon**
 
-Mimir is a personal AI professor for college students, especially in STEM fields (mathematics, computer science, probability, quantitative finance, physics, and more). It combines AI-powered tutoring with visual explanations to provide stepwise understanding, not just answers.
+We built Mimir, the all-in-one AI education and tutoring platform designed to facilitate deep understanding through custom visualizations, full context tutoring, and more.
 
----
-
-## 🎤 Short Pitch
-
-**Mimir: Your Personal AI Professor**
-
-Imagine having a professor available 24/7 who doesn't just give you answers—they guide you step-by-step through problems, explain complex concepts with visual animations, and help you truly understand the material. That's Mimir.
-
-Built for STEM students, Mimir combines AI-powered tutoring with interactive workspaces for text, code, and PDF annotations. Whether you're stuck on a calculus problem, debugging code, or trying to understand a research paper, Mimir provides personalized, stepwise guidance that adapts to your learning style.
-
-**Key Differentiators:**
-- 🧠 **Stepwise Learning**: Get guided help, not just answers
-- 🎬 **Visual Explanations**: Auto-generated animations for complex concepts
-- 🌳 **Conversation Branching**: Explore multiple solution paths simultaneously
-- 📝 **Multi-Modal Workspaces**: Text, code, and PDF annotation in one platform
-
-Stop memorizing. Start understanding.
+Huge thanks to Anthropic for sponsoring the hackathon and setting us up with our prize of $1500 in Claude credits!
 
 ---
 
-## 🎯 Product Vision
+## 🚨 The Problem
 
-Mimir serves as an intelligent teaching assistant that helps students:
+We’re currently facing a learning pandemic, where students blindly input their work into LLMs and copy down the answers without engaging with the material in any way. Instead of a tool for growth, AI has become associated with bypassing the cognitive struggle that is needed for learning.
 
-1. **Problem Sets & Homework** - Work through problems with AI guidance that provides stepwise help rather than immediate answers
-2. **Code Learning & Debugging** - Experiment with code, get explanations, and receive debugging assistance
-3. **Lectures & Research Papers** - Upload PDFs (slides or papers) and get synthesized outlines, explanations, and visual animations
-4. **Visual Explanations** - Generate Manim animations for mathematical and quantitative concepts
+## 💡 The Solution
+
+Mimir flips that narrative. It turns AI into a personalized tutor that helps students work through problems to develop fundamental understanding rather than quick results.
+
+### Key Features
+
+- **Tutor Mode**: An AI assistant with full workspace context that guides you through your problem live, just like a real teacher.
+- **Generative Visual Engine**: Scripts and animates mathematical visualizations using Manim, deconstructing complex topics in a step-by-step video.
+- **All-in-One Workspace**: Support for code, text, handwritten notes, and lecture videos.
+- **Voice-Enabled Learning**: Interactive learning sessions for natural, conversational learning.
 
 ---
 
@@ -292,4 +282,3 @@ MIT License - feel free to use this for educational purposes.
 ---
 
 Built with ❤️ for students who want to truly understand, not just memorize.
-

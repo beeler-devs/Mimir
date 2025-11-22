@@ -90,7 +90,7 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="w-[700px] max-h-[80vh] overflow-auto">
+      <div className="w-full max-w-[700px] max-h-[80vh] overflow-y-auto scrollbar-hide-show mx-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-semibold">Layouts & Templates</h2>
