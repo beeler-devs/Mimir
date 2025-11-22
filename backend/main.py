@@ -2186,7 +2186,7 @@ async def voice_assistant_endpoint(websocket: WebSocket):
             model="nova-2",
             language="en-US",
             interim_results=True,
-            endpointing=600  # 600ms silence to end utterance
+            endpointing=1200  # 1200ms silence to end utterance (reduced sensitivity)
         )
 
         # Initialize TTS provider (prefer OpenAI for simplicity, fallback to ElevenLabs)
@@ -2231,6 +2231,55 @@ async def voice_assistant_endpoint(websocket: WebSocket):
 
         logger.info(f"[Voice WS] Session created: {session.session_id}")
 
+        # Processing queue for sequential handling of utterances
+        processing_queue = asyncio.Queue()
+        
+        async def processor_worker():
+            """Worker to process utterances sequentially"""
+            while True:
+                try:
+                    queue_size = processing_queue.qsize()
+                    logger.warning(f"[Voice WS] Processing queue size: {queue_size}")
+
+                    utterance = await processing_queue.get()
+                    logger.warning(f"[Voice WS] Dequeued utterance: '{utterance}' (remaining queue: {processing_queue.qsize()})")
+
+                    # Wait for assistant to finish speaking before processing next utterance
+                    while session.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+                        logger.warning(f"[Voice WS] Waiting for assistant to finish speaking before processing: '{utterance}'")
+                        await asyncio.sleep(0.1)
+
+                    # Add 1-second buffer after speaking finishes to ensure audio playback completes
+                    if queue_size > 0:  # Only delay if there were queued items
+                        logger.warning(f"[Voice WS] Adding 1s buffer before processing queued utterance")
+                        await asyncio.sleep(1.0)
+
+                    # Ensure we are in PROCESSING state
+                    current_state = session.state_machine.get_state()
+                    logger.warning(f"[Voice WS] Current state before processing: {current_state.value}")
+
+                    if current_state == ConversationState.IDLE:
+                        await session.state_machine.transition_to(ConversationState.PROCESSING)
+
+                    # Process the utterance
+                    import datetime
+                    start_time = datetime.datetime.now()
+                    await process_utterance_with_claude(session, utterance)
+                    end_time = datetime.datetime.now()
+                    duration_ms = (end_time - start_time).total_seconds() * 1000
+
+                    logger.warning(f"[Voice WS] Completed processing '{utterance}' in {duration_ms:.0f}ms")
+
+                    processing_queue.task_done()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"[Voice WS] Error in processor worker: {e}", exc_info=True)
+                    processing_queue.task_done()
+
+        # Start processor worker
+        worker_task = asyncio.create_task(processor_worker())
+
         # Main message loop
         while session.is_active():
             try:
@@ -2263,6 +2312,20 @@ async def voice_assistant_endpoint(websocket: WebSocket):
                     if session.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
                         await session.state_machine.handle_barge_in()
 
+                        # Clear all pending utterances in the queue (they're now outdated)
+                        cleared_count = 0
+                        while not processing_queue.empty():
+                            try:
+                                cleared_utterance = processing_queue.get_nowait()
+                                processing_queue.task_done()
+                                cleared_count += 1
+                                logger.warning(f"[Voice WS] Cleared queued utterance after barge-in: '{cleared_utterance}'")
+                            except asyncio.QueueEmpty:
+                                break
+
+                        if cleared_count > 0:
+                            logger.warning(f"[Voice WS] Cleared {cleared_count} queued utterances after barge-in")
+
                 elif msg_type == "ping":
                     # Keepalive
                     await websocket.send_json({"type": "pong"})
@@ -2270,11 +2333,10 @@ async def voice_assistant_endpoint(websocket: WebSocket):
                 # Check if we have a complete utterance to process
                 if session.state_machine.get_state() == ConversationState.PROCESSING:
                     utterance = session.get_current_utterance()
-                    if utterance and claude_voice:
-                        # Process with Claude
-                        asyncio.create_task(
-                            process_utterance_with_claude(session, utterance)
-                        )
+                    if utterance:
+                        # Add to queue instead of spawning immediately
+                        logger.warning(f"[Voice WS] Adding utterance to queue: '{utterance}' (current queue size: {processing_queue.qsize()})")
+                        await processing_queue.put(utterance)
                         session.clear_current_utterance()
 
             except asyncio.TimeoutError:
@@ -2298,6 +2360,14 @@ async def voice_assistant_endpoint(websocket: WebSocket):
         except:
             pass
     finally:
+        # Cancel worker task
+        if 'worker_task' in locals():
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
+                
         if session:
             await voice_session_manager.close_session(session.session_id)
         logger.info("[Voice WS] Connection cleanup complete")
@@ -2316,22 +2386,16 @@ async def process_utterance_with_claude(session, utterance: str):
         # For now, use empty history (each utterance is independent)
         conversation_history = []
 
-        # Stream Claude's response
-        response_chunks = []
-        async for text_chunk in claude_voice.chunk_response_for_tts(
-            claude_voice.process_user_utterance(
-                utterance=utterance,
-                conversation_history=conversation_history,
-                workspace_context=None  # TODO: Get from instance
-            )
+        # Accumulate full Claude response before sending to TTS
+        full_response = ""
+        async for text_chunk in claude_voice.process_user_utterance(
+            utterance=utterance,
+            conversation_history=conversation_history,
+            workspace_context=None  # TODO: Get from instance
         ):
-            response_chunks.append(text_chunk)
-
-            # Send to TTS and stream audio
-            await session.synthesize_and_stream(text_chunk)
+            full_response += text_chunk
 
         # Extract UI actions from full response
-        full_response = " ".join(response_chunks)
         clean_text, ui_actions = claude_voice.extract_ui_actions(full_response)
 
         # Send UI actions to client if any
@@ -2340,6 +2404,9 @@ async def process_utterance_with_claude(session, utterance: str):
                 "type": "ui_actions",
                 "actions": ui_actions
             })
+
+        # Send to TTS as a single stream (ElevenLabs handles chunking internally)
+        await session.synthesize_and_stream(clean_text)
 
         # Send complete text transcript
         await session._send_to_client({

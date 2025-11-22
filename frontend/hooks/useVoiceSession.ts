@@ -148,9 +148,10 @@ export function useVoiceSession(options: UseVoiceSessionOptions): UseVoiceSessio
 
         case 'audio_chunk':
           if (!isMuted && data.audio) {
-            // Convert hex to audio and play
+            // Convert hex to audio and play with stream_id
             const audioData = hexToInt16(data.audio);
-            playAudio(audioData);
+            const streamId = data.stream_id || undefined;
+            playAudio(audioData, streamId);
             if (state !== 'speaking') {
               setState('speaking');
             }

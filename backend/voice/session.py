@@ -132,8 +132,22 @@ class VoiceSession:
 
         elif event.event_type == STTEvent.FINAL_TRANSCRIPT:
             # Complete utterance
+            current_state = self.state_machine.get_state()
+
+            logger.warning(
+                f"[{self.session_id}] FINAL_TRANSCRIPT received while in state {current_state.value}: "
+                f"'{event.transcript}' (confidence={event.confidence})"
+            )
+
+            # Only accept final transcripts when in USER_SPEAKING state
+            # This prevents mid-conversation utterances from being queued while system is busy
+            if current_state != ConversationState.USER_SPEAKING:
+                logger.warning(
+                    f"[{self.session_id}] IGNORING FINAL_TRANSCRIPT (not in USER_SPEAKING state): '{event.transcript}'"
+                )
+                return
+
             self._current_utterance = event.transcript
-            logger.info(f"[{self.session_id}] Final transcript: {event.transcript}")
 
             # Send final transcript to client
             await self._send_to_client({
@@ -169,13 +183,21 @@ class VoiceSession:
         stream_id = str(uuid.uuid4())
         self.state_machine.set_tts_stream_id(stream_id)
 
+        logger.warning(
+            f"[{self.session_id}] Starting TTS stream {stream_id} for text: '{text[:100]}...'"
+        )
+
         try:
             first_chunk = True
+            chunk_count = 0
+            import datetime
+            start_time = datetime.datetime.now()
 
             async for audio_chunk in self.tts_provider.synthesize_stream(
                 text=text,
                 stream_id=stream_id
             ):
+                chunk_count += 1
                 # Check if we should stop (barge-in or error)
                 current_state = self.state_machine.get_state()
                 if current_state != ConversationState.ASSISTANT_SPEAKING:
@@ -204,6 +226,14 @@ class VoiceSession:
             # Note: We do NOT transition to IDLE here anymore, because there might be
             # more chunks coming from the LLM. The caller must explicitly call finish_speaking()
 
+            end_time = datetime.datetime.now()
+            duration_ms = (end_time - start_time).total_seconds() * 1000
+
+            logger.warning(
+                f"[{self.session_id}] Completed TTS stream {stream_id} "
+                f"({chunk_count} chunks, {duration_ms:.0f}ms)"
+            )
+
         except Exception as e:
             logger.error(f"[{self.session_id}] Error in TTS streaming: {e}", exc_info=True)
             await self._send_to_client({
@@ -218,9 +248,15 @@ class VoiceSession:
         """
         Signal that assistant has finished speaking all chunks
         """
-        if self.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+        current_state = self.state_machine.get_state()
+        logger.warning(
+            f"[{self.session_id}] finish_speaking() called while in state: {current_state.value}"
+        )
+
+        if current_state == ConversationState.ASSISTANT_SPEAKING:
             await self.state_machine.transition_to(ConversationState.IDLE)
             self.state_machine.set_tts_stream_id(None)
+            logger.warning(f"[{self.session_id}] Transitioned to IDLE after speaking")
 
     async def _send_to_client(self, message: dict) -> None:
         """

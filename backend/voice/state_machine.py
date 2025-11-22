@@ -96,6 +96,7 @@ class VoiceStateMachine:
         valid_transitions = {
             ConversationState.IDLE: [
                 ConversationState.USER_SPEAKING,
+                ConversationState.PROCESSING,  # Allow processing queued utterances
                 ConversationState.ERROR
             ],
             ConversationState.USER_SPEAKING: [

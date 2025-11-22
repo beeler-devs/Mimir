@@ -10,7 +10,7 @@ export interface UseAudioPlaybackOptions {
 }
 
 export interface UseAudioPlaybackReturn {
-  playAudio: (audioData: Int16Array) => void;
+  playAudio: (audioData: Int16Array, streamId?: string) => void;
   stopAudio: () => void;
   isPlaying: boolean;
   queueSize: number;
@@ -29,6 +29,7 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
   const audioQueueRef = useRef<Float32Array[]>([]);
   const nextStartTimeRef = useRef<number>(0);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const currentStreamIdRef = useRef<string | null>(null);
 
   // Initialize audio context
   useEffect(() => {
@@ -41,11 +42,33 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
     };
   }, [sampleRate]);
 
-  const playAudio = useCallback((audioData: Int16Array) => {
+  const playAudio = useCallback((audioData: Int16Array, streamId?: string) => {
     const audioContext = audioContextRef.current;
     if (!audioContext) {
       console.error('Audio context not initialized');
       return;
+    }
+
+    // If this is a new stream, stop the previous one
+    if (streamId && streamId !== currentStreamIdRef.current) {
+      console.log(`[Audio] New stream detected: ${streamId} (previous: ${currentStreamIdRef.current})`);
+
+      // Stop all active sources from previous stream
+      activeSourcesRef.current.forEach(source => {
+        try {
+          source.stop();
+          console.log('[Audio] Stopped previous stream source');
+        } catch (e) {
+          // Ignore if already stopped
+        }
+      });
+
+      // Reset state for new stream
+      activeSourcesRef.current = [];
+      nextStartTimeRef.current = 0;
+      currentStreamIdRef.current = streamId;
+
+      console.log(`[Audio] Reset playback state for new stream: ${streamId}`);
     }
 
     // Convert to Float32Array
@@ -66,16 +89,25 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
 
     // Calculate start time
     const currentTime = audioContext.currentTime;
+    const previousNextStartTime = nextStartTimeRef.current;
     let startTime = Math.max(currentTime, nextStartTimeRef.current);
 
-    // If there's a gap, start immediately
-    if (startTime - currentTime > 0.5) {
-      startTime = currentTime;
-    }
+    // Log chunk timing details
+    const chunkNumber = activeSourcesRef.current.length + 1;
+    console.log(`[Audio] Chunk ${chunkNumber}:`, {
+      streamId,
+      currentTime: currentTime.toFixed(3),
+      previousNextStartTime: previousNextStartTime.toFixed(3),
+      calculatedStartTime: startTime.toFixed(3),
+      duration: audioBuffer.duration.toFixed(3),
+      activeSourcesCount: activeSourcesRef.current.length
+    });
 
     // Update next start time
     const duration = audioBuffer.duration;
     nextStartTimeRef.current = startTime + duration;
+
+    console.log(`[Audio] Chunk ${chunkNumber}: Will start at ${startTime.toFixed(3)}s, next chunk scheduled for ${nextStartTimeRef.current.toFixed(3)}s`);
 
     // Track active source
     activeSourcesRef.current.push(source);
@@ -100,6 +132,8 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
   }, [sampleRate, onPlaybackEnd]);
 
   const stopAudio = useCallback(() => {
+    console.log('[Audio] Stopping all audio playback');
+
     // Stop all active sources
     activeSourcesRef.current.forEach(source => {
       try {
@@ -112,6 +146,7 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
     activeSourcesRef.current = [];
     audioQueueRef.current = [];
     nextStartTimeRef.current = 0;
+    currentStreamIdRef.current = null;
     setIsPlaying(false);
     setQueueSize(0);
   }, []);
