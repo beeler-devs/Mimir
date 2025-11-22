@@ -14,6 +14,14 @@ from dotenv import load_dotenv
 import pdfplumber
 import io
 
+# Voice assistant imports
+from voice.session import VoiceSessionManager
+from voice.deepgram_stt import DeepgramSTTProvider
+from voice.openai_tts import OpenAITTSProvider
+from voice.elevenlabs_tts import ElevenLabsTTSProvider
+from voice.claude_voice_integration import ClaudeVoiceIntegration
+from voice.state_machine import ConversationState
+
 # Load environment variables
 load_dotenv()
 
@@ -30,6 +38,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import WebSocket manager
+
+# Initialize voice session manager
+voice_session_manager = VoiceSessionManager()
+
+# Initialize Claude voice integration
+try:
+    claude_voice = ClaudeVoiceIntegration()
+    logger.info("Claude voice integration initialized")
+except Exception as e:
+    logger.warning(f"Claude voice integration not available: {e}")
+    claude_voice = None
 
 app = FastAPI(
     title="Mimir Manim Worker",
@@ -2084,6 +2103,255 @@ Return only the title text (3-8 words), nothing else."""
     except Exception as e:
         logger.error(f"Error generating chat title: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# VOICE ASSISTANT ENDPOINTS
+# ============================================================================
+
+@app.websocket("/ws/voice")
+async def voice_assistant_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time voice assistant
+
+    Protocol:
+    1. Client connects and sends auth message: {"type": "auth", "user_id": "...", "instance_id": "..."}
+    2. Server responds: {"type": "connected", "session_id": "..."}
+    3. Client streams audio chunks: {"type": "audio", "audio": "hex_string"}
+    4. Server streams back:
+       - {"type": "partial_transcript", "transcript": "..."}
+       - {"type": "final_transcript", "transcript": "..."}
+       - {"type": "audio_chunk", "audio": "hex_string"}
+       - {"type": "barge_in"} (when user interrupts)
+       - {"type": "state_change", "state": "..."}
+    5. Either side can close connection
+    """
+    logger.info("[Voice WS] New connection attempt")
+    session = None
+
+    try:
+        # Accept connection
+        await websocket.accept()
+        logger.info("[Voice WS] Connection accepted")
+
+        # Wait for auth message
+        try:
+            auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+        except asyncio.TimeoutError:
+            await websocket.send_json({"type": "error", "error": "Auth timeout"})
+            await websocket.close()
+            return
+
+        if auth_msg.get("type") != "auth":
+            await websocket.send_json({"type": "error", "error": "Expected auth message"})
+            await websocket.close()
+            return
+
+        user_id = auth_msg.get("user_id")
+        instance_id = auth_msg.get("instance_id", "default")
+
+        if not user_id:
+            await websocket.send_json({"type": "error", "error": "user_id required"})
+            await websocket.close()
+            return
+
+        logger.info(f"[Voice WS] Auth received: user_id={user_id}, instance_id={instance_id}")
+
+        # Initialize STT provider
+        deepgram_key = os.getenv("DEEPGRAM_API_KEY")
+        if not deepgram_key:
+            await websocket.send_json({"type": "error", "error": "Deepgram API key not configured"})
+            await websocket.close()
+            return
+
+        stt_provider = DeepgramSTTProvider(
+            api_key=deepgram_key,
+            model="nova-2",
+            language="en-US",
+            interim_results=True,
+            endpointing=600  # 600ms silence to end utterance
+        )
+
+        # Initialize TTS provider (prefer OpenAI for simplicity, fallback to ElevenLabs)
+        openai_key = os.getenv("OPENAI_API_KEY")
+        elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        if openai_key:
+            tts_provider = OpenAITTSProvider(
+                api_key=openai_key,
+                model="tts-1",  # Fast model
+                voice="alloy",  # Clear, neutral voice
+                response_format="pcm"
+            )
+            logger.info("[Voice WS] Using OpenAI TTS")
+        elif elevenlabs_key:
+            tts_provider = ElevenLabsTTSProvider(
+                api_key=elevenlabs_key,
+                model_id="eleven_turbo_v2",
+                optimize_streaming_latency=4
+            )
+            logger.info("[Voice WS] Using ElevenLabs TTS")
+        else:
+            await websocket.send_json({"type": "error", "error": "No TTS provider configured"})
+            await websocket.close()
+            return
+
+        # Create voice session
+        session = await voice_session_manager.create_session(
+            user_id=user_id,
+            instance_id=instance_id,
+            websocket=websocket,
+            stt_provider=stt_provider,
+            tts_provider=tts_provider
+        )
+
+        # Send connected message
+        await websocket.send_json({
+            "type": "connected",
+            "session_id": session.session_id,
+            "state": session.state_machine.get_state().value
+        })
+
+        logger.info(f"[Voice WS] Session created: {session.session_id}")
+
+        # Main message loop
+        while session.is_active():
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"[Voice WS] Client disconnected: {session.session_id}")
+                    break
+
+                # Handle different message types
+                data = None
+                if "text" in message:
+                    data = json.loads(message["text"])
+                elif "json" in message:
+                    data = message["json"]
+
+                if not data:
+                    continue
+
+                msg_type = data.get("type")
+
+                if msg_type == "audio":
+                    # Receive audio chunk from client
+                    audio_hex = data.get("audio", "")
+                    audio_bytes = bytes.fromhex(audio_hex)
+                    await session.handle_audio_chunk(audio_bytes)
+
+                elif msg_type == "stop_speaking":
+                    # Client requested to stop assistant speaking (manual barge-in)
+                    if session.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+                        await session.state_machine.handle_barge_in()
+
+                elif msg_type == "ping":
+                    # Keepalive
+                    await websocket.send_json({"type": "pong"})
+
+                # Check if we have a complete utterance to process
+                if session.state_machine.get_state() == ConversationState.PROCESSING:
+                    utterance = session.get_current_utterance()
+                    if utterance and claude_voice:
+                        # Process with Claude
+                        asyncio.create_task(
+                            process_utterance_with_claude(session, utterance)
+                        )
+                        session.clear_current_utterance()
+
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except:
+                    logger.info(f"[Voice WS] Connection closed during ping: {session.session_id}")
+                    break
+            except WebSocketDisconnect:
+                logger.info(f"[Voice WS] WebSocket disconnected: {session.session_id}")
+                break
+            except Exception as e:
+                logger.error(f"[Voice WS] Error in message loop: {e}", exc_info=True)
+                break
+
+    except Exception as e:
+        logger.error(f"[Voice WS] Error in voice endpoint: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "error": str(e)})
+        except:
+            pass
+    finally:
+        if session:
+            await voice_session_manager.close_session(session.session_id)
+        logger.info("[Voice WS] Connection cleanup complete")
+
+
+async def process_utterance_with_claude(session, utterance: str):
+    """
+    Process user utterance with Claude and stream TTS response
+
+    Args:
+        session: VoiceSession
+        utterance: User's spoken text
+    """
+    try:
+        # TODO: Get conversation history from database or session storage
+        # For now, use empty history (each utterance is independent)
+        conversation_history = []
+
+        # Stream Claude's response
+        response_chunks = []
+        async for text_chunk in claude_voice.chunk_response_for_tts(
+            claude_voice.process_user_utterance(
+                utterance=utterance,
+                conversation_history=conversation_history,
+                workspace_context=None  # TODO: Get from instance
+            )
+        ):
+            response_chunks.append(text_chunk)
+
+            # Send to TTS and stream audio
+            await session.synthesize_and_stream(text_chunk)
+
+        # Extract UI actions from full response
+        full_response = " ".join(response_chunks)
+        clean_text, ui_actions = claude_voice.extract_ui_actions(full_response)
+
+        # Send UI actions to client if any
+        if ui_actions:
+            await session._send_to_client({
+                "type": "ui_actions",
+                "actions": ui_actions
+            })
+
+        # Send complete text transcript
+        await session._send_to_client({
+            "type": "assistant_transcript",
+            "transcript": clean_text
+        })
+
+    except Exception as e:
+        logger.error(f"[Voice] Error processing utterance: {e}", exc_info=True)
+        await session._send_to_client({
+            "type": "error",
+            "error": f"Failed to process utterance: {str(e)}"
+        })
+
+
+# Lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on startup"""
+    logger.info("Starting up application...")
+    await voice_session_manager.start_cleanup_task()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Shutting down application...")
+    await voice_session_manager.stop_cleanup_task()
+    await voice_session_manager.close_all_sessions()
 
 if __name__ == "__main__":
     import uvicorn
