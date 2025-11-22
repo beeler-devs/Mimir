@@ -1551,7 +1551,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateFlashcards}
                   disabled={generatingFlashcards}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
+                  className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingFlashcards ? 'Generating...' : 'Generate Flashcards'}
                 </button>
@@ -1821,7 +1821,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateQuiz}
                   disabled={generatingQuiz}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
+                  className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingQuiz ? 'Generating...' : 'Generate Quiz'}
                 </button>
@@ -2179,7 +2179,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateSummary}
                   disabled={generatingSummary}
-                  className="w-full px-4 py-3 bg-[#F5F5F5] text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
+                  className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
                   {generatingSummary ? 'Generating...' : 'Generate Summary'}
                 </button>
@@ -2367,19 +2367,11 @@ The user is studying this flashcard and may ask questions about it, need help un
                   className={`
                     flex-shrink-0 group rounded-[0.75rem] h-8 px-3 text-sm transition-all
                     focus-visible:outline-none focus-visible:ring-2
-                    ${active ? 'text-foreground focus-visible:ring-primary/60' : 'text-muted-foreground focus-visible:ring-primary/30'}
+                    ${active 
+                      ? 'bg-muted text-foreground focus-visible:ring-primary/60' 
+                      : 'text-muted-foreground hover:bg-muted focus-visible:ring-primary/30'
+                    }
                   `}
-                  style={active ? { backgroundColor: '#F5F5F5' } : undefined}
-                  onMouseEnter={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.backgroundColor = '#F5F5F5';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   <div className="flex items-center gap-2 justify-center">
                     <Icon className="h-3.5 w-3.5" />
@@ -2428,12 +2420,11 @@ The user is studying this flashcard and may ask questions about it, need help un
       {/* Summary Text Selection Popup */}
       {showSummaryPopup && (
         <div
-          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95 bg-muted"
           style={{
             left: `${summaryPopupPosition.x}px`,
             top: `${summaryPopupPosition.y}px`,
             transform: 'translate(-50%, -100%)',
-            backgroundColor: '#F5F5F5',
             borderRadius: '0.85rem',
             borderColor: 'var(--border)',
           }}

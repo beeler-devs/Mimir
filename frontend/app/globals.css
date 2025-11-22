@@ -134,14 +134,15 @@ body {
   background: var(--border);
 }
 
-/* Sidebar scrollbar - only shows on hover, color #F5F5F5 */
+/* Sidebar scrollbar - only shows on hover or when scrolling, color #F5F5F5 */
 .sidebar-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   -ms-overflow-style: none;
 }
 
-.sidebar-scrollbar:hover {
+.sidebar-scrollbar:hover,
+.sidebar-scrollbar.scrolling {
   scrollbar-color: #F5F5F5 transparent;
 }
 
@@ -159,7 +160,8 @@ body {
   border-radius: 4px;
 }
 
-.sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb,
+.sidebar-scrollbar.scrolling::-webkit-scrollbar-thumb {
   background: #F5F5F5;
 }
 
