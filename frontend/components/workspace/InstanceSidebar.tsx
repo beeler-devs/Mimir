@@ -20,6 +20,7 @@ import {
   Video
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
+import { useResize } from '@/contexts/ResizeContext';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -66,7 +67,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<'instance' | 'folder' | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
@@ -82,17 +82,18 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const router = useRouter();
 
+  // Use resize context for collapsed state
+  const { leftCollapsed: collapsed, toggleLeftCollapsed } = useResize();
+
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      if (next) {
-        setEditingId(null);
-        setEditingType(null);
-        setDraftTitle('');
-        setMenuOpenId(null);
-      }
-      return next;
-    });
+    toggleLeftCollapsed();
+    if (!collapsed) {
+      // When collapsing, clear editing state
+      setEditingId(null);
+      setEditingType(null);
+      setDraftTitle('');
+      setMenuOpenId(null);
+    }
   };
 
 
@@ -239,14 +240,22 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           setRootDragOver(false);
         }}
       >
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => onSelect(instance.id)}
           onDoubleClick={(e) => {
             e.stopPropagation();
             startEditing(instance.id, instance.title, 'instance');
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSelect(instance.id);
+            }
+          }}
           className={`
-            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
+            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer
             ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
           `}
         >
@@ -274,7 +283,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <p className="font-medium truncate">{instance.title}</p>
             )}
           </div>
-        </button>
+        </div>
 
         {!isEditing && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -406,10 +415,19 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           className="group relative"
           style={{ paddingLeft: `${depth * 12}px` }}
         >
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => toggleFolder(folder.id)}
-            className={`w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70 ${dragOverFolderId === folder.id ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
-              }`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleFolder(folder.id);
+              }
+            }}
+            className={`w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer hover:bg-muted/70 ${
+              dragOverFolderId === folder.id ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
+            }`}
           >
             {isExpanded ? (
               <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -437,7 +455,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
                 <p className="font-medium truncate">{folder.name}</p>
               )}
             </div>
-          </button>
+          </div>
 
           {!isEditing && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -510,7 +528,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   if (collapsed) {
     return (
       <>
-        <aside className="w-16 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+        <aside className="w-full h-full border-r border-border bg-card/80 backdrop-blur-xl flex flex-col">
           <div className="px-2 pt-5 pb-4 flex items-center justify-center">
             <button
               onClick={toggleCollapsed}
@@ -547,7 +565,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-      <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+      <aside className="w-full h-full border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col overflow-hidden">
         <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
           <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
           <button
@@ -586,7 +604,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         </div>
 
         <div
-          className="flex-1 overflow-y-auto px-4 py-3 space-y-1"
+          className="flex-1 overflow-y-auto px-4 py-3 space-y-1 scrollbar-hide-show"
           onDragOver={(event) => {
             if (!draggingInstanceId && !draggingFolderId) return;
             event.preventDefault();
