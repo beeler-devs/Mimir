@@ -203,10 +203,17 @@ function buildInstanceContext(
     // Only truncate if not prioritized
     base.content = isPrioritized ? content : truncateText(content, MAX_TEXT_LENGTH);
   } else if (instance.type === 'code') {
-    base.language = instance.data.language;
-    const code = instance.data.code || '';
+    // Combine all files' content for context
+    const allCode = instance.data.files
+      .map(file => `// ${file.path}\n${file.content}`)
+      .join('\n\n');
+    // Use the language from the first file or active file
+    const activeFile = instance.data.activeFilePath
+      ? instance.data.files.find(f => f.path === instance.data.activeFilePath)
+      : instance.data.files[0];
+    base.language = activeFile?.language;
     // Only truncate if not prioritized
-    base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+    base.code = isPrioritized ? allCode : truncateCode(allCode, MAX_CODE_LINES);
   } else if (instance.type === 'pdf') {
     const fullText = instance.data.fullText || '';
     // Only truncate if not prioritized

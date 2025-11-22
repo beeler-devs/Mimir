@@ -146,12 +146,17 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${segmentData}\n\n`));
         }
 
+        // Calculate duration from the last word's end time
+        const duration = alternatives.words && alternatives.words.length > 0
+          ? alternatives.words[alternatives.words.length - 1].end
+          : 0;
+
         // Send completion message
         const doneData = JSON.stringify({
           type: 'done',
           transcript: alternatives.transcript,
           segments: segments,
-          duration: channel.duration || 0
+          duration: duration
         });
         controller.enqueue(encoder.encode(`data: ${doneData}\n\n`));
 

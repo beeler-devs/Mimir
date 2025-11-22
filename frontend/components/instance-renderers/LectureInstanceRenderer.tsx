@@ -2,7 +2,8 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import type { LectureInstance } from '@/lib/types';
+import type { LectureInstance, LectureSourceType } from '@/lib/types';
+import type { LectureMetadata } from '@/components/tabs/LectureViewer';
 
 // Dynamically import LectureViewer with SSR disabled
 const LectureViewer = dynamic(
@@ -18,7 +19,7 @@ const LectureViewer = dynamic(
 );
 
 interface LectureUploadData {
-  sourceType: string;
+  sourceType?: LectureSourceType;
   videoUrl?: string;
   youtubeId?: string;
   transcript?: string;
@@ -33,7 +34,7 @@ interface LectureUploadData {
   slidesFullText?: string;
   audioUrl?: string;
   duration?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: LectureMetadata;
 }
 
 interface LectureInstanceRendererProps {

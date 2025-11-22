@@ -62,8 +62,9 @@ export const MultiFileEditor: React.FC<MultiFileEditorProps> = ({
         modelsRef.current.set(file.path, model);
 
         // Listen to content changes
-        model.onDidChangeContent(() => {
-          onCodeChange(file.path, model.getValue());
+        const fileModel = model; // Capture in const for closure
+        fileModel.onDidChangeContent(() => {
+          onCodeChange(file.path, fileModel.getValue());
         });
       }
     });

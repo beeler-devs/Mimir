@@ -172,12 +172,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Calculate duration from the last word's end time
+    const duration = alternatives.words && alternatives.words.length > 0
+      ? alternatives.words[alternatives.words.length - 1].end
+      : 0;
+
     return NextResponse.json({
       success: true,
       videoUrl: urlData.publicUrl,
       transcript: alternatives.transcript,
       segments,
-      duration: channel.duration || 0,
+      duration: duration,
     });
 
   } catch (error) {
