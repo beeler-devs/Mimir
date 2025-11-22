@@ -310,6 +310,119 @@ export async function getLatestFlashcardSet(instanceId: string): Promise<Flashca
 }
 
 /**
+ * Get all flashcard sets for an instance (all non-archived versions)
+ */
+export async function getAllFlashcardSets(instanceId: string): Promise<FlashcardSetWithCards[]> {
+  const studyMaterials = await getStudyMaterialVersions(instanceId, 'flashcard_set');
+  if (studyMaterials.length === 0) return [];
+
+  // Filter to only non-archived
+  const activeStudyMaterials = studyMaterials.filter(sm => !sm.isArchived);
+  if (activeStudyMaterials.length === 0) return [];
+
+  const { data: setsData, error: setsError } = await supabaseClient
+    .from('flashcard_sets')
+    .select('*')
+    .in('study_material_id', activeStudyMaterials.map(sm => sm.id))
+    .order('created_at', { ascending: false });
+
+  if (setsError) throw setsError;
+
+  // Get all flashcards for these sets
+  const setIds = (setsData || []).map(s => s.id);
+  if (setIds.length === 0) return [];
+
+  const { data: cardsData, error: cardsError } = await supabaseClient
+    .from('flashcards')
+    .select('*')
+    .in('flashcard_set_id', setIds)
+    .order('position');
+
+  if (cardsError) throw cardsError;
+
+  // Group cards by set
+  const cardsBySet = new Map<string, any[]>();
+  (cardsData || []).forEach(card => {
+    if (!cardsBySet.has(card.flashcard_set_id)) {
+      cardsBySet.set(card.flashcard_set_id, []);
+    }
+    cardsBySet.get(card.flashcard_set_id)!.push(card);
+  });
+
+  return (setsData || []).map(set => ({
+    ...mapFlashcardSet(set),
+    flashcards: (cardsBySet.get(set.id) || []).map(mapFlashcard),
+    studyMaterial: activeStudyMaterials.find(sm => sm.id === set.study_material_id)!,
+  }));
+}
+
+/**
+ * Get flashcard set with statistics
+ */
+export async function getFlashcardSetWithStats(flashcardSetId: string): Promise<any> {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
+  // Get the flashcard set
+  const { data: setData, error: setError } = await supabaseClient
+    .from('flashcard_sets')
+    .select('*, study_material_id')
+    .eq('id', flashcardSetId)
+    .single();
+
+  if (setError) throw setError;
+
+  // Get study material
+  const { data: studyMaterialData } = await supabaseClient
+    .from('study_materials')
+    .select('*')
+    .eq('id', setData.study_material_id)
+    .single();
+
+  // Get flashcards
+  const { data: cardsData } = await supabaseClient
+    .from('flashcards')
+    .select('*')
+    .eq('flashcard_set_id', flashcardSetId)
+    .order('position');
+
+  const flashcards = (cardsData || []).map(mapFlashcard);
+  const totalCards = flashcards.length;
+
+  // Get review stats
+  const flashcardIds = flashcards.map(c => c.id);
+  let reviewedCount = 0;
+  let masteredCount = 0;
+  let dueForReview = 0;
+
+  if (flashcardIds.length > 0) {
+    const { data: reviews } = await supabaseClient
+      .from('flashcard_reviews')
+      .select('flashcard_id, ease_factor, next_review_date')
+      .in('flashcard_id', flashcardIds)
+      .eq('user_id', user.id);
+
+    reviewedCount = new Set((reviews || []).map(r => r.flashcard_id)).size;
+    masteredCount = (reviews || []).filter(r => r.ease_factor > 2.5).length;
+    const today = new Date().toISOString().split('T')[0];
+    dueForReview = (reviews || []).filter(r => r.next_review_date <= today).length;
+  }
+
+  return {
+    ...mapFlashcardSet(setData),
+    flashcards,
+    studyMaterial: studyMaterialData ? mapStudyMaterial(studyMaterialData) : null,
+    stats: {
+      reviewedCount,
+      masteredCount,
+      dueForReview,
+    },
+  };
+}
+
+/**
  * Record a flashcard review (spaced repetition)
  * Uses SM-2 algorithm
  */
@@ -528,6 +641,172 @@ export async function getLatestQuiz(instanceId: string): Promise<QuizWithQuestio
     questions: (questionsData || []).map(mapQuizQuestion),
     studyMaterial,
   };
+}
+
+/**
+ * Get all quizzes for an instance (all non-archived versions)
+ */
+export async function getAllQuizzes(instanceId: string): Promise<QuizWithQuestions[]> {
+  const studyMaterials = await getStudyMaterialVersions(instanceId, 'quiz');
+  if (studyMaterials.length === 0) return [];
+
+  // Filter to only non-archived
+  const activeStudyMaterials = studyMaterials.filter(sm => !sm.isArchived);
+  if (activeStudyMaterials.length === 0) return [];
+
+  const { data: quizzesData, error: quizzesError } = await supabaseClient
+    .from('quizzes')
+    .select('*')
+    .in('study_material_id', activeStudyMaterials.map(sm => sm.id))
+    .order('created_at', { ascending: false });
+
+  if (quizzesError) throw quizzesError;
+
+  // Get all questions for these quizzes
+  const quizIds = (quizzesData || []).map(q => q.id);
+  if (quizIds.length === 0) return [];
+
+  const { data: questionsData, error: questionsError } = await supabaseClient
+    .from('quiz_questions')
+    .select('*')
+    .in('quiz_id', quizIds)
+    .order('position');
+
+  if (questionsError) throw questionsError;
+
+  // Group questions by quiz
+  const questionsByQuiz = new Map<string, any[]>();
+  (questionsData || []).forEach(question => {
+    if (!questionsByQuiz.has(question.quiz_id)) {
+      questionsByQuiz.set(question.quiz_id, []);
+    }
+    questionsByQuiz.get(question.quiz_id)!.push(question);
+  });
+
+  return (quizzesData || []).map(quiz => ({
+    ...mapQuiz(quiz),
+    questions: (questionsByQuiz.get(quiz.id) || []).map(mapQuizQuestion),
+    studyMaterial: activeStudyMaterials.find(sm => sm.id === quiz.study_material_id)!,
+  }));
+}
+
+/**
+ * Get quiz with statistics
+ */
+export async function getQuizWithStats(quizId: string): Promise<any> {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
+  // Get the quiz
+  const { data: quizData, error: quizError } = await supabaseClient
+    .from('quizzes')
+    .select('*, study_material_id')
+    .eq('id', quizId)
+    .single();
+
+  if (quizError) throw quizError;
+
+  // Get study material
+  const { data: studyMaterialData } = await supabaseClient
+    .from('study_materials')
+    .select('*')
+    .eq('id', quizData.study_material_id)
+    .single();
+
+  // Get questions
+  const { data: questionsData } = await supabaseClient
+    .from('quiz_questions')
+    .select('*')
+    .eq('quiz_id', quizId)
+    .order('position');
+
+  // Get all attempts for this quiz by this user
+  const { data: attemptsData } = await supabaseClient
+    .from('quiz_attempts')
+    .select('*')
+    .eq('quiz_id', quizId)
+    .eq('user_id', user.id)
+    .order('started_at', { ascending: false });
+
+  const totalAttempts = (attemptsData || []).length;
+  const completedAttempts = (attemptsData || []).filter(a => a.completed_at !== null).length;
+  
+  // Find incomplete attempt
+  const incompleteAttempt = (attemptsData || []).find(a => a.completed_at === null);
+  
+  // Calculate best score from completed attempts
+  const completedAttemptsData = (attemptsData || []).filter(a => a.completed_at !== null);
+  let bestScore = null;
+  if (completedAttemptsData.length > 0) {
+    const scores = completedAttemptsData.map(a => 
+      a.total_questions ? (a.score / a.total_questions) * 100 : 0
+    );
+    bestScore = Math.max(...scores);
+  }
+
+  // Get last attempt date
+  const lastAttemptDate = attemptsData && attemptsData.length > 0 
+    ? attemptsData[0].started_at 
+    : null;
+
+  return {
+    ...mapQuiz(quizData),
+    questions: (questionsData || []).map(mapQuizQuestion),
+    studyMaterial: studyMaterialData ? mapStudyMaterial(studyMaterialData) : null,
+    stats: {
+      totalAttempts,
+      completedAttempts,
+      bestScore,
+      lastAttemptDate,
+      hasIncompleteAttempt: !!incompleteAttempt,
+      incompleteAttemptId: incompleteAttempt?.id || null,
+      currentQuestionIndex: incompleteAttempt?.current_question_index || null,
+    },
+  };
+}
+
+/**
+ * Update quiz attempt position for resume functionality
+ */
+export async function updateQuizAttemptPosition(
+  attemptId: string,
+  questionIndex: number
+): Promise<void> {
+  const { error } = await supabaseClient
+    .from('quiz_attempts')
+    .update({ current_question_index: questionIndex })
+    .eq('id', attemptId);
+
+  if (error) throw error;
+}
+
+/**
+ * Get incomplete quiz attempt for a quiz
+ */
+export async function getIncompleteQuizAttempt(quizId: string): Promise<QuizAttempt | null> {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
+  const { data, error } = await supabaseClient
+    .from('quiz_attempts')
+    .select('*')
+    .eq('quiz_id', quizId)
+    .eq('user_id', user.id)
+    .is('completed_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null; // No incomplete attempt found
+    throw error;
+  }
+
+  return data ? mapQuizAttempt(data) : null;
 }
 
 /**
@@ -849,6 +1128,7 @@ function mapQuizAttempt(data: any): QuizAttempt {
     timeTakenSeconds: data.time_taken_seconds,
     passed: data.passed,
     attemptNumber: data.attempt_number,
+    currentQuestionIndex: data.current_question_index,
   };
 }
 

@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, RefObject, useCallback } from 'react';
-import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment, MindMapWithNodes } from '@/lib/types';
+import { ChatNode, AnimationSuggestion, WorkspaceInstance, Folder, LearningMode, PdfAttachment, MindMapWithNodes, QuizWithStats, FlashcardSetWithStats } from '@/lib/types';
 import { addMessage, getActiveBranch, buildBranchPath } from '@/lib/chatState';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
 import { ChatTabBar } from './ChatTabBar';
 import MindMapViewer from './MindMapViewer';
-import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus, Network, RotateCw, Loader2 } from 'lucide-react';
+import { PanelsLeftRight, MessageSquare, BookOpen, FileQuestion, FileText, Podcast, MessageSquarePlus, Network, RotateCw, Loader2, Calendar, Trophy, Clock } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/common/MarkdownRenderer';
 import {
   loadUserChats,
@@ -28,11 +28,17 @@ import {
   getLatestSummary,
   saveFlashcardSet,
   getLatestFlashcardSet,
+  getAllFlashcardSets,
+  getFlashcardSetWithStats,
   saveQuiz,
   getLatestQuiz,
+  getAllQuizzes,
+  getQuizWithStats,
   startQuizAttempt,
   submitQuizAnswer,
   completeQuizAttempt,
+  updateQuizAttemptPosition,
+  getIncompleteQuizAttempt,
 } from '@/lib/db/studyMaterials';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -132,6 +138,13 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [currentQuizAttemptId, setCurrentQuizAttemptId] = useState<string | null>(null);
   const [quizId, setQuizId] = useState<string | null>(null);
   const [loadedFlashcardSetId, setLoadedFlashcardSetId] = useState<string | null>(null);
+  
+  // History state
+  const [quizHistory, setQuizHistory] = useState<QuizWithStats[]>([]);
+  const [flashcardHistory, setFlashcardHistory] = useState<FlashcardSetWithStats[]>([]);
+  const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
+  const [selectedFlashcardSetId, setSelectedFlashcardSetId] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   
   // Flashcard chat state (separate from main chat)
   const [flashcardChatNodes, setFlashcardChatNodes] = useState<ChatNode[]>([]);
@@ -483,6 +496,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         return;
       }
       
+      setLoadingHistory(true);
+      
       try {
         // Load latest summary
         const savedSummary = await getLatestSummary(activeInstance.id);
@@ -490,32 +505,29 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           setSummary(savedSummary.content);
         }
         
-        // Load latest flashcard set
-        const savedFlashcardSet = await getLatestFlashcardSet(activeInstance.id);
-        if (savedFlashcardSet) {
-          setFlashcards(savedFlashcardSet.flashcards.map(card => ({
-            front: card.front,
-            back: card.back
-          })));
-          setLoadedFlashcardSetId(savedFlashcardSet.id);
+        // Load all flashcard sets with stats
+        const allFlashcardSets = await getAllFlashcardSets(activeInstance.id);
+        if (allFlashcardSets.length > 0) {
+          // Get stats for each set
+          const setsWithStats = await Promise.all(
+            allFlashcardSets.map(set => getFlashcardSetWithStats(set.id))
+          );
+          setFlashcardHistory(setsWithStats);
         }
         
-        // Load latest quiz
-        const savedQuiz = await getLatestQuiz(activeInstance.id);
-        if (savedQuiz) {
-          setQuizQuestions(savedQuiz.questions.map(q => ({
-            id: q.id,
-            question: q.question,
-            options: q.options,
-            correctIndex: q.correctOptionIndex,
-            optionExplanations: q.optionExplanations
-          })));
-          setQuizId(savedQuiz.id);
-          // Initialize user answers array
-          setUserAnswers(new Array(savedQuiz.questions.length).fill(null));
+        // Load all quizzes with stats
+        const allQuizzes = await getAllQuizzes(activeInstance.id);
+        if (allQuizzes.length > 0) {
+          // Get stats for each quiz
+          const quizzesWithStats = await Promise.all(
+            allQuizzes.map(quiz => getQuizWithStats(quiz.id))
+          );
+          setQuizHistory(quizzesWithStats);
         }
       } catch (error) {
         console.error('Error loading study materials:', error);
+      } finally {
+        setLoadingHistory(false);
       }
     };
     
@@ -837,6 +849,16 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
             { focus: studyModeFocus || undefined }
           );
           setLoadedFlashcardSetId(savedFlashcardSet.id);
+          setSelectedFlashcardSetId(savedFlashcardSet.id);
+          
+          // Reload flashcard history
+          const allFlashcardSets = await getAllFlashcardSets(activeInstance.id);
+          if (allFlashcardSets.length > 0) {
+            const setsWithStats = await Promise.all(
+              allFlashcardSets.map(set => getFlashcardSetWithStats(set.id))
+            );
+            setFlashcardHistory(setsWithStats);
+          }
         } catch (error) {
           console.error('Error saving flashcards:', error);
         }
@@ -1092,6 +1114,7 @@ The user is studying this flashcard and may ask questions about it, need help un
               question: q.question,
               options: q.options,
               correctIndex: q.correctIndex,
+              optionExplanations: q.optionExplanations,
             })),
             'Quiz',
             undefined,
@@ -1107,10 +1130,20 @@ The user is studying this flashcard and may ask questions about it, need help un
             optionExplanations: q.optionExplanations
           })));
           setQuizId(savedQuiz.id);
+          setSelectedQuizId(savedQuiz.id);
           
           // Start a quiz attempt
           const attempt = await startQuizAttempt(savedQuiz.id);
           setCurrentQuizAttemptId(attempt.id);
+          
+          // Reload quiz history
+          const allQuizzes = await getAllQuizzes(activeInstance.id);
+          if (allQuizzes.length > 0) {
+            const quizzesWithStats = await Promise.all(
+              allQuizzes.map(quiz => getQuizWithStats(quiz.id))
+            );
+            setQuizHistory(quizzesWithStats);
+          }
         } catch (error) {
           console.error('Error saving quiz:', error);
           // Still set the questions even if save fails
@@ -1402,6 +1435,98 @@ The user is studying this flashcard and may ask questions about it, need help un
           );
         }
 
+        // Show history grid if no flashcard set is selected and history exists
+        if (!selectedFlashcardSetId && flashcardHistory.length > 0 && flashcards.length === 0) {
+          return (
+            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Flashcard Sets</h3>
+                <button
+                  onClick={generateFlashcards}
+                  disabled={generatingFlashcards}
+                  className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium transition-colors"
+                >
+                  Generate New Set
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {flashcardHistory.map((set) => {
+                  const progressPercent = set.cardCount > 0 
+                    ? Math.round((set.stats.reviewedCount / set.cardCount) * 100)
+                    : 0;
+                  
+                  return (
+                    <div
+                      key={set.id}
+                      className="border border-border rounded-lg p-4 hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer bg-background"
+                      onClick={() => {
+                        // Load this flashcard set
+                        setSelectedFlashcardSetId(set.id);
+                        setFlashcards(set.flashcards.map(card => ({
+                          front: card.front,
+                          back: card.back
+                        })));
+                        setLoadedFlashcardSetId(set.id);
+                        setCurrentFlashcardIndex(0);
+                        setShowFlashcardAnswer(false);
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-sm mb-1">
+                            {set.title || `Flashcard Set ${set.studyMaterial?.version || ''}`}
+                          </h4>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Calendar className="h-3 w-3" />
+                            <span>{new Date(set.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        <div className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
+                          {set.cardCount} Cards
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">
+                            Progress: {set.stats.reviewedCount}/{set.cardCount} reviewed
+                          </span>
+                          <span className="font-medium">{progressPercent}%</span>
+                        </div>
+
+                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+
+                        {set.stats.dueForReview > 0 && (
+                          <div className="flex items-center gap-1 text-xs text-orange-600">
+                            <Clock className="h-3 w-3" />
+                            <span>{set.stats.dueForReview} due for review</span>
+                          </div>
+                        )}
+
+                        <button
+                          className="w-full px-3 py-1.5 rounded-md text-xs font-medium transition-colors bg-primary/10 text-primary hover:bg-primary/20"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle will be done by parent div
+                          }}
+                        >
+                          Study
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         if (flashcards.length === 0) {
           return (
             <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
@@ -1441,7 +1566,25 @@ The user is studying this flashcard and may ask questions about it, need help un
             <div className="flex-1 overflow-y-auto">
               <div className="p-4 pb-0">
                 <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
-                  <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
+                  <div className="flex items-center gap-3">
+                    {flashcardHistory.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setSelectedFlashcardSetId(null);
+                          setFlashcards([]);
+                          setLoadedFlashcardSetId(null);
+                          setCurrentFlashcardIndex(0);
+                          setShowFlashcardAnswer(false);
+                          setFlashcardChatNodes([]);
+                          setFlashcardChatActiveNodeId(null);
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        ← Back
+                      </button>
+                    )}
+                    <span>Flashcard {currentFlashcardIndex + 1} of {flashcards.length}</span>
+                  </div>
                   <div className="flex items-center gap-4">
                     <button
                       onClick={generateFlashcards}
@@ -1538,6 +1681,117 @@ The user is studying this flashcard and may ask questions about it, need help un
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-sm text-muted-foreground">{quizThinkingMessage || 'Thinking...'}</div>
+              </div>
+            </div>
+          );
+        }
+
+        // Show history grid if no quiz is selected and history exists
+        if (!selectedQuizId && quizHistory.length > 0 && quizQuestions.length === 0) {
+          return (
+            <div className="flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Quiz History</h3>
+                <button
+                  onClick={generateQuiz}
+                  disabled={generatingQuiz}
+                  className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium transition-colors"
+                >
+                  Generate New Quiz
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {quizHistory.map((quiz) => {
+                  const percentage = quiz.stats.bestScore !== null ? Math.round(quiz.stats.bestScore) : 0;
+                  const hasIncomplete = quiz.stats.hasIncompleteAttempt;
+                  
+                  return (
+                    <div
+                      key={quiz.id}
+                      className="border border-border rounded-lg p-4 hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer bg-background"
+                      onClick={async () => {
+                        // Load this quiz
+                        setSelectedQuizId(quiz.id);
+                        setQuizQuestions(quiz.questions.map(q => ({
+                          id: q.id,
+                          question: q.question,
+                          options: q.options,
+                          correctIndex: q.correctOptionIndex,
+                          optionExplanations: q.optionExplanations
+                        })));
+                        setQuizId(quiz.id);
+                        
+                        // Check for incomplete attempt
+                        if (hasIncomplete && quiz.stats.incompleteAttemptId) {
+                          setCurrentQuizAttemptId(quiz.stats.incompleteAttemptId);
+                          const savedIndex = quiz.stats.currentQuestionIndex || 0;
+                          setCurrentQuizIndex(savedIndex);
+                          setUserAnswers(new Array(quiz.questions.length).fill(null));
+                          setQuizCompleted(false);
+                          setSelectedAnswer(null);
+                        } else {
+                          // Start fresh
+                          setCurrentQuizIndex(0);
+                          setSelectedAnswer(null);
+                          setUserAnswers(new Array(quiz.questions.length).fill(null));
+                          setQuizCompleted(false);
+                          setCurrentQuizAttemptId(null);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-sm mb-1">
+                            {quiz.title || `Quiz ${quiz.studyMaterial?.version || ''}`}
+                          </h4>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Calendar className="h-3 w-3" />
+                            <span>{new Date(quiz.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        <div className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
+                          {quiz.questionCount} Q's
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Attempts: {quiz.stats.completedAttempts}/{quiz.stats.totalAttempts}</span>
+                          {quiz.stats.bestScore !== null && (
+                            <div className="flex items-center gap-1">
+                              <Trophy className="h-3 w-3 text-yellow-500" />
+                              <span className="font-medium">{percentage}%</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {quiz.stats.bestScore !== null && (
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        )}
+
+                        <button
+                          className={`w-full px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            hasIncomplete
+                              ? 'bg-orange-500 text-white hover:bg-orange-600'
+                              : 'bg-primary/10 text-primary hover:bg-primary/20'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle will be done by parent div
+                          }}
+                        >
+                          {hasIncomplete ? '▶ Resume' : 'Retake'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -1659,6 +1913,22 @@ The user is studying this flashcard and may ask questions about it, need help un
             {/* Header with score and progress */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
+                {quizHistory.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedQuizId(null);
+                      setQuizQuestions([]);
+                      setQuizId(null);
+                      setCurrentQuizIndex(0);
+                      setUserAnswers([]);
+                      setQuizCompleted(false);
+                      setCurrentQuizAttemptId(null);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    ← Back
+                  </button>
+                )}
                 <div className="text-sm font-medium">
                   <span className="text-muted-foreground">Question </span>
                   <span className="text-primary">{currentQuizIndex + 1}</span>
@@ -1731,11 +2001,23 @@ The user is studying this flashcard and may ask questions about it, need help un
                             setUserAnswers(newAnswers);
                             setSelectedAnswer(idx);
                             
+                            // Create attempt if it doesn't exist yet
+                            let attemptId = currentQuizAttemptId;
+                            if (!attemptId && quizId) {
+                              try {
+                                const newAttempt = await startQuizAttempt(quizId);
+                                attemptId = newAttempt.id;
+                                setCurrentQuizAttemptId(newAttempt.id);
+                              } catch (error) {
+                                console.error('Error creating quiz attempt:', error);
+                              }
+                            }
+                            
                             // Save answer to database immediately
-                            if (currentQuizAttemptId && quizQuestions[currentQuizIndex].id) {
+                            if (attemptId && quizQuestions[currentQuizIndex].id) {
                               try {
                                 await submitQuizAnswer(
-                                  currentQuizAttemptId,
+                                  attemptId,
                                   quizQuestions[currentQuizIndex].id!,
                                   idx
                                 );
@@ -1798,9 +2080,19 @@ The user is studying this flashcard and may ask questions about it, need help un
             {/* Navigation buttons */}
             <div className="flex gap-2 pt-2">
               <button
-                onClick={() => {
-                  setCurrentQuizIndex(Math.max(0, currentQuizIndex - 1));
-                  setSelectedAnswer(userAnswers[currentQuizIndex - 1]);
+                onClick={async () => {
+                  const newIndex = Math.max(0, currentQuizIndex - 1);
+                  setCurrentQuizIndex(newIndex);
+                  setSelectedAnswer(userAnswers[newIndex]);
+                  
+                  // Update position in database
+                  if (currentQuizAttemptId) {
+                    try {
+                      await updateQuizAttemptPosition(currentQuizAttemptId, newIndex);
+                    } catch (error) {
+                      console.error('Error updating quiz position:', error);
+                    }
+                  }
                 }}
                 disabled={currentQuizIndex === 0}
                 className="flex-1 px-3 py-2 bg-background border-2 border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all"
@@ -1810,9 +2102,19 @@ The user is studying this flashcard and may ask questions about it, need help un
 
               {currentQuizIndex < quizQuestions.length - 1 ? (
                 <button
-                  onClick={() => {
-                    setCurrentQuizIndex(currentQuizIndex + 1);
-                    setSelectedAnswer(userAnswers[currentQuizIndex + 1]);
+                  onClick={async () => {
+                    const newIndex = currentQuizIndex + 1;
+                    setCurrentQuizIndex(newIndex);
+                    setSelectedAnswer(userAnswers[newIndex]);
+                    
+                    // Update position in database
+                    if (currentQuizAttemptId) {
+                      try {
+                        await updateQuizAttemptPosition(currentQuizAttemptId, newIndex);
+                      } catch (error) {
+                        console.error('Error updating quiz position:', error);
+                      }
+                    }
                   }}
                   className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium transition-all shadow-sm"
                 >
