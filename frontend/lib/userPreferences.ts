@@ -43,6 +43,14 @@ export async function createUserPreferences(userId: string): Promise<UserPrefere
     .single();
 
   if (error) {
+    // If unique constraint violation (race condition with another tab), fetch the existing record
+    if (error.code === '23505') {
+      console.log('User preferences already exist (created by another tab), fetching...');
+      const existing = await getUserPreferences(userId);
+      if (existing) {
+        return existing;
+      }
+    }
     console.error('Error creating user preferences:', error);
     throw error;
   }
@@ -59,6 +67,10 @@ export async function createUserPreferences(userId: string): Promise<UserPrefere
 }
 
 export async function markOnboardingComplete(userId: string): Promise<void> {
+  // First ensure preferences exist
+  await getOrCreateUserPreferences(userId);
+
+  // Now update them
   const { error } = await supabase
     .from('user_preferences')
     .update({

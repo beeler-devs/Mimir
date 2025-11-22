@@ -61,6 +61,13 @@ const FeatureCard: React.FC<{
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({ open, onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);
 
+  // Reset to first step when modal closes
+  React.useEffect(() => {
+    if (!open) {
+      setCurrentStep(0);
+    }
+  }, [open]);
+
   const steps = [
     // Step 1: Instance Modes
     <OnboardingStep

@@ -43,30 +43,42 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const lastCheckedUserId = React.useRef<string | null>(null);
 
   // Check if user has completed onboarding
   useEffect(() => {
     const checkOnboarding = async () => {
-      if (!user) {
-        setCheckingOnboarding(false);
+      if (!user?.id) {
+        // User logged out, reset the ref
+        lastCheckedUserId.current = null;
+        setOnboardingOpen(false);
         return;
       }
+
+      // Prevent duplicate checks for the same user (when user object reference changes)
+      if (lastCheckedUserId.current === user.id) {
+        return;
+      }
+
+      lastCheckedUserId.current = user.id;
 
       try {
         const preferences = await getOrCreateUserPreferences(user.id);
         if (!preferences.hasCompletedOnboarding) {
           setOnboardingOpen(true);
         }
+        setOnboardingError(null);
       } catch (error) {
         console.error('Error checking onboarding status:', error);
-      } finally {
-        setCheckingOnboarding(false);
+        // Show onboarding anyway if we can't check - better to show it than not
+        setOnboardingOpen(true);
+        setOnboardingError('Could not load preferences. You can still complete the onboarding.');
       }
     };
 
     checkOnboarding();
-  }, [user]);
+  }, [user?.id]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -86,13 +98,22 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   // Handle onboarding completion
   const handleOnboardingComplete = async () => {
-    if (user) {
-      try {
-        await markOnboardingComplete(user.id);
-        setOnboardingOpen(false);
-      } catch (error) {
-        console.error('Error marking onboarding as complete:', error);
-      }
+    if (!user?.id) {
+      // If no user, just close the modal
+      setOnboardingOpen(false);
+      return;
+    }
+
+    try {
+      await markOnboardingComplete(user.id);
+      setOnboardingOpen(false);
+      setOnboardingError(null);
+    } catch (error) {
+      console.error('Error marking onboarding as complete:', error);
+      // If marking complete fails, close anyway - user has seen the onboarding
+      // Better UX than keeping them stuck
+      setOnboardingOpen(false);
+      setOnboardingError(null);
     }
   };
 
