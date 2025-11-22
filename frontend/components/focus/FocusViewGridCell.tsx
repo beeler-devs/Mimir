@@ -15,10 +15,12 @@ import { FocusViewComponentRenderer } from './FocusViewComponentRenderer';
 interface FocusViewGridCellProps {
   component: GridComponent;
   isSelected: boolean;
+  isDragging?: boolean;
   onSelect: () => void;
   onRemove: () => void;
   onMove: (newPosition: GridPosition) => void;
   onUpdate: (updates: Partial<GridComponent>) => void;
+  onStartDrag?: (componentId: string) => void;
   allComponents: GridComponent[];
 }
 
@@ -34,10 +36,12 @@ interface FocusViewGridCellProps {
 export const FocusViewGridCell: React.FC<FocusViewGridCellProps> = ({
   component,
   isSelected,
+  isDragging = false,
   onSelect,
   onRemove,
   onMove,
   onUpdate,
+  onStartDrag,
   allComponents,
 }) => {
   const [showContextMenu, setShowContextMenu] = useState(false);
@@ -62,6 +66,16 @@ export const FocusViewGridCell: React.FC<FocusViewGridCellProps> = ({
     setShowContextMenu(false);
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Only start drag on header area, not on buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return;
+    }
+    if (onStartDrag) {
+      onStartDrag(component.id);
+    }
+  };
+
   // Build context menu items for repositioning
   const contextMenuItems = availablePositions
     .filter(pos => !occupiedPositions.includes(pos))
@@ -82,14 +96,18 @@ export const FocusViewGridCell: React.FC<FocusViewGridCellProps> = ({
             ? 'border-primary shadow-lg ring-2 ring-primary/20'
             : 'border-border hover:border-primary/50'
           }
+          ${isDragging ? 'opacity-50 cursor-grabbing' : 'cursor-default'}
           bg-background
         `}
         onClick={onSelect}
         onContextMenu={handleContextMenu}
-        style={{ zIndex: isSelected ? 10 : 1 }}
+        style={{ zIndex: isSelected || isDragging ? 10 : 1 }}
       >
         {/* Component Header */}
-        <div className="h-10 px-3 border-b border-border bg-card/50 flex items-center justify-between gap-2">
+        <div 
+          className="h-10 px-3 border-b border-border bg-card/50 flex items-center justify-between gap-2 cursor-move"
+          onMouseDown={handleMouseDown}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <Move className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 cursor-move" />
             <span className="text-sm font-medium truncate">

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
-import { GridComponent, GridPosition, GRID_POSITION_CLASSES, ComponentType } from '@/lib/focusView';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { GridComponent, GridPosition, GRID_POSITION_CLASSES, ComponentType, getSuggestedPositions, isPositionOccupied } from '@/lib/focusView';
 import { FocusViewProvider } from '@/lib/FocusViewContext';
 import { Plus, Settings, Save, Layout } from 'lucide-react';
 import { Button } from '@/components/common';
@@ -9,6 +9,7 @@ import { ComponentPlacementModal } from './ComponentPlacementModal';
 import { ConfigurationPanel } from './ConfigurationPanel';
 import { FocusViewGridCell } from './FocusViewGridCell';
 import { ClearAllConfirmModal } from './ClearAllConfirmModal';
+import { ComponentPalette } from './ComponentPalette';
 
 interface FocusViewGridProps {
   components: GridComponent[];
@@ -35,8 +36,84 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [isToolbarVisible, setIsToolbarVisible] = useState(false);
+  const [draggingComponentId, setDraggingComponentId] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const [highlightedPosition, setHighlightedPosition] = useState<GridPosition | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const hoverZoneRef = useRef<HTMLDivElement>(null);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Detect grid position from mouse coordinates
+   * Prioritizes larger positions (halves, thirds, quarters) over smaller ones
+   */
+  const detectGridPosition = useCallback((x: number, y: number): GridPosition | null => {
+    if (!gridContainerRef.current) return null;
+
+    const rect = gridContainerRef.current.getBoundingClientRect();
+    const relativeX = x - rect.left;
+    const relativeY = y - rect.top;
+    
+    const gridWidth = rect.width;
+    const gridHeight = rect.height;
+    
+    const colPercent = relativeX / gridWidth;
+    const rowPercent = relativeY / gridHeight;
+
+    // Smart detection: prioritize larger positions
+    // Check if clearly in a half (within 20% of center line)
+    const halfThreshold = 0.2;
+    
+    // Check vertical halves (left/right)
+    if (colPercent < 0.5 - halfThreshold) {
+      return 'left-half';
+    } else if (colPercent > 0.5 + halfThreshold) {
+      return 'right-half';
+    }
+    
+    // Check horizontal halves (top/bottom) if not clearly in vertical half
+    if (rowPercent < 0.5 - halfThreshold) {
+      return 'top-half';
+    } else if (rowPercent > 0.5 + halfThreshold) {
+      return 'bottom-half';
+    }
+    
+    // Default to quarters for center area
+    const isLeftHalf = colPercent < 0.5;
+    const isTopHalf = rowPercent < 0.5;
+    
+    if (isTopHalf && isLeftHalf) {
+      return 'top-left-quarter';
+    } else if (isTopHalf && !isLeftHalf) {
+      return 'top-right-quarter';
+    } else if (!isTopHalf && isLeftHalf) {
+      return 'bottom-left-quarter';
+    } else {
+      return 'bottom-right-quarter';
+    }
+  }, []);
+
+  /**
+   * Find an available position for a component type
+   * Tries center positions first, then falls back to others
+   */
+  const findAvailablePosition = useCallback((type: ComponentType): GridPosition => {
+    const suggested = getSuggestedPositions(type, components);
+    if (suggested.length === 0) {
+      // Fallback to top-left-quarter if nothing available
+      return 'top-left-quarter';
+    }
+    
+    // Prefer center positions
+    const preferred = ['center-third', 'top-left-quarter', 'top-right-quarter', 'left-half', 'right-half'];
+    for (const pos of preferred) {
+      if (suggested.includes(pos as GridPosition)) {
+        return pos as GridPosition;
+      }
+    }
+    
+    return suggested[0];
+  }, [components]);
 
   const handleAddComponent = useCallback((
     type: ComponentType,
@@ -54,6 +131,27 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
     onComponentsChange([...components, newComponent]);
     setIsPlacementModalOpen(false);
   }, [components, onComponentsChange]);
+
+  /**
+   * Immediately add component and start dragging
+   */
+  const handleSelectComponent = useCallback((type: ComponentType) => {
+    const position = findAvailablePosition(type);
+    const newComponent: GridComponent = {
+      id: `${type}-${Date.now()}`,
+      type,
+      position,
+      config: {},
+      zIndex: components.length,
+    };
+
+    const updatedComponents = [...components, newComponent];
+    onComponentsChange(updatedComponents);
+    
+    // Start dragging immediately
+    setDraggingComponentId(newComponent.id);
+    setSelectedComponentId(newComponent.id);
+  }, [components, onComponentsChange, findAvailablePosition]);
 
   const handleRemoveComponent = useCallback((id: string) => {
     onComponentsChange(components.filter(c => c.id !== id));
@@ -97,6 +195,68 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
 
   const handleToolbarMouseLeave = useCallback(() => {
     setIsToolbarVisible(false);
+  }, []);
+
+  /**
+   * Handle mouse move during drag
+   */
+  const handleDragMove = useCallback((e: MouseEvent) => {
+    if (!draggingComponentId || !gridContainerRef.current) return;
+
+    const position = detectGridPosition(e.clientX, e.clientY);
+    setHighlightedPosition(position);
+    setDragPosition({ x: e.clientX, y: e.clientY });
+  }, [draggingComponentId, detectGridPosition]);
+
+  /**
+   * Handle mouse up to finalize drag
+   */
+  const handleDragEnd = useCallback((e: MouseEvent) => {
+    if (!draggingComponentId) return;
+
+    const component = components.find(c => c.id === draggingComponentId);
+    if (component) {
+      // Get the final position from mouse coordinates
+      const finalPosition = detectGridPosition(e.clientX, e.clientY);
+      
+      if (finalPosition) {
+        // Check if position is available (excluding the component being dragged)
+        const otherComponents = components.filter(c => c.id !== draggingComponentId);
+        if (!isPositionOccupied(finalPosition, otherComponents)) {
+          handleMoveComponent(draggingComponentId, finalPosition);
+        } else {
+          // Try to find nearest available position
+          const suggested = getSuggestedPositions(component.type, otherComponents);
+          if (suggested.length > 0) {
+            handleMoveComponent(draggingComponentId, suggested[0]);
+          }
+        }
+      }
+    }
+
+    setDraggingComponentId(null);
+    setDragPosition(null);
+    setHighlightedPosition(null);
+  }, [draggingComponentId, components, detectGridPosition, handleMoveComponent]);
+
+  // Set up global mouse event listeners for dragging
+  useEffect(() => {
+    if (draggingComponentId) {
+      window.addEventListener('mousemove', handleDragMove);
+      window.addEventListener('mouseup', handleDragEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleDragMove);
+        window.removeEventListener('mouseup', handleDragEnd);
+      };
+    }
+  }, [draggingComponentId, handleDragMove, handleDragEnd]);
+
+  /**
+   * Start dragging a component
+   */
+  const handleStartDrag = useCallback((componentId: string) => {
+    setDraggingComponentId(componentId);
+    setSelectedComponentId(componentId);
   }, []);
 
   return (
@@ -144,15 +304,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
             Templates
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsPlacementModalOpen(true)}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add Component
-          </Button>
+          <ComponentPalette onSelectComponent={handleSelectComponent} />
 
           {onSaveConfiguration && (
             <Button
@@ -191,13 +343,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
               <h2 className="text-2xl font-semibold mb-2">Your Focus Workspace</h2>
 
               <div className="flex gap-3 justify-center">
-                <Button
-                  onClick={() => setIsPlacementModalOpen(true)}
-                  className="gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Your First Component
-                </Button>
+                <ComponentPalette onSelectComponent={handleSelectComponent} />
                 <Button
                   variant="outline"
                   onClick={() => setIsConfigPanelOpen(true)}
@@ -212,19 +358,36 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
         ) : (
           // Grid with Components
           <div className="h-full max-w-[1920px] mx-auto">
-            <div className="grid grid-cols-12 grid-rows-12 gap-2 h-full relative">
+            <div 
+              ref={gridContainerRef}
+              className="grid grid-cols-12 grid-rows-12 gap-2 h-full relative"
+            >
               {components.map((component) => (
                 <FocusViewGridCell
                   key={component.id}
                   component={component}
                   isSelected={selectedComponentId === component.id}
+                  isDragging={draggingComponentId === component.id}
                   onSelect={() => setSelectedComponentId(component.id)}
                   onRemove={() => handleRemoveComponent(component.id)}
                   onMove={(newPosition) => handleMoveComponent(component.id, newPosition)}
                   onUpdate={(updates) => handleUpdateComponent(component.id, updates)}
+                  onStartDrag={handleStartDrag}
                   allComponents={components}
                 />
               ))}
+
+              {/* Visual Highlight Overlay */}
+              {highlightedPosition && draggingComponentId && (
+                <div
+                  className={`
+                    absolute pointer-events-none z-50
+                    ${GRID_POSITION_CLASSES[highlightedPosition]}
+                    border-2 border-primary bg-primary/10 rounded-lg
+                    transition-all duration-150
+                  `}
+                />
+              )}
             </div>
           </div>
         )}

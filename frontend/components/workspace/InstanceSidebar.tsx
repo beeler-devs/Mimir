@@ -550,7 +550,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           <button
             onClick={handleFocusViewToggle}
             className={`
-              h-10 w-10 rounded-full border border-border transition-colors
+              p-2 rounded-full border border-border transition-colors
               flex items-center justify-center
               ${focusViewEnabled 
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
@@ -560,7 +560,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             aria-label="Toggle Focus View"
             title="Focus View"
           >
-            <span className="text-sm font-semibold">F</span>
+            <span className="text-xs font-semibold">F</span>
           </button>
           <button
             onClick={toggleCollapsed}

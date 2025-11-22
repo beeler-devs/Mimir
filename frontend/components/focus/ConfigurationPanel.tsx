@@ -164,10 +164,17 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
             </h3>
             <div className="grid gap-3">
               {DEFAULT_CONFIGURATIONS.map((template, index) => (
-                <button
+                <div
                   key={index}
                   onClick={() => handleLoadTemplate(template)}
-                  className="p-4 rounded-xl border border-border hover:border-primary/50 transition-all text-left bg-card hover:bg-muted/20"
+                  className="p-4 rounded-xl border border-border hover:border-primary/50 transition-all text-left bg-card hover:bg-muted/20 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleLoadTemplate(template);
+                    }
+                  }}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -182,11 +189,11 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
                         {template.components.length} component{template.components.length !== 1 ? 's' : ''}
                       </p>
                     </div>
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" className="pointer-events-none">
                       Load
                     </Button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
