@@ -50,7 +50,7 @@ export async function getLatestStudyMaterial(
   instanceId: string,
   type: StudyMaterialType
 ): Promise<StudyMaterial | null> {
-  const { data, error } = await supabaseClientClient
+  const { data, error } = await supabaseClient
     .from('study_materials')
     .select('*')
     .eq('instance_id', instanceId)
@@ -538,7 +538,7 @@ export async function startQuizAttempt(quizId: string): Promise<QuizAttempt> {
   if (!user) throw new Error('User not authenticated');
 
   // Get question count
-  const { data: quiz } = await supabaseClientClient.from('quizzes').select('question_count').eq('id', quizId).single();
+  const { data: quiz } = await supabaseClient.from('quizzes').select('question_count').eq('id', quizId).single();
 
   const { data, error } = await supabaseClient
     .from('quiz_attempts')
