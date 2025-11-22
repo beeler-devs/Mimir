@@ -290,7 +290,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           }}
           className={`
             w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer
-            ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
+            ${isActive ? 'bg-muted/90 text-foreground' : 'hover:bg-muted/70'}
           `}
         >
           {/* Chevron for folders */}
