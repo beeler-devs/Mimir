@@ -2229,7 +2229,7 @@ The user is studying this flashcard and may ask questions about it, need help un
           return (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
+                <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
                 <div className="text-sm text-muted-foreground">{mindMapThinkingMessage || 'Generating mind map...'}</div>
               </div>
             </div>
@@ -2240,7 +2240,7 @@ The user is studying this flashcard and may ask questions about it, need help un
           return (
             <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
               <div className="text-center">
-                <Network className="h-12 w-12 mx-auto mb-4 text-purple-500" />
+                <Network className="h-12 w-12 mx-auto mb-4 text-primary" />
                 <h3 className="text-lg font-semibold mb-2">Generate Mind Map</h3>
                 <p className="text-sm text-muted-foreground max-w-md">
                   Create an interactive concept map to visualize key ideas and their relationships
@@ -2253,7 +2253,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                   <button
                     onClick={() => setMindMapScopeType('full')}
                     className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${mindMapScopeType === 'full'
-                      ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                      ? 'bg-primary/10 text-primary border-primary shadow-sm'
                       : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
                       }`}
                   >
@@ -2262,7 +2262,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                   <button
                     onClick={() => setMindMapScopeType('custom')}
                     className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${mindMapScopeType === 'custom'
-                      ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                      ? 'bg-primary/10 text-primary border-primary shadow-sm'
                       : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
                       }`}
                   >
@@ -2278,7 +2278,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                       value={studyModeFocus}
                       onChange={(e) => setStudyModeFocus(e.target.value)}
                       placeholder="e.g., 'Chapter 3' or 'Recursion concepts'"
-                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 min-h-[80px]"
+                      className="w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px]"
                     />
                   </div>
                 )}
@@ -2287,7 +2287,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateMindMap}
                   disabled={generatingMindMap}
-                  className="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none font-medium transition-all"
+                  className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-none font-medium transition-all"
                 >
                   {generatingMindMap ? 'Generating...' : 'Generate Mind Map'}
                 </button>
@@ -2301,7 +2301,7 @@ The user is studying this flashcard and may ask questions about it, need help un
             {/* Header with info and regenerate button */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
               <div className="flex items-center gap-3">
-                <Network className="h-5 w-5 text-purple-500" />
+                <Network className="h-5 w-5 text-primary" />
                 <div>
                   <h3 className="font-semibold text-sm">{mindMap.title || 'Concept Map'}</h3>
                   <p className="text-xs text-muted-foreground">

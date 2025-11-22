@@ -33,7 +33,7 @@ export const FileTabs: React.FC<FileTabsProps> = ({
       case 'java':
         return 'text-red-500';
       case 'cpp':
-        return 'text-purple-500';
+        return 'text-primary';
       default:
         return 'text-gray-500';
     }

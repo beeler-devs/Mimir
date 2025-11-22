@@ -90,7 +90,7 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
       case 'thinking':
         return 'bg-yellow-500 text-white border-transparent';
       case 'speaking':
-        return 'bg-purple-500 text-white border-transparent animate-pulse';
+        return 'bg-primary text-primary-foreground border-transparent animate-pulse';
       case 'error':
         return 'bg-red-500 text-white border-transparent';
       default:

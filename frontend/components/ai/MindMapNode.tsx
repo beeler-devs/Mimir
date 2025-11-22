@@ -77,8 +77,8 @@ const MindMapNode = memo(({ data, selected }: NodeProps<MindMapNodeData>) => {
               absolute -bottom-3 left-1/2 -translate-x-1/2
               opacity-0 group-hover:opacity-100
               transition-all duration-200
-              bg-purple-500 hover:bg-purple-600
-              text-white text-xs font-medium
+              bg-primary hover:bg-primary/90
+              text-primary-foreground text-xs font-medium
               px-3 py-1.5 rounded-full shadow-lg
               flex items-center gap-1.5
               whitespace-nowrap
@@ -102,7 +102,7 @@ const MindMapNode = memo(({ data, selected }: NodeProps<MindMapNodeData>) => {
         type="target"
         position={Position.Left}
         id="left"
-        className="!bg-purple-400 !border-white !border-2 !w-2 !h-2 opacity-0 group-hover:opacity-100"
+        className="!bg-primary !border-white !border-2 !w-2 !h-2 opacity-0 group-hover:opacity-100"
       />
 
       {/* Right handle for related edges */}
@@ -110,7 +110,7 @@ const MindMapNode = memo(({ data, selected }: NodeProps<MindMapNodeData>) => {
         type="source"
         position={Position.Right}
         id="right"
-        className="!bg-purple-400 !border-white !border-2 !w-2 !h-2 opacity-0 group-hover:opacity-100"
+        className="!bg-primary !border-white !border-2 !w-2 !h-2 opacity-0 group-hover:opacity-100"
       />
     </div>
   );

@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Modal, Button, Dropdown, DropdownOption } from '@/components/common';
 import { ThemePreference, LearningMode } from '@/lib/types';
-import { useAuth } from '@/lib/auth';
 import { useDefaultLearningMode, getAllLearningModes } from '@/lib/learningMode';
+import { useAccentColor } from '@/hooks/useAccentColor';
 import {
   Settings,
   Bell,
@@ -15,7 +14,6 @@ import {
   UserCog,
   Globe,
   SlidersHorizontal,
-  LogOut,
 } from 'lucide-react';
 
 const menuItems = [
@@ -69,6 +67,8 @@ const accentColorOptions: DropdownOption[] = [
   { value: 'violet', label: 'Violet' },
   { value: 'emerald', label: 'Emerald' },
   { value: 'sky', label: 'Sky' },
+  { value: 'rose', label: 'Rose' },
+  { value: 'amber', label: 'Amber' },
 ];
 
 const learningModeOptions: DropdownOption[] = [
@@ -89,22 +89,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onThemeChange,
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuItemId>('general');
-  const [accent, setAccent] = useState('default');
-  const { signOut } = useAuth();
-  const router = useRouter();
+  const { accent, setAccent } = useAccentColor();
 
   // Learning mode state
   const [defaultLearningMode, setDefaultLearningMode] = useDefaultLearningMode();
   const allModes = getAllLearningModes();
-
-  const handleLogout = async () => {
-    try {
-      await signOut();
-      router.push('/login');
-    } catch (error) {
-      console.error('Failed to log out:', error);
-    }
-  };
 
   return (
     <Modal open={open} onClose={onClose} containerClassName="items-center pt-0">
@@ -129,17 +118,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               );
             })}
           </div>
-
-          <div className="pt-4 border-t border-border">
-            <Button
-              variant="destructive"
-              className="w-full gap-2"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-4 w-4" />
-              Log out
-            </Button>
-          </div>
         </div>
 
         <div className="flex-1 p-8 space-y-8 overflow-y-auto dark:bg-[#212121] text-sm">
@@ -162,7 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Dropdown
                     options={accentColorOptions}
                     value={accent}
-                    onChange={setAccent}
+                    onChange={(value) => setAccent(value as any)}
                     ariaLabel="Select accent color"
                   />
                 </div>

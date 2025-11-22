@@ -103,9 +103,12 @@ export default function MindMapViewer({ mindMap, onAskAboutNode }: MindMapViewer
   // Mini map node color based on type
   const miniMapNodeColor = useCallback((node: Node) => {
     const nodeType = (node.data as any)?.nodeType;
+    // Get primary color from CSS variable
+    const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+    
     switch (nodeType) {
       case 'concept':
-        return '#8b5cf6';
+        return primaryColor || '#8b5cf6';
       case 'topic':
         return '#3b82f6';
       case 'subtopic':

@@ -911,7 +911,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               onClick={() => setSelectedMethod('upload')}
               className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-background text-sm font-medium transition-all hover:border-primary/50 hover:bg-muted/50"
             >
-              <Video className="w-5 h-5 text-purple-500" />
+              <Video className="w-5 h-5 text-primary" />
               <h4 className="text-foreground">Upload Video</h4>
             </button>
           </div>
@@ -1075,7 +1075,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
     return (
       <div className="flex flex-col items-center justify-center h-full gap-6 p-8 bg-background">
         <div className="flex flex-col items-center gap-4 w-full max-w-xl">
-          <Video className="w-16 h-16 text-purple-500" />
+          <Video className="w-16 h-16 text-primary" />
           <h3 className="text-lg font-medium">Upload Video</h3>
           <label htmlFor="video-upload-input" className="w-full">
             <div

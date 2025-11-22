@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Tree, NodeRendererProps } from 'react-arborist';
 import { Button, Input, Modal, ContextMenu } from '@/components/common';
@@ -350,14 +351,12 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           {isFolder ? (
             <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
           ) : (
-            <span
+            <Icon
               className={`
-                h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
-                ${isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+                h-4 w-4 flex-shrink-0
+                ${isActive ? 'text-primary' : 'text-muted-foreground'}
               `}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </span>
+            />
           )}
 
           {/* Name */}
@@ -829,5 +828,118 @@ const SearchInstancesModal: React.FC<SearchInstancesModalProps> = ({
         </div>
       </div>
     </Modal>
+  );
+};
+
+interface SettingsMenuProps {
+  isOpen: boolean;
+  onClose: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  onOpenSettings: () => void;
+  onLogout: () => void;
+}
+
+const SettingsMenu: React.FC<SettingsMenuProps> = ({
+  isOpen,
+  onClose,
+  triggerRef,
+  onOpenSettings,
+  onLogout,
+}) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [width, setWidth] = useState<number>(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !triggerRef.current) return;
+
+    const calculatePosition = () => {
+      if (!triggerRef.current) return;
+
+      const rect = triggerRef.current.getBoundingClientRect();
+      const menuHeight = 88; // Approximate height for 2 items
+
+      setPosition({
+        top: rect.top - menuHeight - 4, // 4px gap above
+        left: rect.left,
+      });
+      setWidth(rect.width);
+    };
+
+    calculatePosition();
+
+    window.addEventListener('scroll', calculatePosition, true);
+    window.addEventListener('resize', calculatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', calculatePosition, true);
+      window.removeEventListener('resize', calculatePosition);
+    };
+  }, [isOpen, triggerRef]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(target)
+      ) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onClose, triggerRef]);
+
+  if (!mounted || !isOpen) return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      data-menu-interactive
+      className="fixed bg-background border border-border rounded-lg shadow-lg py-1 z-[9999]"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`,
+        width: `${width}px`,
+      }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button
+        onClick={() => {
+          onOpenSettings();
+          onClose();
+        }}
+        className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+      >
+        <Settings2 className="h-4 w-4" />
+        <span>Settings</span>
+      </button>
+      <button
+        onClick={() => {
+          onLogout();
+          onClose();
+        }}
+        className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors flex items-center gap-2"
+      >
+        <LogOut className="h-4 w-4" />
+        <span>Log out</span>
+      </button>
+    </div>,
+    document.body
   );
 };

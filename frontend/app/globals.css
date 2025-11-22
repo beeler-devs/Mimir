@@ -49,6 +49,57 @@
   --sidebar-hover: #2f2f2f;
 }
 
+/* Accent Colors */
+/* Violet (Default) */
+:root[data-accent="violet"], :root:not([data-accent]) {
+  --primary: #8b5cf6;
+  --ring: #8b5cf6;
+}
+.dark[data-accent="violet"], .dark:not([data-accent]) {
+  --primary: #a78bfa;
+  --ring: #a78bfa;
+}
+
+/* Emerald */
+:root[data-accent="emerald"] {
+  --primary: #10b981;
+  --ring: #10b981;
+}
+.dark[data-accent="emerald"] {
+  --primary: #34d399;
+  --ring: #34d399;
+}
+
+/* Sky */
+:root[data-accent="sky"] {
+  --primary: #0ea5e9;
+  --ring: #0ea5e9;
+}
+.dark[data-accent="sky"] {
+  --primary: #38bdf8;
+  --ring: #38bdf8;
+}
+
+/* Rose */
+:root[data-accent="rose"] {
+  --primary: #f43f5e;
+  --ring: #f43f5e;
+}
+.dark[data-accent="rose"] {
+  --primary: #fb7185;
+  --ring: #fb7185;
+}
+
+/* Amber */
+:root[data-accent="amber"] {
+  --primary: #f59e0b;
+  --ring: #f59e0b;
+}
+.dark[data-accent="amber"] {
+  --primary: #fbbf24;
+  --ring: #fbbf24;
+}
+
 @theme inline {
   --color-*: initial;
   --color-background: var(--background);
