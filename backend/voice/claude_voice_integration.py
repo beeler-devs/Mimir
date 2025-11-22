@@ -136,8 +136,10 @@ Available action types:
                 system=system_prompt,
                 messages=messages
             ) as stream:
+                logger.info(f"[Claude Voice] Stream started for utterance: {utterance[:50]}...")
                 for text_block in stream.text_stream:
                     full_response += text_block
+                    # logger.debug(f"[Claude Voice] Received chunk: {text_block[:20]}...")
                     yield text_block
 
             logger.info(

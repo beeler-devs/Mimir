@@ -23,6 +23,7 @@ import { parseMentions, resolveMentions, removeMentionsFromText } from '@/lib/me
 import { buildWorkspaceContext } from '@/lib/workspaceContext';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { useActiveLearningMode } from '@/lib/learningMode';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface AISidePanelProps {
   collapseSidebar?: () => void;
@@ -59,7 +60,8 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
   const [activeLearningMode] = useActiveLearningMode();
-  
+  const { user } = useAuth();
+
   // Chat tab management state
   const [openChatTabs, setOpenChatTabs] = useState<{ id: string; title: string }[]>([]);
 
@@ -132,13 +134,13 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       setActiveNodeId(null);
       setChatId(newChat.id);
       localStorage.setItem('mimir.activeChatId', newChat.id);
-      
+
       // Add new chat to tabs
       setOpenChatTabs(prev => [...prev, {
         id: newChat.id,
         title: 'New Chat'
       }]);
-      
+
       // Reload chats list
       const userChats = await loadUserChats();
       setChats(userChats);
@@ -155,14 +157,14 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       setNodes(messages);
       setChatId(selectedChatId);
       localStorage.setItem('mimir.activeChatId', selectedChatId);
-      
+
       // Set active node to last message
       if (messages.length > 0) {
         setActiveNodeId(messages[messages.length - 1].id);
       } else {
         setActiveNodeId(null);
       }
-      
+
       // Ensure tab is in open tabs
       const selectedChat = chats.find(c => c.id === selectedChatId);
       if (selectedChat) {
@@ -207,12 +209,12 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
   const handleRenameTab = async (renamedChatId: string, newTitle: string) => {
     try {
       await updateChatTitle(renamedChatId, newTitle);
-      
+
       // Update local state
       setOpenChatTabs(prev => prev.map(tab =>
         tab.id === renamedChatId ? { ...tab, title: newTitle } : tab
       ));
-      
+
       // Reload chats list
       const userChats = await loadUserChats();
       setChats(userChats);
@@ -266,7 +268,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     try {
       const rawMentions = parseMentions(content);
       const resolvedMentions = resolveMentions(rawMentions, instances, folders);
-      
+
       const annotationExports: Record<string, string> = {};
       if (activeInstance?.type === 'annotate' && annotationCanvasRef?.current) {
         try {
@@ -276,7 +278,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           console.error('Failed to export active annotation canvas:', error);
         }
       }
-      
+
       for (const mention of resolvedMentions) {
         if (mention.type === 'instance' && mention.id) {
           const mentionedInstance = instances.find((i) => i.id === mention.id);
@@ -310,7 +312,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         resolvedMentions,
         annotationExports
       );
-      
+
       if (pdfAttachments && pdfAttachments.length > 0) {
         const readyPdfs = pdfAttachments.filter(pdf => pdf.status === 'ready');
         if (readyPdfs.length > 0) {
@@ -334,7 +336,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         // Use simple title initially
         const simpleTitle = generateChatTitle(content);
         await updateChatTitle(chatId, simpleTitle);
-        
+
         // Update tab title immediately
         setOpenChatTabs(prev => prev.map(tab =>
           tab.id === chatId ? { ...tab, title: simpleTitle } : tab
@@ -344,10 +346,10 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       if (!savedUserMessage) {
         throw new Error('Failed to save user message');
       }
-      
+
       const branchPath = buildBranchPath(updatedNodes, savedUserMessage.id);
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
-      
+
       const streamingMessageId = `streaming-${Date.now()}`;
       const streamingMessage: ChatNode = {
         id: streamingMessageId,
@@ -356,11 +358,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         content: '',
         createdAt: new Date().toISOString(),
       };
-      
+
       const nodesWithStreaming = [...updatedNodes, streamingMessage];
       setNodes(nodesWithStreaming);
       setActiveNodeId(streamingMessageId);
-      
+
       const branchMessages = getActiveBranch(updatedNodes, savedUserMessage.id)
         .map(n => ({
           role: n.role,
@@ -409,10 +411,10 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               if (data.type === 'chunk') {
                 fullContent += data.content;
-                setNodes(prev => prev.map(node => 
+                setNodes(prev => prev.map(node =>
                   node.id === streamingMessageId
                     ? { ...node, content: fullContent }
                     : node
@@ -420,7 +422,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
               } else if (data.type === 'done') {
                 fullContent = data.content;
                 suggestedAnimation = data.suggestedAnimation;
-                
+
                 const savedAIMessage = await saveChatMessage(chatId, {
                   parentId: savedUserMessage.id,
                   role: 'assistant',
@@ -428,13 +430,13 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                   suggestedAnimation,
                 });
 
-                setNodes(prev => prev.map(node => 
+                setNodes(prev => prev.map(node =>
                   node.id === streamingMessageId
                     ? savedAIMessage
                     : node
                 ));
                 setActiveNodeId(savedAIMessage.id);
-                
+
                 // Generate AI title after first assistant response
                 if (updatedNodes.length <= 1) {
                   // Get the conversation messages for title generation
@@ -442,16 +444,16 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                     { role: 'user', content: savedUserMessage.content || '' },
                     { role: 'assistant', content: fullContent }
                   ];
-                  
+
                   // Generate AI title asynchronously (don't block UI)
                   generateAIChatTitle(titleMessages).then(async (aiTitle) => {
                     await updateChatTitle(chatId, aiTitle);
-                    
+
                     // Update tab title
                     setOpenChatTabs(prev => prev.map(tab =>
                       tab.id === chatId ? { ...tab, title: aiTitle } : tab
                     ));
-                    
+
                     // Reload chats list
                     const userChats = await loadUserChats();
                     setChats(userChats);
@@ -476,9 +478,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         console.error('Error message:', error.message);
         console.error('Error stack:', error.stack);
       }
-      
+
       setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
-      
+
       try {
         const errorMessage = await saveChatMessage(chatId, {
           parentId: savedUserMessage?.id || activeNodeId,
@@ -517,7 +519,12 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
             <span className="font-medium text-sm">Chat</span>
           </div>
 
-          <VoiceButton size="sm" className="shrink-0 ml-auto" />
+          <VoiceButton
+            size="sm"
+            className="shrink-0 ml-auto"
+            userId={user?.id || 'guest-user'}
+            instanceId={activeInstance?.id || 'default'}
+          />
 
           {collapseSidebar && (
             <button
@@ -543,7 +550,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           onRenameTab={handleRenameTab}
         />
       )}
-      
+
       {/* Chat Content */}
       <div className="flex-1 overflow-y-auto">
         <ChatMessageList
@@ -562,7 +569,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           }}
         />
       </div>
-      
+
       {/* Chat Input */}
       <ChatInput
         ref={chatInputRef}

@@ -81,6 +81,8 @@ class OpenAITTSProvider(TTSProvider):
 
                 # Stream audio chunks
                 chunk_count = 0
+                buffer = bytearray()
+
                 async for chunk in response.aiter_bytes(chunk_size=4096):
                     # Check if stream was cancelled
                     if stream_id and not self._active_streams.get(stream_id, False):
@@ -88,8 +90,24 @@ class OpenAITTSProvider(TTSProvider):
                         break
 
                     if chunk:
-                        chunk_count += 1
-                        yield chunk
+                        buffer.extend(chunk)
+                        
+                        # Ensure we have an even number of bytes (for 16-bit PCM)
+                        if len(buffer) >= 2:
+                            # Calculate length to send (must be even)
+                            send_len = len(buffer) - (len(buffer) % 2)
+                            
+                            if send_len > 0:
+                                chunk_to_send = bytes(buffer[:send_len])
+                                buffer = buffer[send_len:]
+                                
+                                chunk_count += 1
+                                yield chunk_to_send
+                
+                # Yield remaining bytes if any
+                if len(buffer) > 0:
+                    chunk_count += 1
+                    yield bytes(buffer)
 
                 logger.info(
                     f"[OpenAI TTS] Completed synthesis (stream_id={stream_id}, "

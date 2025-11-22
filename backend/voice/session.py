@@ -86,6 +86,7 @@ class VoiceSession:
         Args:
             audio_bytes: Raw audio bytes (PCM16, 16kHz mono)
         """
+        # logger.debug(f"[{self.session_id}] Received audio chunk: {len(audio_bytes)} bytes")
         self.last_activity = datetime.now()
 
         # Send to STT provider
@@ -104,6 +105,8 @@ class VoiceSession:
 
     async def _process_stt_event(self, event: STTEventData) -> None:
         """Process a single STT event"""
+        logger.debug(f"[{self.session_id}] Processing STT event: {event.event_type}")
+        
         if event.event_type == STTEvent.SPEECH_STARTED:
             # User started speaking
             current_state = self.state_machine.get_state()
@@ -174,10 +177,13 @@ class VoiceSession:
                 stream_id=stream_id
             ):
                 # Check if we should stop (barge-in or error)
-                if self.state_machine.get_state() != ConversationState.ASSISTANT_SPEAKING:
-                    logger.info(f"[{self.session_id}] Stopping TTS stream due to state change")
-                    await self.tts_provider.cancel_stream(stream_id)
-                    break
+                current_state = self.state_machine.get_state()
+                if current_state != ConversationState.ASSISTANT_SPEAKING:
+                    # Allow PROCESSING state only if we haven't started speaking yet (first chunk)
+                    if not (first_chunk and current_state == ConversationState.PROCESSING):
+                        logger.info(f"[{self.session_id}] Stopping TTS stream due to state change (current: {current_state})")
+                        await self.tts_provider.cancel_stream(stream_id)
+                        break
 
                 # Transition to ASSISTANT_SPEAKING on first chunk
                 if first_chunk:

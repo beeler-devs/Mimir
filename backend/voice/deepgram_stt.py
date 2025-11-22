@@ -109,7 +109,11 @@ class DeepgramSTTProvider(STTProvider):
                     data = json.loads(message)
 
                     # Handle different message types
-                    if data.get("type") == "Results":
+                    msg_type = data.get("type")
+                    if msg_type != "Metadata":  # Reduce noise
+                        logger.debug(f"[{session_id}] Deepgram message: {msg_type}")
+
+                    if msg_type == "Results":
                         await self._handle_transcript(session_id, data, event_queue)
                     elif data.get("type") == "SpeechStarted":
                         await event_queue.put(
@@ -192,6 +196,7 @@ class DeepgramSTTProvider(STTProvider):
 
         try:
             websocket = session["websocket"]
+            # logger.debug(f"[{session_id}] Sending audio chunk to Deepgram: {len(audio_chunk)} bytes")
             await websocket.send(audio_chunk)
         except Exception as e:
             logger.error(f"[Deepgram] Error sending audio for {session_id}: {e}", exc_info=True)

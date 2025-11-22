@@ -41,6 +41,7 @@ import {
   getIncompleteQuizAttempt,
 } from '@/lib/db/studyMaterials';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 type StudyMode = 'chat' | 'flashcards' | 'quiz' | 'summary' | 'podcast' | 'mindmap';
 
@@ -116,6 +117,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [initializing, setInitializing] = useState(true);
+  const { user } = useAuth();
 
   // Chat tab management state
   const [openChatTabs, setOpenChatTabs] = useState<{ id: string; title: string }[]>([]);
@@ -133,7 +135,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
-  
+
   // Study materials persistence state
   const [currentQuizAttemptId, setCurrentQuizAttemptId] = useState<string | null>(null);
   const [quizId, setQuizId] = useState<string | null>(null);
@@ -161,7 +163,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
   // Ref for summary container to enable auto-scroll
   const summaryContainerRef = React.useRef<HTMLDivElement>(null);
-  
+
   // Mind map state
   const [mindMap, setMindMap] = useState<MindMapWithNodes | null>(null);
   const [generatingMindMap, setGeneratingMindMap] = useState(false);
@@ -530,7 +532,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
         setLoadingHistory(false);
       }
     };
-    
+
     loadStudyMaterials();
   }, [activeInstance]);
 
@@ -837,7 +839,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       setFlashcards(data.flashcards || []);
       setCurrentFlashcardIndex(0);
       setShowFlashcardAnswer(false);
-      
+
       // Save flashcards to database
       if (activeInstance?.id && data.flashcards && data.flashcards.length > 0) {
         try {
@@ -863,7 +865,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
           console.error('Error saving flashcards:', error);
         }
       }
-      
+
       // Reset customization options for next generation
       setStudyModeFocus('');
     } catch (error) {
@@ -1104,7 +1106,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       const data = await response.json();
       const questions = data.questions || [];
-      
+
       // Save quiz to database and start attempt
       if (activeInstance?.id && questions.length > 0) {
         try {
@@ -1120,7 +1122,7 @@ The user is studying this flashcard and may ask questions about it, need help un
             undefined,
             { focus: studyModeFocus || undefined }
           );
-          
+
           // Update quiz questions with IDs from saved quiz
           setQuizQuestions(savedQuiz.questions.map(q => ({
             id: q.id,
@@ -1152,7 +1154,7 @@ The user is studying this flashcard and may ask questions about it, need help un
       } else {
         setQuizQuestions(questions);
       }
-      
+
       setCurrentQuizIndex(0);
       setSelectedAnswer(null);
       setUserAnswers(new Array(questions.length).fill(null));
@@ -1634,7 +1636,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                       Next
                     </button>
                   </div>
-                  
+
                   {/* Flashcard Chat Interface */}
                   <div className="w-full flex flex-col gap-3">
                     <div className="flex items-center justify-between">
@@ -1661,7 +1663,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 </div>
               </div>
             </div>
-            
+
             {/* Chat Input - Full Width at Bottom */}
             <div className="flex-shrink-0">
               <ChatInput
@@ -2062,12 +2064,12 @@ The user is studying this flashcard and may ask questions about it, need help un
               {/* Feedback message */}
               {isAnswered && (
                 <div className={`p-3 rounded-lg ${currentUserAnswer === currentQuestion.correctIndex
-                    ? 'bg-[#D9F4E4] border border-green-300'
-                    : 'bg-[#F9A0A0] border border-red-300'
+                  ? 'bg-[#D9F4E4] border border-green-300'
+                  : 'bg-[#F9A0A0] border border-red-300'
                   }`}>
                   <p className={`text-sm font-medium ${currentUserAnswer === currentQuestion.correctIndex
-                      ? 'text-green-900'
-                      : 'text-red-900'
+                    ? 'text-green-900'
+                    : 'text-red-900'
                     }`}>
                     {currentUserAnswer === currentQuestion.correctIndex
                       ? '🎉 Correct! Well done!'
@@ -2124,7 +2126,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={async () => {
                     setQuizCompleted(true);
-                    
+
                     // Complete the quiz attempt in database
                     if (currentQuizAttemptId) {
                       try {
@@ -2199,7 +2201,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 Regenerate
               </button>
             </div>
-            <div 
+            <div
               ref={summaryContainerRef}
               className="flex-1 prose prose-sm max-w-none dark:prose-invert overflow-y-auto sidebar-scrollbar" 
               data-summary-content="true"
@@ -2250,21 +2252,19 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <div className="flex gap-2">
                   <button
                     onClick={() => setMindMapScopeType('full')}
-                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${
-                      mindMapScopeType === 'full'
-                        ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
-                        : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
-                    }`}
+                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${mindMapScopeType === 'full'
+                      ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                      : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
+                      }`}
                   >
                     Full Document
                   </button>
                   <button
                     onClick={() => setMindMapScopeType('custom')}
-                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${
-                      mindMapScopeType === 'custom'
-                        ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
-                        : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
-                    }`}
+                    className={`flex-1 px-4 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${mindMapScopeType === 'custom'
+                      ? 'bg-purple-500/10 text-purple-600 border-purple-500 shadow-sm'
+                      : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/50'
+                      }`}
                   >
                     Custom Scope
                   </button>
@@ -2385,7 +2385,11 @@ The user is studying this flashcard and may ask questions about it, need help un
           {/* Fixed Action Buttons Section */}
           {(studyMode === 'chat' || collapseSidebar) && (
             <div className="flex items-center gap-1 flex-shrink-0 pl-2 border-l border-border">
-              {studyMode === 'chat' && <VoiceButton size="sm" />}
+              {studyMode === 'chat' && <VoiceButton
+                size="sm"
+                userId={user?.id || 'guest-user'}
+                instanceId={activeInstance?.id || 'default'}
+              />}
 
               {collapseSidebar && (
                 <button

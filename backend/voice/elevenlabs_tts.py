@@ -59,7 +59,10 @@ class ElevenLabsTTSProvider(TTSProvider):
 
         try:
             # Build request
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
+            # output_format and optimize_streaming_latency must be query parameters
+            query_params = f"?output_format={self.output_format}&optimize_streaming_latency={self.optimize_streaming_latency}"
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream{query_params}"
+            
             headers = {
                 "xi-api-key": self.api_key,
                 "Content-Type": "application/json",
@@ -71,9 +74,7 @@ class ElevenLabsTTSProvider(TTSProvider):
                 "voice_settings": {
                     "stability": self.stability,
                     "similarity_boost": self.similarity_boost
-                },
-                "optimize_streaming_latency": self.optimize_streaming_latency,
-                "output_format": self.output_format
+                }
             }
 
             # Stream response
@@ -88,6 +89,8 @@ class ElevenLabsTTSProvider(TTSProvider):
 
                 # Stream audio chunks
                 chunk_count = 0
+                buffer = bytearray()
+                
                 async for chunk in response.aiter_bytes(chunk_size=4096):
                     # Check if stream was cancelled
                     if stream_id and not self._active_streams.get(stream_id, False):
@@ -95,8 +98,25 @@ class ElevenLabsTTSProvider(TTSProvider):
                         break
 
                     if chunk:
-                        chunk_count += 1
-                        yield chunk
+                        buffer.extend(chunk)
+                        
+                        # Ensure we have an even number of bytes (for 16-bit PCM)
+                        if len(buffer) >= 2:
+                            # Calculate length to send (must be even)
+                            send_len = len(buffer) - (len(buffer) % 2)
+                            
+                            if send_len > 0:
+                                chunk_to_send = bytes(buffer[:send_len])
+                                buffer = buffer[send_len:]
+                                
+                                chunk_count += 1
+                                yield chunk_to_send
+                
+                # Yield remaining bytes if any (though odd bytes would still be an issue, 
+                # but usually the total stream is even)
+                if len(buffer) > 0:
+                    chunk_count += 1
+                    yield bytes(buffer)
 
                 logger.info(
                     f"[ElevenLabs TTS] Completed synthesis (stream_id={stream_id}, "

@@ -5,6 +5,7 @@ import { PanelsLeftRight } from 'lucide-react';
 import { VoiceButton } from '@/components/ai/VoiceButton';
 import { useResize } from '@/contexts/ResizeContext';
 import { ResizeHandle } from './ResizeHandle';
+import { useAuth } from '@/lib/auth/AuthContext';
 
 interface SidebarControlProps {
   collapseSidebar?: () => void;
@@ -29,6 +30,8 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
     setRightCollapsed,
     isDragging,
   } = useResize();
+
+  const { user } = useAuth();
 
   const sidebarOpen = !rightCollapsed;
   const setSidebarOpen = (open: boolean) => setRightCollapsed(!open);
@@ -95,7 +98,11 @@ export const WorkspaceLayout: React.FC<WorkspaceLayoutProps> = ({ children, side
               >
                 <PanelsLeftRight className="h-4 w-4" />
               </button>
-              <VoiceButton size="sm" />
+              <VoiceButton
+                size="sm"
+                userId={user?.id || 'guest-user'}
+                instanceId="default"
+              />
             </div>
           )}
         </div>
