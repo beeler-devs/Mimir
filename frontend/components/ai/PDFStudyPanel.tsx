@@ -2389,6 +2389,13 @@ The user is studying this flashcard and may ask questions about it, need help un
                 size="sm"
                 userId={user?.id || 'guest-user'}
                 instanceId={activeInstance?.id || 'default'}
+                workspaceContext={buildWorkspaceContext(
+                  activeInstance,
+                  instances,
+                  folders,
+                  [],
+                  {}
+                )}
               />}
 
               {collapseSidebar && (

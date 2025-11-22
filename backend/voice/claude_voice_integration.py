@@ -116,6 +116,18 @@ Available action types:
             Text chunks from Claude's response
         """
         try:
+            # Debug: Log workspace context received
+            logger.warning(f"[Claude Voice Integration] workspace_context received: {workspace_context is not None}")
+            if workspace_context:
+                logger.warning(f"[Claude Voice Integration] Context type: {type(workspace_context)}")
+                if isinstance(workspace_context, dict):
+                    logger.warning(f"[Claude Voice Integration] Context keys: {workspace_context.keys()}")
+                    logger.warning(f"[Claude Voice Integration] Instances: {len(workspace_context.get('instances', []))}, Folders: {len(workspace_context.get('folders', []))}")
+                elif isinstance(workspace_context, str):
+                    logger.warning(f"[Claude Voice Integration] Context string length: {len(workspace_context)}")
+            else:
+                logger.warning("[Claude Voice Integration] NO WORKSPACE CONTEXT RECEIVED")
+
             # Build messages
             messages = conversation_history.copy()
             messages.append({

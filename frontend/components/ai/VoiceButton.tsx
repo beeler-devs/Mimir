@@ -9,6 +9,7 @@ interface VoiceButtonProps {
   className?: string;
   userId: string;
   instanceId: string;
+  workspaceContext?: any; // WorkspaceContext from parent
   onTranscript?: (transcript: VoiceTranscript) => void;
   onUIAction?: (action: UIAction) => void;
   disabled?: boolean;
@@ -30,10 +31,19 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
   className = '',
   userId,
   instanceId,
+  workspaceContext,
   onTranscript,
   onUIAction,
   disabled = false
 }) => {
+  // Debug: Log workspace context
+  console.log('[VoiceButton] Rendering with:', {
+    hasWorkspaceContext: !!workspaceContext,
+    contextKeys: workspaceContext ? Object.keys(workspaceContext) : [],
+    instancesCount: workspaceContext?.instances?.length || 0,
+    foldersCount: workspaceContext?.folders?.length || 0
+  });
+
   const {
     state,
     isConnected,
@@ -43,6 +53,7 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
   } = useVoiceSession({
     userId,
     instanceId,
+    workspaceContext,
     onTranscript,
     onUIAction,
     onError: (err) => {

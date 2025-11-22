@@ -524,6 +524,13 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
             className="shrink-0 ml-auto"
             userId={user?.id || 'guest-user'}
             instanceId={activeInstance?.id || 'default'}
+            workspaceContext={buildWorkspaceContext(
+              activeInstance,
+              instances,
+              folders,
+              [],
+              {}
+            )}
           />
 
           {collapseSidebar && (

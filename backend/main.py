@@ -2166,13 +2166,22 @@ async def voice_assistant_endpoint(websocket: WebSocket):
 
         user_id = auth_msg.get("user_id")
         instance_id = auth_msg.get("instance_id", "default")
+        workspace_context = auth_msg.get("workspace_context")
 
         if not user_id:
             await websocket.send_json({"type": "error", "error": "user_id required"})
             await websocket.close()
             return
 
-        logger.info(f"[Voice WS] Auth received: user_id={user_id}, instance_id={instance_id}")
+        logger.warning(f"[Voice WS] Auth received: user_id={user_id}, instance_id={instance_id}, has_context={workspace_context is not None}")
+
+        # Debug: Log context details
+        if workspace_context:
+            logger.warning(f"[Voice WS] Context structure: {workspace_context.keys() if isinstance(workspace_context, dict) else type(workspace_context)}")
+            if isinstance(workspace_context, dict):
+                logger.warning(f"[Voice WS] Context instances: {len(workspace_context.get('instances', []))}, folders: {len(workspace_context.get('folders', []))}")
+        else:
+            logger.warning("[Voice WS] NO WORKSPACE CONTEXT RECEIVED")
 
         # Initialize STT provider
         deepgram_key = os.getenv("DEEPGRAM_API_KEY")
@@ -2219,7 +2228,8 @@ async def voice_assistant_endpoint(websocket: WebSocket):
             instance_id=instance_id,
             websocket=websocket,
             stt_provider=stt_provider,
-            tts_provider=tts_provider
+            tts_provider=tts_provider,
+            workspace_context=workspace_context
         )
 
         # Send connected message
@@ -2326,6 +2336,12 @@ async def voice_assistant_endpoint(websocket: WebSocket):
                         if cleared_count > 0:
                             logger.warning(f"[Voice WS] Cleared {cleared_count} queued utterances after barge-in")
 
+                elif msg_type == "update_context":
+                    # Update workspace context
+                    new_context = data.get("workspace_context")
+                    session.update_workspace_context(new_context)
+                    logger.info(f"[Voice WS] Updated workspace context for session {session.session_id}")
+
                 elif msg_type == "ping":
                     # Keepalive
                     await websocket.send_json({"type": "pong"})
@@ -2386,12 +2402,21 @@ async def process_utterance_with_claude(session, utterance: str):
         # For now, use empty history (each utterance is independent)
         conversation_history = []
 
+        # Debug: Log workspace context being passed to Claude
+        logger.warning(f"[process_utterance_with_claude] session.workspace_context: {session.workspace_context is not None}")
+        if session.workspace_context:
+            logger.warning(f"[process_utterance_with_claude] Context structure: {session.workspace_context.keys() if isinstance(session.workspace_context, dict) else type(session.workspace_context)}")
+            if isinstance(session.workspace_context, dict):
+                logger.warning(f"[process_utterance_with_claude] Instances: {len(session.workspace_context.get('instances', []))}, Folders: {len(session.workspace_context.get('folders', []))}")
+        else:
+            logger.warning("[process_utterance_with_claude] NO WORKSPACE CONTEXT IN SESSION")
+
         # Accumulate full Claude response before sending to TTS
         full_response = ""
         async for text_chunk in claude_voice.process_user_utterance(
             utterance=utterance,
             conversation_history=conversation_history,
-            workspace_context=None  # TODO: Get from instance
+            workspace_context=session.workspace_context
         ):
             full_response += text_chunk
 

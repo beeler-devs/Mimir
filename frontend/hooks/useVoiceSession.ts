@@ -25,6 +25,7 @@ export interface UseVoiceSessionOptions {
   userId: string;
   instanceId: string;
   backendUrl?: string;
+  workspaceContext?: any; // WorkspaceContext from buildWorkspaceContext
   onTranscript?: (transcript: VoiceTranscript) => void;
   onUIAction?: (action: UIAction) => void;
   onError?: (error: Error) => void;
@@ -40,6 +41,7 @@ export interface UseVoiceSessionReturn {
   isMuted: boolean;
   currentTranscript: VoiceTranscript | null;
   error: Error | null;
+  updateWorkspaceContext: (context: any) => void;
 }
 
 export function useVoiceSession(options: UseVoiceSessionOptions): UseVoiceSessionReturn {
@@ -231,11 +233,20 @@ export function useVoiceSession(options: UseVoiceSessionOptions): UseVoiceSessio
       // WebSocket event handlers
       ws.onopen = () => {
         console.log('WebSocket connected');
-        // Send auth message
+
+        // Debug: Log context being sent
+        console.log('[useVoiceSession] Sending auth with context:', {
+          hasContext: !!options.workspaceContext,
+          contextSize: options.workspaceContext ? JSON.stringify(options.workspaceContext).length : 0,
+          instancesCount: options.workspaceContext?.instances?.length || 0
+        });
+
+        // Send auth message with workspace context
         ws.send(JSON.stringify({
           type: 'auth',
           user_id: userId,
-          instance_id: instanceId
+          instance_id: instanceId,
+          workspace_context: options.workspaceContext
         }));
       };
 
@@ -330,6 +341,16 @@ export function useVoiceSession(options: UseVoiceSessionOptions): UseVoiceSessio
     };
   }, [stopVoice]);
 
+  const updateWorkspaceContext = useCallback((context: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'update_context',
+        workspace_context: context
+      }));
+      console.log('Updated workspace context for voice session');
+    }
+  }, []);
+
   return {
     state,
     isConnected,
@@ -339,6 +360,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): UseVoiceSessio
     unmuteAssistant,
     isMuted,
     currentTranscript,
-    error
+    error,
+    updateWorkspaceContext
   };
 }

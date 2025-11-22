@@ -89,25 +89,11 @@ export function useAudioPlayback(options: UseAudioPlaybackOptions = {}): UseAudi
 
     // Calculate start time
     const currentTime = audioContext.currentTime;
-    const previousNextStartTime = nextStartTimeRef.current;
     let startTime = Math.max(currentTime, nextStartTimeRef.current);
-
-    // Log chunk timing details
-    const chunkNumber = activeSourcesRef.current.length + 1;
-    console.log(`[Audio] Chunk ${chunkNumber}:`, {
-      streamId,
-      currentTime: currentTime.toFixed(3),
-      previousNextStartTime: previousNextStartTime.toFixed(3),
-      calculatedStartTime: startTime.toFixed(3),
-      duration: audioBuffer.duration.toFixed(3),
-      activeSourcesCount: activeSourcesRef.current.length
-    });
 
     // Update next start time
     const duration = audioBuffer.duration;
     nextStartTimeRef.current = startTime + duration;
-
-    console.log(`[Audio] Chunk ${chunkNumber}: Will start at ${startTime.toFixed(3)}s, next chunk scheduled for ${nextStartTimeRef.current.toFixed(3)}s`);
 
     // Track active source
     activeSourcesRef.current.push(source);

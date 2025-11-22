@@ -28,7 +28,8 @@ class VoiceSession:
         instance_id: str,
         websocket: WebSocket,
         stt_provider: STTProvider,
-        tts_provider: TTSProvider
+        tts_provider: TTSProvider,
+        workspace_context: Optional[Dict] = None
     ):
         self.session_id = session_id
         self.user_id = user_id
@@ -36,6 +37,7 @@ class VoiceSession:
         self.websocket = websocket
         self.stt_provider = stt_provider
         self.tts_provider = tts_provider
+        self.workspace_context = workspace_context
 
         self.state_machine = VoiceStateMachine(session_id)
         self.audio_buffer = AudioBuffer(max_duration_ms=500)  # 500ms buffer
@@ -258,6 +260,16 @@ class VoiceSession:
             self.state_machine.set_tts_stream_id(None)
             logger.warning(f"[{self.session_id}] Transitioned to IDLE after speaking")
 
+    def update_workspace_context(self, workspace_context: Optional[Dict]) -> None:
+        """
+        Update the workspace context for this session
+
+        Args:
+            workspace_context: New workspace context dictionary
+        """
+        self.workspace_context = workspace_context
+        logger.info(f"[{self.session_id}] Updated workspace context")
+
     async def _send_to_client(self, message: dict) -> None:
         """
         Send message to client via WebSocket
@@ -338,7 +350,8 @@ class VoiceSessionManager:
         instance_id: str,
         websocket: WebSocket,
         stt_provider: STTProvider,
-        tts_provider: TTSProvider
+        tts_provider: TTSProvider,
+        workspace_context: Optional[Dict] = None
     ) -> VoiceSession:
         """
         Create a new voice session
@@ -361,7 +374,8 @@ class VoiceSessionManager:
             instance_id=instance_id,
             websocket=websocket,
             stt_provider=stt_provider,
-            tts_provider=tts_provider
+            tts_provider=tts_provider,
+            workspace_context=workspace_context
         )
 
         self._sessions[session_id] = session
