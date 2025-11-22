@@ -419,6 +419,7 @@ export interface QuizAttempt {
   timeTakenSeconds: number | null;
   passed: boolean | null;
   attemptNumber: number;
+  currentQuestionIndex?: number | null;
 }
 
 export interface QuizAnswer {
@@ -439,6 +440,26 @@ export interface QuizWithQuestions extends Quiz {
 export interface QuizAttemptWithAnswers extends QuizAttempt {
   answers: QuizAnswer[];
   quiz?: Quiz;
+}
+
+export interface QuizWithStats extends QuizWithQuestions {
+  stats: {
+    totalAttempts: number;
+    completedAttempts: number;
+    bestScore: number | null;
+    lastAttemptDate: string | null;
+    hasIncompleteAttempt: boolean;
+    incompleteAttemptId: string | null;
+    currentQuestionIndex: number | null;
+  };
+}
+
+export interface FlashcardSetWithStats extends FlashcardSetWithCards {
+  stats: {
+    reviewedCount: number;
+    masteredCount: number;
+    dueForReview: number;
+  };
 }
 
 // Analytics types
