@@ -13,6 +13,8 @@ import {
   Minimize2,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   FileText,
   MessageSquarePlus,
   Youtube,
@@ -160,9 +162,14 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   const [isResizingSplit, setIsResizingSplit] = useState(false);
   const splitResizeStartRef = useRef<{ y: number; slidesHeightPercent: number } | null>(null);
   
+  // Expand/collapse state for slides and transcription
+  const [slidesExpanded, setSlidesExpanded] = useState(true);
+  const [transcriptionExpanded, setTranscriptionExpanded] = useState(true);
+  
   // Minimum heights for slides and transcription (in pixels)
   const MIN_SLIDES_HEIGHT = 300;
   const MIN_TRANSCRIPTION_HEIGHT = 200;
+  const COLLAPSED_BAR_HEIGHT = 48; // Height of collapsed bar
 
   // Set method based on existing data
   useEffect(() => {
@@ -1281,124 +1288,166 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
             <Button variant="ghost" size="sm" onClick={handleZoomIn} disabled={scale >= 3.0}>
               <ZoomIn className="w-4 h-4" />
             </Button>
-          </div>
-        </div>
 
-        {/* PDF Display - Resizable */}
-        <div
-          ref={containerRef}
-          className="overflow-auto bg-muted/30 flex items-start justify-center p-8 relative"
-          style={{ 
-            height: `${slidesHeightPercent}%`,
-            minHeight: `${MIN_SLIDES_HEIGHT}px`,
-            maxHeight: `calc(100% - ${MIN_TRANSCRIPTION_HEIGHT}px)`
-          }}
-        >
-          <div className="flex flex-col gap-4">
-            <Document
-              file={slidesUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              className="pdf-document"
+            <div className="w-px h-6 bg-border mx-1" />
+
+            <button
+              onClick={() => setSlidesExpanded(!slidesExpanded)}
+              className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+              aria-label={slidesExpanded ? "Collapse slides" : "Expand slides"}
             >
-              {Array.from({ length: numPages }, (_, index) => index + 1).map((pageNumber) => (
-                <div
-                  key={`page-${pageNumber}`}
-                  ref={(el) => {
-                    pageRefs.current[pageNumber - 1] = el;
-                  }}
-                  className="relative shadow-2xl mb-4 bg-white"
-                  data-page-number={pageNumber}
-                >
-                  <Page
-                    pageNumber={pageNumber}
-                    scale={scale}
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                  />
-                  <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
-                    {pageNumber}
-                  </div>
-                </div>
-              ))}
-            </Document>
+              {slidesExpanded ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  <span>Collapse</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  <span>Expand</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Resize Handle */}
-        <div
-          onPointerDown={handleSplitResizeStart}
-          className={`
-            relative w-full h-1 cursor-row-resize
-            group select-none touch-none
-            ${isResizingSplit ? 'bg-[#F5F5F5]' : 'hover:bg-[#F5F5F5]/50'}
-            transition-colors duration-150
-            z-10
-            flex items-center justify-center
-          `}
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize slides and transcription panels"
-        >
-          {/* Wider hit area for easier grabbing */}
+        {/* PDF Display - Resizable with Collapse */}
+        {slidesExpanded ? (
           <div
-            className={`
-              absolute left-0 right-0 top-1/2 -translate-y-1/2
-              h-4
-              cursor-row-resize
-            `}
-          />
+            ref={containerRef}
+            className="overflow-auto bg-muted/30 flex items-start justify-center p-8 relative"
+            style={{ 
+              height: transcriptionExpanded
+                ? `${slidesHeightPercent}%`
+                : '100%',
+              minHeight: `${MIN_SLIDES_HEIGHT}px`,
+              maxHeight: transcriptionExpanded
+                ? `calc(100% - ${MIN_TRANSCRIPTION_HEIGHT}px)`
+                : '100%'
+            }}
+          >
+            <div className="flex flex-col gap-4">
+              <Document
+                file={slidesUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                className="pdf-document"
+              >
+                {Array.from({ length: numPages }, (_, index) => index + 1).map((pageNumber) => (
+                  <div
+                    key={`page-${pageNumber}`}
+                    ref={(el) => {
+                      pageRefs.current[pageNumber - 1] = el;
+                    }}
+                    className="relative shadow-2xl mb-4 bg-white"
+                    data-page-number={pageNumber}
+                  >
+                    <Page
+                      pageNumber={pageNumber}
+                      scale={scale}
+                      renderTextLayer={true}
+                      renderAnnotationLayer={true}
+                    />
+                    <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
+                      {pageNumber}
+                    </div>
+                  </div>
+                ))}
+              </Document>
+            </div>
+          </div>
+        ) : null}
 
-          {/* Visual indicator on hover */}
+        {/* Resize Handle - Only show when both sections are expanded */}
+        {slidesExpanded && transcriptionExpanded && (
           <div
+            onPointerDown={handleSplitResizeStart}
             className={`
-              absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2
-              h-1 w-8 rounded-full
-              pointer-events-none
-              ${isResizingSplit ? 'bg-[#F5F5F5]' : 'bg-transparent group-hover:bg-[#F5F5F5]/30'}
+              relative w-full h-1 cursor-row-resize
+              group select-none touch-none
+              ${isResizingSplit ? 'bg-[#F5F5F5]' : 'hover:bg-[#F5F5F5]/50'}
               transition-colors duration-150
+              z-10
+              flex items-center justify-center
             `}
-          />
-        </div>
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize slides and transcription panels"
+          >
+            {/* Wider hit area for easier grabbing */}
+            <div
+              className={`
+                absolute left-0 right-0 top-1/2 -translate-y-1/2
+                h-4
+                cursor-row-resize
+              `}
+            />
 
-        {/* Recording Controls / Audio Player and Transcription - Resizable */}
+            {/* Visual indicator on hover */}
+            <div
+              className={`
+                absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2
+                h-1 w-8 rounded-full
+                pointer-events-none
+                ${isResizingSplit ? 'bg-[#F5F5F5]' : 'bg-transparent group-hover:bg-[#F5F5F5]/30'}
+                transition-colors duration-150
+              `}
+            />
+          </div>
+        )}
+
+        {/* Recording Controls / Audio Player and Transcription - Resizable with Collapse */}
         <div 
           className="flex flex-col border-t bg-background overflow-hidden relative"
           style={{
-            height: `${100 - slidesHeightPercent}%`,
-            minHeight: `${MIN_TRANSCRIPTION_HEIGHT}px`,
-            maxHeight: `calc(100% - ${MIN_SLIDES_HEIGHT}px)`
+            height: transcriptionExpanded
+              ? (slidesExpanded 
+                  ? `${100 - slidesHeightPercent}%`
+                  : '100%')
+              : `${COLLAPSED_BAR_HEIGHT}px`,
+            minHeight: transcriptionExpanded 
+              ? (slidesExpanded
+                  ? `${MIN_TRANSCRIPTION_HEIGHT}px`
+                  : `${MIN_TRANSCRIPTION_HEIGHT}px`)
+              : `${COLLAPSED_BAR_HEIGHT}px`,
+            maxHeight: transcriptionExpanded
+              ? (slidesExpanded
+                  ? `calc(100% - ${MIN_SLIDES_HEIGHT}px)`
+                  : '100%')
+              : `${COLLAPSED_BAR_HEIGHT}px`
           }}
         >
-          {/* Show start recording button only if no audio and not recording */}
-          {!audioUrl && !isRecording && !transcript && !streamingTranscript.length && (
-            <div className="flex items-center justify-center p-6 border-b">
-              <button
-                onClick={handleStartRecording}
-                disabled={processing}
-                className="px-6 py-3 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ backgroundColor: '#F5F5F5', color: 'var(--foreground)' }}
-              >
-                {processing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Loading...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-4 h-4" />
-                    <span>Record Audio</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
+          {transcriptionExpanded ? (
+            <>
+              {/* Show start recording button only if no audio and not recording */}
+              {!audioUrl && !isRecording && !transcript && !streamingTranscript.length && (
+                <div className="flex items-center justify-center p-6 border-b">
+                  <button
+                    onClick={handleStartRecording}
+                    disabled={processing}
+                    className="px-6 py-3 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: '#F5F5F5', color: 'var(--foreground)' }}
+                  >
+                    {processing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Loading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-4 h-4" />
+                        <span>Record Audio</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
-          {/* Streaming Transcription */}
-          {(isRecording || isTranscribing || transcript || streamingTranscript.length > 0 || audioUrl) && (
-            <div ref={transcriptionScrollRef} className="flex-1 overflow-y-auto p-6 sidebar-scrollbar">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-6 flex-1">
-                  <h3 className="text-xl font-semibold">Transcription</h3>
+              {/* Streaming Transcription */}
+              {(isRecording || isTranscribing || transcript || streamingTranscript.length > 0 || audioUrl) && (
+                <div ref={transcriptionScrollRef} className="flex-1 overflow-y-auto p-6 sidebar-scrollbar">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-6 flex-1">
+                      <h3 className="text-xl font-semibold">Transcription</h3>
                   {/* Show uploading/processing status inline with title */}
                   {processing && !isRecording && (
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -1461,6 +1510,39 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                   {transcript}
                 </div>
               ) : null}
+                </div>
+              )}
+              {/* Collapse button for transcription */}
+              <div className="flex items-center justify-between px-4 py-2 border-t bg-background/95">
+                <div className="flex items-center gap-2">
+                  <MessageSquarePlus className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Transcription</span>
+                </div>
+                <button
+                  onClick={() => setTranscriptionExpanded(false)}
+                  className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+                  aria-label="Collapse transcription"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                  <span>Collapse</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Collapsed transcription bar */
+            <div className="flex items-center justify-between px-4 py-3 border-t bg-background/95">
+              <div className="flex items-center gap-2">
+                <MessageSquarePlus className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Transcription</span>
+              </div>
+              <button
+                onClick={() => setTranscriptionExpanded(true)}
+                className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+                aria-label="Expand transcription"
+              >
+                <ChevronUp className="w-4 h-4" />
+                <span>Expand</span>
+              </button>
             </div>
           )}
         </div>
