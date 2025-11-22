@@ -60,34 +60,55 @@ interface InstanceSidebarProps {
 }
 
 /**
- * Convert instances and folders to tree nodes for react-arborist
+ * Convert instances and folders to hierarchical tree structure for react-arborist
  */
 const buildTreeData = (instances: WorkspaceInstance[], folders: Folder[]): TreeNode[] => {
-  const nodes: TreeNode[] = [];
+  const nodeMap = new Map<string, TreeNode>();
+  const rootNodes: TreeNode[] = [];
 
-  // Add folders as tree nodes
+  // Create all folder nodes first
   folders.forEach(folder => {
-    nodes.push({
+    const node: TreeNode = {
       id: folder.id,
       name: folder.name,
       nodeType: 'folder',
       parentId: folder.parentFolderId,
       folder,
-    });
+      children: [], // Initialize children array for folders
+    };
+    nodeMap.set(folder.id, node);
   });
 
-  // Add instances as tree nodes
+  // Create all instance nodes
   instances.forEach(instance => {
-    nodes.push({
+    const node: TreeNode = {
       id: instance.id,
       name: instance.title,
       nodeType: 'instance',
       parentId: instance.folderId,
       instance,
-    });
+    };
+    nodeMap.set(instance.id, node);
   });
 
-  return nodes;
+  // Build the hierarchy by adding nodes to their parents' children arrays
+  nodeMap.forEach(node => {
+    if (node.parentId === null || node.parentId === undefined) {
+      // This is a root node
+      rootNodes.push(node);
+    } else {
+      // This node has a parent, add it to the parent's children array
+      const parent = nodeMap.get(node.parentId);
+      if (parent && parent.children) {
+        parent.children.push(node);
+      } else {
+        // Parent not found (orphaned node), add to root
+        rootNodes.push(node);
+      }
+    }
+  });
+
+  return rootNodes;
 };
 
 /**
@@ -187,9 +208,21 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   };
 
   // Helper function to check if a folder is a descendant of another folder
+  // Need to search the entire tree structure, not just root nodes
+  const findNodeById = (nodes: TreeNode[], id: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
     if (folderId === ancestorId) return true;
-    const folder = treeData.find((n) => n.id === folderId);
+    const folder = findNodeById(treeData, folderId);
     if (!folder || !folder.parentId) return false;
     return isDescendantOf(folder.parentId, ancestorId);
   };
@@ -204,7 +237,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
     // Move each dragged node to the new parent
     args.dragIds.forEach((dragId) => {
-      const node = treeData.find(n => n.id === dragId);
+      const node = findNodeById(treeData, dragId);
       if (!node) return;
 
       // Prevent moving a folder into itself or its descendants
@@ -509,6 +542,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               paddingTop={4}
               paddingBottom={4}
               idAccessor="id"
+              childrenAccessor="children"
               onMove={onMoveToFolder && onMoveFolder ? handleMove : undefined}
               disableDrag={!onMoveToFolder || !onMoveFolder}
               disableDrop={!onMoveToFolder || !onMoveFolder}
