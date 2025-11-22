@@ -135,10 +135,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
                 data-role={message.role}
                 className={`${
                   message.role === 'user'
-                    ? 'rounded-lg px-4 py-2 text-black whitespace-pre-wrap break-words text-sm leading-relaxed'
+                    ? 'rounded-lg px-4 py-2 bg-primary/10 text-foreground whitespace-pre-wrap break-words text-sm leading-relaxed border border-primary/20'
                     : 'text-foreground py-1.5'
                 }`}
-                style={message.role === 'user' ? { backgroundColor: '#E7DEFE' } : undefined}
               >
                 {message.role === 'user' ? (
                   // User messages: plain text with whitespace preservation
@@ -168,12 +167,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
       {/* Text Selection Popup */}
       {showPopup && (
         <div
-          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95 bg-muted"
           style={{
             left: `${popupPosition.x}px`,
             top: `${popupPosition.y}px`,
             transform: 'translate(-50%, -100%)',
-            backgroundColor: '#F5F5F5',
             borderRadius: '0.85rem',
             borderColor: 'var(--border)',
           }}

@@ -101,7 +101,7 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
                   transition-all w-full
                   ${
                     isActive
-                      ? 'bg-[#F5F5F5] text-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   }
                 `}

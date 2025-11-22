@@ -144,6 +144,8 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   const [scale, setScale] = useState<number>(1.0);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lectureContainerRef = useRef<HTMLDivElement>(null);
+  const transcriptionScrollRef = useRef<HTMLDivElement>(null);
 
   // Text selection state
   const [selectedText, setSelectedText] = useState<string>('');
@@ -153,12 +155,137 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
 
+  // Lecture split resize state (slides vs transcription)
+  const [slidesHeightPercent, setSlidesHeightPercent] = useState<number>(50); // Default 50/50 split
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
+  const splitResizeStartRef = useRef<{ y: number; slidesHeightPercent: number } | null>(null);
+  
+  // Minimum heights for slides and transcription (in pixels)
+  const MIN_SLIDES_HEIGHT = 300;
+  const MIN_TRANSCRIPTION_HEIGHT = 200;
+
   // Set method based on existing data
   useEffect(() => {
     if (sourceType) {
       setSelectedMethod(sourceType);
     }
   }, [sourceType]);
+
+  // Load saved split ratio from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('mimir.lectureSplitRatio');
+    if (saved) {
+      try {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+          setSlidesHeightPercent(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to parse saved split ratio:', error);
+      }
+    }
+  }, []);
+
+  // Save split ratio to localStorage
+  useEffect(() => {
+    localStorage.setItem('mimir.lectureSplitRatio', slidesHeightPercent.toString());
+  }, [slidesHeightPercent]);
+
+  // Handle split resize
+  const handleSplitResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizingSplit(true);
+    splitResizeStartRef.current = {
+      y: e.clientY,
+      slidesHeightPercent,
+    };
+  }, [slidesHeightPercent]);
+
+  const handleSplitResizeMove = useCallback((e: PointerEvent) => {
+    if (!isResizingSplit || !splitResizeStartRef.current || !lectureContainerRef.current) return;
+
+    const container = lectureContainerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const containerHeight = containerRect.height;
+    
+    // Find toolbar height by looking for the toolbar element
+    const toolbar = container.querySelector('[class*="border-b"]');
+    const toolbarHeight = toolbar ? toolbar.getBoundingClientRect().height : 48;
+    
+    // Calculate available height (container minus toolbar)
+    const availableHeight = containerHeight - toolbarHeight;
+    if (availableHeight <= 0) return;
+
+    // Calculate delta in pixels
+    const deltaY = e.clientY - splitResizeStartRef.current.y;
+    
+    // Convert delta to percentage change
+    const deltaPercent = (deltaY / availableHeight) * 100;
+    
+    // Calculate new slides height percentage
+    let newSlidesPercent = splitResizeStartRef.current.slidesHeightPercent + deltaPercent;
+    
+    // Calculate actual heights in pixels
+    const newSlidesHeight = (newSlidesPercent / 100) * availableHeight;
+    const newTranscriptionHeight = availableHeight - newSlidesHeight;
+    
+    // Apply minimum constraints
+    if (newSlidesHeight < MIN_SLIDES_HEIGHT) {
+      newSlidesPercent = (MIN_SLIDES_HEIGHT / availableHeight) * 100;
+    } else if (newTranscriptionHeight < MIN_TRANSCRIPTION_HEIGHT) {
+      newSlidesPercent = ((availableHeight - MIN_TRANSCRIPTION_HEIGHT) / availableHeight) * 100;
+    }
+    
+    // Clamp to valid range
+    newSlidesPercent = Math.max(0, Math.min(100, newSlidesPercent));
+    
+    setSlidesHeightPercent(newSlidesPercent);
+  }, [isResizingSplit]);
+
+  const handleSplitResizeEnd = useCallback(() => {
+    setIsResizingSplit(false);
+    splitResizeStartRef.current = null;
+  }, []);
+
+  // Global mouse move/up handlers for split resize
+  useEffect(() => {
+    if (isResizingSplit) {
+      document.addEventListener('pointermove', handleSplitResizeMove);
+      document.addEventListener('pointerup', handleSplitResizeEnd);
+      return () => {
+        document.removeEventListener('pointermove', handleSplitResizeMove);
+        document.removeEventListener('pointerup', handleSplitResizeEnd);
+      };
+    }
+  }, [isResizingSplit, handleSplitResizeMove, handleSplitResizeEnd]);
+
+  // Show scrollbar when scrolling transcription
+  useEffect(() => {
+    const transcriptionElement = transcriptionScrollRef.current;
+    if (!transcriptionElement) return;
+
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      transcriptionElement.classList.add('scrolling');
+      
+      // Clear existing timeout
+      clearTimeout(scrollTimeout);
+      
+      // Remove scrolling class after scrolling stops
+      scrollTimeout = setTimeout(() => {
+        transcriptionElement.classList.remove('scrolling');
+      }, 500);
+    };
+
+    transcriptionElement.addEventListener('scroll', handleScroll);
+    
+    return () => {
+      transcriptionElement.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [isRecording, isTranscribing, transcript, streamingTranscript, audioUrl]);
 
   useEffect(() => {
     latestSelectedMethodRef.current = selectedMethod;
@@ -1128,9 +1255,9 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
   // Render PDF slides viewer
   if ((sourceType === 'slides' || sourceType === 'slides-recording' || selectedMethod === 'slides' || selectedMethod === 'slides-recording') && slidesUrl) {
     return (
-      <div className="flex flex-col h-full overflow-hidden">
+      <div ref={lectureContainerRef} className="flex flex-col h-full overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-2 p-3 border-b bg-background/95 backdrop-blur">
+        <div className="flex items-center justify-between gap-2 p-3 border-b bg-background/95 backdrop-blur flex-shrink-0">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-medium truncate max-w-[200px]">
@@ -1157,11 +1284,15 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
           </div>
         </div>
 
-        {/* PDF Display */}
+        {/* PDF Display - Resizable */}
         <div
           ref={containerRef}
-          className="overflow-auto bg-muted/30 flex items-start justify-center p-8"
-          style={{ height: '50vh', minHeight: '400px' }}
+          className="overflow-auto bg-muted/30 flex items-start justify-center p-8 relative"
+          style={{ 
+            height: `${slidesHeightPercent}%`,
+            minHeight: `${MIN_SLIDES_HEIGHT}px`,
+            maxHeight: `calc(100% - ${MIN_TRANSCRIPTION_HEIGHT}px)`
+          }}
         >
           <div className="flex flex-col gap-4">
             <Document
@@ -1193,8 +1324,51 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
           </div>
         </div>
 
-        {/* Recording Controls / Audio Player and Transcription */}
-        <div className="flex-1 flex flex-col border-t bg-background overflow-hidden">
+        {/* Resize Handle */}
+        <div
+          onPointerDown={handleSplitResizeStart}
+          className={`
+            relative w-full h-1 cursor-row-resize
+            group select-none touch-none
+            ${isResizingSplit ? 'bg-[#F5F5F5]' : 'hover:bg-[#F5F5F5]/50'}
+            transition-colors duration-150
+            z-10
+            flex items-center justify-center
+          `}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize slides and transcription panels"
+        >
+          {/* Wider hit area for easier grabbing */}
+          <div
+            className={`
+              absolute left-0 right-0 top-1/2 -translate-y-1/2
+              h-4
+              cursor-row-resize
+            `}
+          />
+
+          {/* Visual indicator on hover */}
+          <div
+            className={`
+              absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2
+              h-1 w-8 rounded-full
+              pointer-events-none
+              ${isResizingSplit ? 'bg-[#F5F5F5]' : 'bg-transparent group-hover:bg-[#F5F5F5]/30'}
+              transition-colors duration-150
+            `}
+          />
+        </div>
+
+        {/* Recording Controls / Audio Player and Transcription - Resizable */}
+        <div 
+          className="flex flex-col border-t bg-background overflow-hidden relative"
+          style={{
+            height: `${100 - slidesHeightPercent}%`,
+            minHeight: `${MIN_TRANSCRIPTION_HEIGHT}px`,
+            maxHeight: `calc(100% - ${MIN_SLIDES_HEIGHT}px)`
+          }}
+        >
           {/* Show start recording button only if no audio and not recording */}
           {!audioUrl && !isRecording && !transcript && !streamingTranscript.length && (
             <div className="flex items-center justify-center p-6 border-b">
@@ -1221,7 +1395,7 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
 
           {/* Streaming Transcription */}
           {(isRecording || isTranscribing || transcript || streamingTranscript.length > 0 || audioUrl) && (
-            <div className="flex-1 overflow-y-auto p-6">
+            <div ref={transcriptionScrollRef} className="flex-1 overflow-y-auto p-6 sidebar-scrollbar">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-6 flex-1">
                   <h3 className="text-xl font-semibold">Transcription</h3>
@@ -1311,6 +1485,14 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               Ask Mimir
             </button>
           </div>
+        )}
+
+        {/* Drag Overlay for split resize */}
+        {isResizingSplit && (
+          <div
+            className="fixed inset-0 z-[9999] cursor-row-resize"
+            style={{ background: 'transparent' }}
+          />
         )}
       </div>
     );
