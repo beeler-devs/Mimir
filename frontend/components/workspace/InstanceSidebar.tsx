@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { Tree, NodeRendererProps } from 'react-arborist';
 import { Button, Input, Modal, ContextMenu } from '@/components/common';
 import {
   FileText,
@@ -20,6 +20,7 @@ import {
   Video
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
+import { useResize } from '@/contexts/ResizeContext';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -28,6 +29,19 @@ const typeMeta = {
   pdf: { label: 'PDF', icon: File },
   lecture: { label: 'Lecture', icon: Video },
 } as const;
+
+// Tree node type for react-arborist
+type TreeNode = {
+  id: string;
+  name: string;
+  nodeType: 'instance' | 'folder';
+  parentId: string | null;
+  children?: TreeNode[];
+  // For instances
+  instance?: WorkspaceInstance;
+  // For folders
+  folder?: Folder;
+};
 
 interface InstanceSidebarProps {
   instances: WorkspaceInstance[];
@@ -44,6 +58,58 @@ interface InstanceSidebarProps {
   onMoveToFolder?: (instanceId: string, folderId: string | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null) => void;
 }
+
+/**
+ * Convert instances and folders to hierarchical tree structure for react-arborist
+ */
+const buildTreeData = (instances: WorkspaceInstance[], folders: Folder[]): TreeNode[] => {
+  const nodeMap = new Map<string, TreeNode>();
+  const rootNodes: TreeNode[] = [];
+
+  // Create all folder nodes first
+  folders.forEach(folder => {
+    const node: TreeNode = {
+      id: folder.id,
+      name: folder.name,
+      nodeType: 'folder',
+      parentId: folder.parentFolderId,
+      folder,
+      children: [], // Initialize children array for folders
+    };
+    nodeMap.set(folder.id, node);
+  });
+
+  // Create all instance nodes
+  instances.forEach(instance => {
+    const node: TreeNode = {
+      id: instance.id,
+      name: instance.title,
+      nodeType: 'instance',
+      parentId: instance.folderId,
+      instance,
+    };
+    nodeMap.set(instance.id, node);
+  });
+
+  // Build the hierarchy by adding nodes to their parents' children arrays
+  nodeMap.forEach(node => {
+    if (node.parentId === null || node.parentId === undefined) {
+      // This is a root node
+      rootNodes.push(node);
+    } else {
+      // This node has a parent, add it to the parent's children array
+      const parent = nodeMap.get(node.parentId);
+      if (parent && parent.children) {
+        parent.children.push(node);
+      } else {
+        // Parent not found (orphaned node), add to root
+        rootNodes.push(node);
+      }
+    }
+  });
+
+  return rootNodes;
+};
 
 /**
  * Left rail that lists workspace instances and folders with tree structure
@@ -63,69 +129,32 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   onMoveToFolder,
   onMoveFolder,
 }) => {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingType, setEditingType] = useState<'instance' | 'folder' | null>(null);
-  const [draftTitle, setDraftTitle] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [moveModalInstance, setMoveModalInstance] = useState<WorkspaceInstance | null>(null);
-  const [draggingInstanceId, setDraggingInstanceId] = useState<string | null>(null);
-  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
-  const [rootDragOver, setRootDragOver] = useState(false);
-  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
 
-  // Store refs for menu buttons - using useRef to hold a Map of refs
+  // Store refs for menu buttons
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const router = useRouter();
+
+  // Use resize context for collapsed state
+  const { leftCollapsed: collapsed, toggleLeftCollapsed } = useResize();
+
+  // Build tree data
+  const treeData = useMemo(() => buildTreeData(instances, folders), [instances, folders]);
 
   const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      if (next) {
-        setEditingId(null);
-        setEditingType(null);
-        setDraftTitle('');
-        setMenuOpenId(null);
-      }
-      return next;
-    });
-  };
-
-
-  const toggleFolder = (folderId: string) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
-      return next;
-    });
-  };
-
-  const startEditing = (id: string, title: string, type: 'instance' | 'folder') => {
-    setEditingId(id);
-    setEditingType(type);
-    setDraftTitle(title);
-    setMenuOpenId(null);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditingType(null);
-    setDraftTitle('');
+    toggleLeftCollapsed();
+    if (!collapsed) {
+      setMenuOpenId(null);
+    }
   };
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMenuOpenId(null);
-        cancelEditing();
       }
     };
     const handleClick = (event: MouseEvent) => {
@@ -141,19 +170,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       document.removeEventListener('click', handleClick);
     };
   }, []);
-
-  const commitEditing = () => {
-    if (!editingId || !editingType) return;
-    const trimmed = draftTitle.trim();
-    if (trimmed.length > 0) {
-      if (editingType === 'instance') {
-        onRename(editingId, trimmed);
-      } else if (editingType === 'folder' && onRenameFolder) {
-        onRenameFolder(editingId, trimmed);
-      }
-    }
-    cancelEditing();
-  };
 
   const handleStartCreateFolder = () => {
     setCreatingNewFolder(true);
@@ -191,106 +207,159 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     setMoveModalInstance(null);
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitEditing();
-    } else if (event.key === 'Escape') {
-      cancelEditing();
+  // Helper function to check if a folder is a descendant of another folder
+  // Need to search the entire tree structure, not just root nodes
+  const findNodeById = (nodes: TreeNode[], id: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, id);
+        if (found) return found;
+      }
     }
+    return null;
   };
 
-  // Organize instances and folders into tree structure
-  const { rootInstances, rootFolders } = useMemo(() => {
-    const rootInstances = instances.filter(i => !i.folderId);
-    const rootFolders = folders.filter(f => !f.parentFolderId);
-    return { rootInstances, rootFolders };
-  }, [instances, folders]);
-
-  const getFolderInstances = (folderId: string) => {
-    return instances.filter(i => i.folderId === folderId);
+  const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
+    if (folderId === ancestorId) return true;
+    const folder = findNodeById(treeData, folderId);
+    if (!folder || !folder.parentId) return false;
+    return isDescendantOf(folder.parentId, ancestorId);
   };
 
-  const getFolderChildren = (folderId: string) => {
-    return folders.filter(f => f.parentFolderId === folderId);
+  // Handle drag and drop move from react-arborist
+  const handleMove = (args: {
+    dragIds: string[];
+    parentId: string | null;
+    index: number;
+  }) => {
+    if (!onMoveToFolder || !onMoveFolder) return;
+
+    // Move each dragged node to the new parent
+    args.dragIds.forEach((dragId) => {
+      const node = findNodeById(treeData, dragId);
+      if (!node) return;
+
+      // Prevent moving a folder into itself or its descendants
+      if (node.nodeType === 'folder' && args.parentId) {
+        if (isDescendantOf(args.parentId, dragId)) {
+          console.warn('Cannot move folder into its own descendant');
+          return;
+        }
+      }
+
+      if (node.nodeType === 'instance') {
+        onMoveToFolder(dragId, args.parentId);
+      } else if (node.nodeType === 'folder') {
+        onMoveFolder(dragId, args.parentId);
+      }
+    });
   };
 
-  const renderInstance = (instance: WorkspaceInstance, depth: number = 0) => {
-    const meta = typeMeta[instance.type];
-    const Icon = meta.icon;
-    const isActive = instance.id === activeInstanceId;
-    const isEditing = editingId === instance.id && editingType === 'instance';
-    const isMenuOpen = menuOpenId === instance.id;
+  // Node renderer for custom styling
+  const Node = ({ node, style, dragHandle }: NodeRendererProps<TreeNode>) => {
+    const isFolder = node.data.nodeType === 'folder';
+    const isActive = !isFolder && node.data.instance?.id === activeInstanceId;
+    const isMenuOpen = menuOpenId === node.data.id;
+
+    const Chevron = node.isOpen ? ChevronDown : ChevronRight;
+
+    // Get icon based on node type
+    let Icon;
+    if (isFolder) {
+      Icon = node.isOpen ? FolderOpen : FolderIcon;
+    } else if (node.data.instance) {
+      Icon = typeMeta[node.data.instance.type].icon;
+    } else {
+      Icon = File;
+    }
 
     return (
       <div
-        key={instance.id}
+        ref={dragHandle}
+        style={style}
         className="group relative"
-        style={{ paddingLeft: `${depth * 12}px` }}
-        draggable
-        onDragStart={(event) => {
-          event.stopPropagation();
-          event.dataTransfer.setData('application/mimir-instance', instance.id);
-          setDraggingInstanceId(instance.id);
-        }}
-        onDragEnd={() => {
-          setDraggingInstanceId(null);
-          setDragOverFolderId(null);
-          setRootDragOver(false);
-        }}
       >
         <button
-          onClick={() => onSelect(instance.id)}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            startEditing(instance.id, instance.title, 'instance');
+          onClick={() => {
+            if (isFolder) {
+              node.toggle();
+            } else if (node.data.instance) {
+              onSelect(node.data.instance.id);
+            }
           }}
           className={`
-            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors
+            w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors cursor-pointer
             ${isActive ? 'bg-muted text-foreground' : 'hover:bg-muted/70'}
           `}
         >
-          <span
-            className={`
-              h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
-              ${isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
-            `}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </span>
+          {/* Chevron for folders */}
+          {isFolder && (
+            <Chevron className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          )}
 
-          <div className="flex-1 min-w-0 pr-6">
-            {isEditing ? (
-              <input
-                className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
-                value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                onBlur={commitEditing}
-                onKeyDown={handleKeyDown}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <p className="font-medium truncate">{instance.title}</p>
-            )}
-          </div>
+          {/* Icon */}
+          {isFolder ? (
+            <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          ) : (
+            <span
+              className={`
+                h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
+                ${isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+              `}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+          )}
+
+          {/* Name */}
+          {node.isEditing ? (
+            <input
+              autoFocus
+              type="text"
+              defaultValue={node.data.name}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => node.submit(node.data.name)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') node.reset();
+                if (e.key === 'Enter') {
+                  const newName = e.currentTarget.value.trim();
+                  if (newName) {
+                    if (node.data.nodeType === 'instance') {
+                      onRename(node.data.id, newName);
+                    } else if (node.data.nodeType === 'folder' && onRenameFolder) {
+                      onRenameFolder(node.data.id, newName);
+                    }
+                    node.submit(newName);
+                  }
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 min-w-0 pr-6 bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
+            />
+          ) : (
+            <div className="flex-1 min-w-0 pr-6">
+              <p className="font-medium truncate">{node.data.name}</p>
+            </div>
+          )}
         </button>
 
-        {!isEditing && (
+        {/* Context menu button */}
+        {!node.isEditing && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             <button
               ref={(el) => {
                 if (el) {
-                  menuButtonRefs.current.set(instance.id, el);
+                  menuButtonRefs.current.set(node.data.id, el);
                 } else {
-                  menuButtonRefs.current.delete(instance.id);
+                  menuButtonRefs.current.delete(node.data.id);
                 }
               }}
               type="button"
               data-menu-interactive
               onClick={(event) => {
                 event.stopPropagation();
-                setMenuOpenId(isMenuOpen ? null : instance.id);
+                setMenuOpenId(isMenuOpen ? null : node.data.id);
               }}
               className={`
                 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/80
@@ -305,23 +374,26 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             <ContextMenu
               isOpen={isMenuOpen}
               onClose={() => setMenuOpenId(null)}
-              triggerRef={{ current: menuButtonRefs.current.get(instance.id) ?? null } as React.RefObject<HTMLElement>}
+              triggerRef={{ current: menuButtonRefs.current.get(node.data.id) ?? null } as React.RefObject<HTMLElement>}
               align="right"
             >
               <button
                 onClick={(event) => {
                   event.stopPropagation();
-                  startEditing(instance.id, instance.title, 'instance');
+                  node.edit();
+                  setMenuOpenId(null);
                 }}
                 className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
               >
                 Rename
               </button>
-              {onMoveToFolder && (
+              {onMoveToFolder && node.data.nodeType === 'instance' && (
                 <button
                   onClick={(event) => {
                     event.stopPropagation();
-                    setMoveModalInstance(instance);
+                    if (node.data.instance) {
+                      setMoveModalInstance(node.data.instance);
+                    }
                     setMenuOpenId(null);
                   }}
                   className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
@@ -332,7 +404,11 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <button
                 onClick={(event) => {
                   event.stopPropagation();
-                  onDelete(instance.id);
+                  if (node.data.nodeType === 'instance') {
+                    onDelete(node.data.id);
+                  } else if (node.data.nodeType === 'folder' && onDeleteFolder) {
+                    onDeleteFolder(node.data.id);
+                  }
                   setMenuOpenId(null);
                 }}
                 className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
@@ -345,172 +421,10 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
       </div>
     );
   };
-
-  const renderFolder = (folder: Folder, depth: number = 0): React.ReactNode => {
-    const isExpanded = expandedFolders.has(folder.id);
-    const isEditing = editingId === folder.id && editingType === 'folder';
-    const isMenuOpen = menuOpenId === folder.id;
-    const folderInstances = getFolderInstances(folder.id);
-    const childFolders = getFolderChildren(folder.id);
-
-    return (
-      <div
-        key={folder.id}
-        draggable
-        onDragStart={(event) => {
-          event.stopPropagation();
-          event.dataTransfer.setData('application/mimir-folder', folder.id);
-          setDraggingFolderId(folder.id);
-        }}
-        onDragEnd={() => {
-          setDraggingFolderId(null);
-          setDragOverFolderId(null);
-          setRootDragOver(false);
-        }}
-        onDragOver={(event) => {
-          if (draggingInstanceId || draggingFolderId) {
-            event.preventDefault();
-            event.stopPropagation();
-            setDragOverFolderId(folder.id);
-            setRootDragOver(false);
-          }
-        }}
-        onDragLeave={(event) => {
-          event.stopPropagation();
-          // Only clear if we're leaving this folder (not entering a child)
-          const relatedTarget = event.relatedTarget as HTMLElement;
-          if (!event.currentTarget.contains(relatedTarget)) {
-            setDragOverFolderId(null);
-          }
-        }}
-        onDrop={(event) => {
-          if (!onMoveToFolder || !onMoveFolder) return;
-          event.preventDefault();
-          event.stopPropagation();
-          const instanceId = event.dataTransfer.getData('application/mimir-instance');
-          const folderId = event.dataTransfer.getData('application/mimir-folder');
-
-          if (instanceId) {
-            onMoveToFolder(instanceId, folder.id);
-          } else if (folderId && folderId !== folder.id) {
-            onMoveFolder(folderId, folder.id);
-          }
-
-          setDraggingInstanceId(null);
-          setDraggingFolderId(null);
-          setRootDragOver(false);
-          setDragOverFolderId(null);
-        }}
-      >
-        <div
-          className="group relative"
-          style={{ paddingLeft: `${depth * 12}px` }}
-        >
-          <button
-            onClick={() => toggleFolder(folder.id)}
-            className={`w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70 ${dragOverFolderId === folder.id ? 'bg-primary/10 ring-2 ring-primary ring-inset' : ''
-              }`}
-          >
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            )}
-            {isExpanded ? (
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            ) : (
-              <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            )}
-
-            <div className="flex-1 min-w-0 pr-6">
-              {isEditing ? (
-                <input
-                  className="w-full bg-transparent border-b border-dashed border-border pb-0.5 text-sm focus:outline-none"
-                  value={draftTitle}
-                  onChange={(event) => setDraftTitle(event.target.value)}
-                  onBlur={commitEditing}
-                  onKeyDown={handleKeyDown}
-                  autoFocus
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                <p className="font-medium truncate">{folder.name}</p>
-              )}
-            </div>
-          </button>
-
-          {!isEditing && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-              <button
-                ref={(el) => {
-                  if (el) {
-                    menuButtonRefs.current.set(folder.id, el);
-                  } else {
-                    menuButtonRefs.current.delete(folder.id);
-                  }
-                }}
-                type="button"
-                data-menu-interactive
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMenuOpenId(isMenuOpen ? null : folder.id);
-                }}
-                className={`
-                  p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background/80
-                  transition-opacity duration-150
-                  ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
-                `}
-                aria-label="Options"
-              >
-                <MoreVertical className="h-4 w-4" />
-              </button>
-
-              <ContextMenu
-                isOpen={isMenuOpen}
-                onClose={() => setMenuOpenId(null)}
-                triggerRef={{ current: menuButtonRefs.current.get(folder.id) ?? null } as React.RefObject<HTMLElement>}
-                align="right"
-              >
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    startEditing(folder.id, folder.name, 'folder');
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                >
-                  Rename
-                </button>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (onDeleteFolder) {
-                      onDeleteFolder(folder.id);
-                    }
-                    setMenuOpenId(null);
-                  }}
-                  className="w-full px-3 py-2 text-left text-sm text-red-500 hover:bg-muted transition-colors"
-                >
-                  Delete
-                </button>
-              </ContextMenu>
-            </div>
-          )}
-        </div>
-
-        {isExpanded && (
-          <div className="ml-2">
-            {childFolders.map(childFolder => renderFolder(childFolder, depth + 1))}
-            {folderInstances.map(instance => renderInstance(instance, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   if (collapsed) {
     return (
       <>
-        <aside className="w-16 border-r border-border bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+        <aside className="w-full h-full border-r border-border bg-card/80 backdrop-blur-xl flex flex-col">
           <div className="px-2 pt-5 pb-4 flex items-center justify-center">
             <button
               onClick={toggleCollapsed}
@@ -547,7 +461,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
 
   return (
     <>
-      <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
+      <aside className="w-full h-full border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col overflow-hidden">
         <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
           <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
           <button
@@ -562,7 +476,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         <div className="px-4 pt-4 space-y-2">
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-            onClick={() => router.push('/workspace')}
+            onClick={onCreateInstance}
           >
             <Plus className="h-4 w-4" />
             <span>Add instance</span>
@@ -585,54 +499,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
           </button>
         </div>
 
-        <div
-          className="flex-1 overflow-y-auto px-4 py-3 space-y-1"
-          onDragOver={(event) => {
-            if (!draggingInstanceId && !draggingFolderId) return;
-            event.preventDefault();
-            // Only set rootDragOver if not over a folder
-            if (!dragOverFolderId) {
-              setRootDragOver(true);
-            }
-          }}
-          onDragLeave={(event) => {
-            const relatedTarget = event.relatedTarget as HTMLElement;
-            if (!event.currentTarget.contains(relatedTarget)) {
-              setRootDragOver(false);
-              setDragOverFolderId(null);
-            }
-          }}
-          onDrop={(event) => {
-            if (!onMoveToFolder || !onMoveFolder) return;
-            // Only handle drop if not over a specific folder
-            if (dragOverFolderId) return;
-
-            event.preventDefault();
-            const instanceId = event.dataTransfer.getData('application/mimir-instance');
-            const folderId = event.dataTransfer.getData('application/mimir-folder');
-
-            if (instanceId) {
-              onMoveToFolder(instanceId, null);
-            } else if (folderId) {
-              onMoveFolder(folderId, null);
-            }
-
-            setDraggingInstanceId(null);
-            setDraggingFolderId(null);
-            setRootDragOver(false);
-            setDragOverFolderId(null);
-          }}
-        >
-          {draggingInstanceId && onMoveToFolder && (
-            <div
-              className={`
-              px-3 py-2 mb-2 text-xs rounded-lg border-2 border-dashed
-              ${rootDragOver ? 'border-primary text-primary' : 'border-muted-foreground/40 text-muted-foreground'}
-            `}
-            >
-              Drop here to remove from folders
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
           {instances.length === 0 && folders.length === 0 && !creatingNewFolder && (
             <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
               Create your first instance to get started.
@@ -663,8 +530,26 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             </div>
           )}
 
-          {rootFolders.map(folder => renderFolder(folder))}
-          {rootInstances.map(instance => renderInstance(instance))}
+          {treeData.length > 0 && (
+            <Tree
+              data={treeData}
+              openByDefault={false}
+              width="100%"
+              height={600}
+              indent={12}
+              rowHeight={40}
+              overscanCount={1}
+              paddingTop={4}
+              paddingBottom={4}
+              idAccessor="id"
+              childrenAccessor="children"
+              onMove={onMoveToFolder && onMoveFolder ? handleMove : undefined}
+              disableDrag={!onMoveToFolder || !onMoveFolder}
+              disableDrop={!onMoveToFolder || !onMoveFolder}
+            >
+              {Node}
+            </Tree>
+          )}
         </div>
 
         <div className="p-4 border-t border-border">
