@@ -67,7 +67,7 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
         absolute top-0 bottom-0
         w-1 cursor-col-resize
         group select-none touch-none
-        ${position === 'left' ? 'right-0' : 'left-0'}
+        ${position === 'left' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2'}
         z-10
         focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1
         ${className}

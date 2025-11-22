@@ -1293,15 +1293,15 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
 
             <button
               onClick={() => {
-                if (!slidesExpanded && !transcriptionExpanded) {
-                  // Don't allow collapsing if both are already collapsed
+                if (!transcriptionExpanded) {
+                  // Don't allow collapsing PDF if transcription is already collapsed
                   return;
                 }
                 setSlidesExpanded(!slidesExpanded);
               }}
-              disabled={!slidesExpanded && !transcriptionExpanded}
+              disabled={!transcriptionExpanded}
               className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
-                !slidesExpanded && !transcriptionExpanded
+                !transcriptionExpanded
                   ? 'cursor-not-allowed opacity-50'
                   : 'hover:opacity-80 cursor-pointer'
               }`}
@@ -1509,15 +1509,15 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                 </div>
                 <button
                   onClick={() => {
-                    if (!slidesExpanded && !transcriptionExpanded) {
-                      // Don't allow collapsing if both are already collapsed
+                    if (!slidesExpanded) {
+                      // Don't allow collapsing transcription if PDF is already collapsed
                       return;
                     }
                     setTranscriptionExpanded(false);
                   }}
-                  disabled={!slidesExpanded && !transcriptionExpanded}
+                  disabled={!slidesExpanded}
                   className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
-                    !slidesExpanded && !transcriptionExpanded
+                    !slidesExpanded
                       ? 'cursor-not-allowed opacity-50'
                       : 'hover:opacity-80 cursor-pointer'
                   }`}
@@ -1537,18 +1537,9 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
               </div>
               <button
                 onClick={() => {
-                  if (!slidesExpanded && !transcriptionExpanded) {
-                    // Don't allow expanding if both are collapsed (shouldn't happen, but safety check)
-                    return;
-                  }
                   setTranscriptionExpanded(true);
                 }}
-                disabled={!slidesExpanded && !transcriptionExpanded}
-                className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
-                  !slidesExpanded && !transcriptionExpanded
-                    ? 'cursor-not-allowed opacity-50'
-                    : 'hover:opacity-80 cursor-pointer'
-                }`}
+                className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity cursor-pointer"
                 aria-label="Expand transcription"
               >
                 <ChevronUp className="w-4 h-4" />
