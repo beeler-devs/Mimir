@@ -638,3 +638,7 @@ COMMENT ON COLUMN flashcard_reviews.quality_rating IS '0=complete blackout, 5=pe
 COMMENT ON COLUMN flashcard_reviews.ease_factor IS 'SM-2 algorithm ease factor for spaced repetition';
 COMMENT ON COLUMN flashcard_reviews.interval_days IS 'Days until next review (SM-2 algorithm)';
 
+
+
+
+

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { nanoid } from 'nanoid';
 
+// Route segment config for App Router
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 minutes for large file uploads
 
 /**
  * POST /api/pdf/upload
@@ -65,24 +66,72 @@ export async function POST(request: NextRequest) {
     const filePath = `${userId}/pdfs/${uniqueFileName}`;
 
     // Convert file to buffer
+    console.log(`Starting upload: ${file.name} (${file.size} bytes)`);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    console.log(`Buffer created: ${buffer.length} bytes`);
 
-    // Upload to Supabase Storage
-    const { data, error } = await supabaseServer.storage
-      .from('documents') // Make sure this bucket exists in Supabase
-      .upload(filePath, buffer, {
-        contentType: 'application/pdf',
-        cacheControl: '3600',
-        upsert: false,
-      });
+    // Upload to Supabase Storage with retry logic
+    let uploadAttempt = 0;
+    const maxRetries = 3;
+    let uploadError: Error | null = null;
+    let data = null;
 
-    if (error) {
-      console.error('Error uploading to Supabase Storage:', error);
+    while (uploadAttempt < maxRetries) {
+      try {
+        uploadAttempt++;
+        console.log(`Upload attempt ${uploadAttempt}/${maxRetries} for ${filePath}`);
+        
+        const result = await supabaseServer.storage
+          .from('documents') // Make sure this bucket exists in Supabase
+          .upload(filePath, buffer, {
+            contentType: 'application/pdf',
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (result.error) {
+          uploadError = new Error(result.error.message);
+          console.error(`Upload attempt ${uploadAttempt} failed:`, result.error);
+          
+          // If it's a duplicate file error, don't retry
+          if (result.error.message.includes('already exists')) {
+            break;
+          }
+          
+          // Wait before retrying (exponential backoff)
+          if (uploadAttempt < maxRetries) {
+            const waitTime = Math.pow(2, uploadAttempt) * 1000;
+            console.log(`Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        } else {
+          // Success!
+          data = result.data;
+          uploadError = null;
+          console.log(`Upload successful: ${filePath}`);
+          break;
+        }
+      } catch (err) {
+        uploadError = err instanceof Error ? err : new Error('Unknown error');
+        console.error(`Upload attempt ${uploadAttempt} threw error:`, err);
+        
+        // Wait before retrying
+        if (uploadAttempt < maxRetries) {
+          const waitTime = Math.pow(2, uploadAttempt) * 1000;
+          console.log(`Waiting ${waitTime}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    if (uploadError || !data) {
+      console.error('Error uploading to Supabase Storage after retries:', uploadError);
       return NextResponse.json(
         {
-          error: 'Failed to upload file',
-          details: error.message
+          error: 'Failed to upload file after multiple attempts',
+          details: uploadError?.message || 'Unknown error',
+          attempts: uploadAttempt,
         },
         { status: 500 }
       );

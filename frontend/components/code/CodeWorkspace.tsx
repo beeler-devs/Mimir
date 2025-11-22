@@ -209,17 +209,30 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
 
   const handleRenameNode = useCallback(
     (id: string, newName: string) => {
-      // Update file tree
+      // Find the node being renamed
+      const node = fileTree.find((n) => n.id === id);
+      if (!node) return;
+
+      // Calculate new path if it's a file
+      const newPath = node.type === 'file' ? buildPath(node.parentId, newName) : undefined;
+      const oldPath = node.type === 'file' ? node.path! : undefined;
+
+      // Update file tree (including path for files)
       setFileTree((prev) =>
-        prev.map((node) => (node.id === id ? { ...node, name: newName } : node))
+        prev.map((n) => {
+          if (n.id === id) {
+            return {
+              ...n,
+              name: newName,
+              ...(newPath ? { path: newPath } : {}),
+            };
+          }
+          return n;
+        })
       );
 
-      // Update file if it's a file
-      const node = fileTree.find((n) => n.id === id);
-      if (node && node.type === 'file') {
-        const oldPath = node.path!;
-        const newPath = buildPath(node.parentId, newName);
-
+      // Update files array if it's a file
+      if (node.type === 'file' && oldPath && newPath) {
         setFiles((prev) =>
           prev.map((file) =>
             file.path === oldPath
@@ -283,6 +296,144 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
       }
     },
     [fileTree, files, activeFilePath]
+  );
+
+  const handleMoveNode = useCallback(
+    (nodeId: string, newParentId: string | null) => {
+      // Find the node being moved
+      const node = fileTree.find((n) => n.id === nodeId);
+      if (!node) return;
+
+      // Prevent moving to the same location
+      if (node.parentId === newParentId) return;
+
+      // Prevent moving a folder into itself or its descendants
+      if (newParentId) {
+        const isDescendant = (parentId: string, targetId: string): boolean => {
+          if (parentId === targetId) return true;
+          const parent = fileTree.find((n) => n.id === parentId);
+          if (!parent || !parent.parentId) return false;
+          return isDescendant(parent.parentId, targetId);
+        };
+
+        if (node.type === 'folder' && isDescendant(newParentId, nodeId)) {
+          return; // Can't move a folder into its own descendants
+        }
+      }
+
+      // Helper to get full path of a folder by traversing up the tree
+      const getFolderPath = (folderId: string | null): string => {
+        if (!folderId) return '';
+        const folder = fileTree.find((n) => n.id === folderId);
+        if (!folder) return '';
+        const parentPath = getFolderPath(folder.parentId);
+        return parentPath ? `${parentPath}/${folder.name}` : folder.name;
+      };
+
+      // Calculate the new base path for the moved node
+      const newBasePath = newParentId ? getFolderPath(newParentId) : '';
+
+      // Collect all descendant file IDs and their path updates
+      const nodesToUpdate = new Map<string, { oldPath: string; newPath: string }>();
+
+      // Helper to get relative path from moved node to a descendant
+      const getRelativePath = (descendantId: string, fromId: string): string => {
+        const descendant = fileTree.find((n) => n.id === descendantId);
+        if (!descendant) return '';
+        if (descendant.parentId === fromId) {
+          return descendant.name;
+        }
+        if (descendant.parentId) {
+          const parentRelative = getRelativePath(descendant.parentId, fromId);
+          return parentRelative ? `${parentRelative}/${descendant.name}` : descendant.name;
+        }
+        return descendant.name;
+      };
+
+      // Collect all descendants (including the moved node if it's a file)
+      const collectDescendants = (targetId: string) => {
+        const targetNode = fileTree.find((n) => n.id === targetId);
+        if (!targetNode) return;
+
+        if (targetNode.type === 'file' && targetNode.path) {
+          // Calculate new path
+          let newPath: string;
+          if (targetId === nodeId) {
+            // This is the moved node itself
+            newPath = newBasePath ? `${newBasePath}/${targetNode.name}` : targetNode.name;
+          } else {
+            // This is a descendant - get relative path from moved folder
+            const relativePath = getRelativePath(targetId, nodeId);
+            const movedFolderNewPath = newBasePath ? `${newBasePath}/${node.name}` : node.name;
+            newPath = `${movedFolderNewPath}/${relativePath}`;
+          }
+          nodesToUpdate.set(targetId, { oldPath: targetNode.path, newPath });
+        }
+
+        // Process children
+        fileTree.forEach((child) => {
+          if (child.parentId === targetId) {
+            collectDescendants(child.id);
+          }
+        });
+      };
+
+      collectDescendants(nodeId);
+
+      // Update file tree - change the parent of the moved node
+      setFileTree((prev) =>
+        prev.map((n) => {
+          if (n.id === nodeId) {
+            const update = nodesToUpdate.get(n.id);
+            return {
+              ...n,
+              parentId: newParentId,
+              path: update ? update.newPath : n.path,
+            };
+          }
+          // Update paths for descendants
+          const update = nodesToUpdate.get(n.id);
+          if (update) {
+            return { ...n, path: update.newPath };
+          }
+          return n;
+        })
+      );
+
+      // Update files array with new paths
+      setFiles((prev) =>
+        prev.map((file) => {
+          const update = Array.from(nodesToUpdate.entries()).find(
+            ([, paths]) => paths.oldPath === file.path
+          );
+          if (update) {
+            return { ...file, path: update[1].newPath };
+          }
+          return file;
+        })
+      );
+
+      // Update open files with new paths
+      setOpenFiles((prev) =>
+        prev.map((path) => {
+          const update = Array.from(nodesToUpdate.entries()).find(
+            ([, paths]) => paths.oldPath === path
+          );
+          return update ? update[1].newPath : path;
+        })
+      );
+
+      // Update active file path if it was moved
+      if (activeFilePath) {
+        const update = Array.from(nodesToUpdate.entries()).find(
+          ([, paths]) => paths.oldPath === activeFilePath
+        );
+        if (update) {
+          setActiveFilePath(update[1].newPath);
+        }
+      }
+    },
+    [fileTree, activeFilePath]
   );
 
   const handleSelectFile = useCallback(
@@ -422,6 +573,7 @@ export const CodeWorkspace: React.FC<CodeWorkspaceProps> = ({
               onCreateFolder={handleCreateFolder}
               onRename={handleRenameNode}
               onDelete={handleDeleteNode}
+              onMove={handleMoveNode}
             />
           </div>
         )}

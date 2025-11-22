@@ -23,7 +23,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change or content updates
   useEffect(() => {
     // Use a small timeout to ensure DOM has updated
     const scrollToBottom = () => {
@@ -37,7 +37,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
     const timeoutId = setTimeout(scrollToBottom, 100);
     
     return () => clearTimeout(timeoutId);
-  }, [messages]);
+  }, [messages, messages.map(m => m.content).join('')]);
 
   // Text selection handler (only for assistant messages)
   const handleTextSelection = useCallback((event: MouseEvent) => {
@@ -103,7 +103,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
   }
 
   return (
-    <div ref={containerRef} className="flex flex-col space-y-4 p-4 overflow-y-auto bg-transparent">
+    <div ref={containerRef} className="flex flex-col space-y-4 p-4 bg-transparent">
       {messages.map((message) => (
         <div key={message.id}>
           <div
@@ -135,10 +135,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
                 data-role={message.role}
                 className={`${
                   message.role === 'user'
-                    ? 'rounded-lg px-4 py-2 text-black whitespace-pre-wrap break-words text-sm leading-relaxed'
+                    ? 'rounded-lg px-4 py-2 bg-primary/10 text-foreground whitespace-pre-wrap break-words text-sm leading-relaxed border border-primary/20'
                     : 'text-foreground py-1.5'
                 }`}
-                style={message.role === 'user' ? { backgroundColor: '#E7DEFE' } : undefined}
               >
                 {message.role === 'user' ? (
                   // User messages: plain text with whitespace preservation
@@ -168,12 +167,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, work
       {/* Text Selection Popup */}
       {showPopup && (
         <div
-          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95 bg-muted"
           style={{
             left: `${popupPosition.x}px`,
             top: `${popupPosition.y}px`,
             transform: 'translate(-50%, -100%)',
-            backgroundColor: '#F5F5F5',
             borderRadius: '0.85rem',
             borderColor: 'var(--border)',
           }}

@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
+    "@deepgram/sdk": "^4.11.2",
     "@excalidraw/excalidraw": "^0.18.0",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.81.1",
     "@types/dagre": "^0.7.53",
     "dagre": "^0.8.5",
+    "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "katex": "^0.16.25",
@@ -32,7 +34,8 @@
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "youtube-transcript": "^1.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -134,6 +134,37 @@ body {
   background: var(--border);
 }
 
+/* Sidebar scrollbar - only shows on hover or when scrolling, theme-aware */
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  -ms-overflow-style: none;
+}
+
+.sidebar-scrollbar:hover,
+.sidebar-scrollbar.scrolling {
+  scrollbar-color: var(--border) transparent;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb,
+.sidebar-scrollbar.scrolling::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
 /* React-PDF styles */
 .react-pdf__Document {
   display: flex;

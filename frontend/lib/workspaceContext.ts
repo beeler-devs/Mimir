@@ -13,6 +13,15 @@ const MAX_CODE_LINES = 500; // lines
 const MAX_INSTANCES_PER_FOLDER = 20;
 
 /**
+ * Format timestamp in MM:SS format
+ */
+function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
  * Truncate text content intelligently (show beginning and end)
  */
 function truncateText(content: string, maxLength: number): string {
@@ -50,11 +59,49 @@ export function buildWorkspaceContext(
   const contextInstances: WorkspaceContextInstance[] = [];
   const contextFolders: WorkspaceContextFolder[] = [];
   const annotationImages: Record<string, string> = {};
+  let lectureTranscriptContext: string | undefined;
+  let lectureSlidesContext: string | undefined;
+
+  // Check for lecture-specific mentions
+  const hasTranscriptMention = mentions.some(m => m.type === 'lecture_transcript');
+  const hasSlidesMention = mentions.some(m => m.type === 'lecture_slides');
 
   // Always include active instance if it exists (prioritized - no truncation)
   if (activeInstance) {
-    const instanceContext = buildInstanceContext(activeInstance, true);
-    contextInstances.push(instanceContext);
+    // For lecture instances, handle transcript and slides mentions separately
+    if (activeInstance.type === 'lecture') {
+      // Extract transcript if mentioned
+      if (hasTranscriptMention) {
+        const transcript = activeInstance.data.transcript || '';
+        const segmentedTranscript = activeInstance.data.transcriptSegments?.map(
+          seg => `[${formatTimestamp(seg.timestamp)}] ${seg.text}`
+        ).join('\n') || '';
+        lectureTranscriptContext = segmentedTranscript || transcript;
+      }
+      
+      // Extract slides if mentioned
+      if (hasSlidesMention) {
+        lectureSlidesContext = activeInstance.data.slidesFullText || '';
+      }
+      
+      // If neither is mentioned, include full context as normal
+      if (!hasTranscriptMention && !hasSlidesMention) {
+        const instanceContext = buildInstanceContext(activeInstance, true);
+        contextInstances.push(instanceContext);
+      } else {
+        // Include a minimal instance context (just metadata)
+        const minimalContext: WorkspaceContextInstance = {
+          id: activeInstance.id,
+          title: activeInstance.title,
+          type: activeInstance.type,
+          folderId: activeInstance.folderId,
+        };
+        contextInstances.push(minimalContext);
+      }
+    } else {
+      const instanceContext = buildInstanceContext(activeInstance, true);
+      contextInstances.push(instanceContext);
+    }
     
     // Include annotation image if available
     if (activeInstance.type === 'annotate' && annotationExports[activeInstance.id]) {
@@ -72,6 +119,7 @@ export function buildWorkspaceContext(
     } else if (mention.type === 'folder' && mention.id) {
       mentionedFolderIds.add(mention.id);
     }
+    // lecture_transcript and lecture_slides are handled above
   });
 
   // Add mentioned instances (skip if already added as active instance)
@@ -129,6 +177,8 @@ export function buildWorkspaceContext(
     instances: contextInstances,
     folders: contextFolders,
     annotationImages,
+    lectureTranscript: lectureTranscriptContext,
+    lectureSlides: lectureSlidesContext,
   };
 }
 
@@ -153,10 +203,17 @@ function buildInstanceContext(
     // Only truncate if not prioritized
     base.content = isPrioritized ? content : truncateText(content, MAX_TEXT_LENGTH);
   } else if (instance.type === 'code') {
-    base.language = instance.data.language;
-    const code = instance.data.code || '';
+    // Combine all files' content for context
+    const allCode = instance.data.files
+      .map(file => `// ${file.path}\n${file.content}`)
+      .join('\n\n');
+    // Use the language from the first file or active file
+    const activeFile = instance.data.activeFilePath
+      ? instance.data.files.find(f => f.path === instance.data.activeFilePath)
+      : instance.data.files[0];
+    base.language = activeFile?.language;
     // Only truncate if not prioritized
-    base.code = isPrioritized ? code : truncateCode(code, MAX_CODE_LINES);
+    base.code = isPrioritized ? allCode : truncateCode(allCode, MAX_CODE_LINES);
   } else if (instance.type === 'pdf') {
     const fullText = instance.data.fullText || '';
     // Only truncate if not prioritized

@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   /* config options here */
   // Externalize packages for server-side rendering (works with both Webpack and Turbopack)
   serverExternalPackages: ['pdfjs-dist', 'canvas', 'pyodide'],
+  
+  // Experimental features for large body handling
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '100mb', // Allow large file uploads
+    },
+  },
+  
   env: {
     // Expose non-prefixed Supabase variables to the client
     // This allows using SUPABASE_URL and SUPABASE_ANON_KEY instead of NEXT_PUBLIC_ versions

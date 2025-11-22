@@ -138,6 +138,7 @@ Fill in all required values:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anon/public key
 - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key (keep secret!)
 - `CLAUDE_API_KEY` - Your Claude API key from Anthropic
+- `DEEPGRAM_API_KEY` - Your Deepgram API key for real-time transcription (get one at https://deepgram.com)
 - `MANIM_WORKER_URL` - URL of the Manim worker (default: http://localhost:8001)
 
 ### 5. Run the Development Servers

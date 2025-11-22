@@ -18,6 +18,7 @@ interface ChatTabBarProps {
   onCloseTab: (chatId: string) => void;
   onNewChat: () => void;
   onRenameTab: (chatId: string, newTitle: string) => void;
+  isDropdown?: boolean;
 }
 
 /**
@@ -32,6 +33,7 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
   onCloseTab,
   onNewChat,
   onRenameTab,
+  isDropdown = false,
 }) => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -79,13 +81,13 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
   };
 
   return (
-    <div className="px-4 pb-2 border-b border-border">
-      <div className="flex items-center gap-1">
+    <div className={isDropdown ? "p-2" : "px-4 pb-2 border-b border-border"}>
+      <div className={`flex items-center gap-1 ${isDropdown ? 'flex-col' : ''}`}>
         {/* Open Chat Tabs */}
         <div
           ref={tabsContainerRef}
-          className="flex items-center gap-1 flex-1 overflow-x-auto"
-          style={{ scrollbarWidth: 'thin', scrollBehavior: 'smooth' }}
+          className={`flex items-center gap-1 ${isDropdown ? 'flex-col w-full' : 'flex-1 overflow-x-auto'}`}
+          style={!isDropdown ? { scrollbarWidth: 'thin', scrollBehavior: 'smooth' } : {}}
         >
           {openTabs.map((tab) => {
             const isActive = tab.id === activeTabId;
@@ -96,10 +98,10 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
                 key={tab.id}
                 className={`
                   group relative flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium
-                  transition-all flex-shrink-0 max-w-[180px]
+                  transition-all w-full
                   ${
                     isActive
-                      ? 'bg-[#F5F5F5] text-foreground'
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   }
                 `}
@@ -157,7 +159,7 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-1 flex-shrink-0 pl-2 border-l border-border">
+        <div className={`flex items-center gap-1 ${isDropdown ? 'pt-2 border-t border-border w-full' : 'flex-shrink-0 pl-2 border-l border-border'}`}>
           <button
             onClick={onNewChat}
             className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
@@ -185,7 +187,7 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
               onClose={() => setHistoryOpen(false)}
               chats={allChats}
               onSelectChat={handleSelectChat}
-              buttonRef={historyButtonRef}
+              buttonRef={historyButtonRef as React.RefObject<HTMLElement>}
             />
           </div>
         </div>

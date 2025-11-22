@@ -71,13 +71,13 @@ export interface ChatMessage {
 
 // Mention types
 export interface Mention {
-  type: 'instance' | 'folder';
+  type: 'instance' | 'folder' | 'lecture_transcript' | 'lecture_slides';
   id: string;
   name: string;
 }
 
 export interface MentionableItem {
-  type: 'instance' | 'folder';
+  type: 'instance' | 'folder' | 'lecture_transcript' | 'lecture_slides';
   id: string;
   name: string;
   icon?: string;
@@ -132,6 +132,8 @@ export interface WorkspaceContext {
   attachments?: Attachment[]; // Unified attachments array
   pdfContext?: string; // Full text of PDF for context
   currentPageImage?: string; // Base64 image of current PDF page
+  lectureTranscript?: string; // Lecture transcript when @transcript is mentioned
+  lectureSlides?: string; // Lecture slides full text when @slides/@pdf is mentioned
 }
 
 export interface ChatRequest {
@@ -265,6 +267,7 @@ export interface LectureInstance extends BaseInstance {
       text: string;
       timestamp: number;
       duration?: number;
+      title?: string;
     }>;
     // Slides (PDF)
     slidesUrl?: string;
@@ -399,6 +402,7 @@ export interface QuizQuestion {
   options: string[]; // JSONB array
   correctOptionIndex: number;
   explanation: string | null;
+  optionExplanations?: string[]; // JSONB array - explanation for each option
   position: number;
   difficulty: 'easy' | 'medium' | 'hard' | null;
   createdAt: string;
@@ -415,6 +419,7 @@ export interface QuizAttempt {
   timeTakenSeconds: number | null;
   passed: boolean | null;
   attemptNumber: number;
+  currentQuestionIndex?: number | null;
 }
 
 export interface QuizAnswer {
@@ -435,6 +440,26 @@ export interface QuizWithQuestions extends Quiz {
 export interface QuizAttemptWithAnswers extends QuizAttempt {
   answers: QuizAnswer[];
   quiz?: Quiz;
+}
+
+export interface QuizWithStats extends QuizWithQuestions {
+  stats: {
+    totalAttempts: number;
+    completedAttempts: number;
+    bestScore: number | null;
+    lastAttemptDate: string | null;
+    hasIncompleteAttempt: boolean;
+    incompleteAttemptId: string | null;
+    currentQuestionIndex: number | null;
+  };
+}
+
+export interface FlashcardSetWithStats extends FlashcardSetWithCards {
+  stats: {
+    reviewedCount: number;
+    masteredCount: number;
+    dueForReview: number;
+  };
 }
 
 // Analytics types

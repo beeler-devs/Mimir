@@ -26,18 +26,47 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
   
   // Suppress AbortException warnings from text layer cancellation
-  // This is expected behavior when navigating/unmounting
+  // This is expected behavior when navigating/unmounting/zooming
   const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  const isIgnorableError = (args: any[]) => {
+    const arg = args[0];
+    
+    // Check string messages
+    if (typeof arg === 'string') {
+      return (
+        arg.includes('TextLayer task cancelled') || 
+        arg.includes('AbortException') ||
+        arg.includes('cancelled')
+      );
+    }
+    
+    // Check Error objects
+    if (arg instanceof Error) {
+      return (
+        arg.message.includes('TextLayer task cancelled') || 
+        arg.message.includes('AbortException') ||
+        arg.message.includes('cancelled') ||
+        arg.name === 'AbortException'
+      );
+    }
+    
+    return false;
+  };
+
   console.warn = (...args) => {
-    // Filter out the specific TextLayer cancellation warning
-    if (
-      typeof args[0] === 'string' && 
-      (args[0].includes('TextLayer task cancelled') || 
-       args[0].includes('AbortException'))
-    ) {
+    if (isIgnorableError(args)) {
       return;
     }
     originalConsoleWarn.apply(console, args);
+  };
+
+  console.error = (...args) => {
+    if (isIgnorableError(args)) {
+      return;
+    }
+    originalConsoleError.apply(console, args);
   };
 }
 
@@ -55,6 +84,7 @@ interface PDFViewerProps {
   fileName?: string;
   metadata?: PDFMetadata;
   fullText?: string;
+  instanceId?: string; // For persisting zoom level per instance
   onUpload: (file: File, url: string, metadata: { size: number; pageCount: number; summary: string; metadata: PDFMetadata; fullText: string; storagePath: string }) => void;
   onSummaryReady?: (summary: string) => void;
   onAddToChat?: (text: string) => void;
@@ -81,6 +111,7 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   fileName,
   metadata,
   fullText,
+  instanceId,
   onUpload,
   onSummaryReady,
   onAddToChat,
@@ -159,6 +190,44 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       isMountedRef.current = false;
     };
   }, []);
+
+  // Load saved zoom level from localStorage on mount
+  useEffect(() => {
+    if (!instanceId || !pdfUrl) return;
+
+    try {
+      const storageKey = `mimir-pdf-zoom-${instanceId}`;
+      const savedZoom = localStorage.getItem(storageKey);
+      
+      if (savedZoom) {
+        const parsedZoom = parseFloat(savedZoom);
+        // Validate zoom is within bounds (0.5 to 3.0)
+        if (!isNaN(parsedZoom) && parsedZoom >= 0.5 && parsedZoom <= 3.0) {
+          setScale(parsedZoom);
+        }
+      }
+    } catch (error) {
+      // Silently fail if localStorage is not available
+      console.warn('Failed to load saved zoom level:', error);
+    }
+  }, [instanceId, pdfUrl]);
+
+  // Save zoom level to localStorage with debouncing
+  useEffect(() => {
+    if (!instanceId) return;
+
+    const timer = setTimeout(() => {
+      try {
+        const storageKey = `mimir-pdf-zoom-${instanceId}`;
+        localStorage.setItem(storageKey, scale.toString());
+      } catch (error) {
+        // Silently fail if localStorage is not available (e.g., private browsing)
+        console.warn('Failed to save zoom level:', error);
+      }
+    }, 500); // 500ms debounce to avoid excessive writes
+
+    return () => clearTimeout(timer);
+  }, [scale, instanceId]);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: pages }: { numPages: number }) => {
     if (!isMountedRef.current) return;
@@ -674,9 +743,9 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       )}
 
       {/* PDF Display - Continuous Scroll */}
-      <div 
+      <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8"
+        className="flex-1 overflow-auto bg-muted/30 flex items-start justify-center p-8 scrollbar-hide-show"
       >
         <div className="flex flex-col gap-4">
           <Document
@@ -708,7 +777,12 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
                   renderAnnotationLayer={true}
                   onRenderError={(error) => {
                     // Silently handle abort errors during rendering
-                    if (error?.message?.includes('AbortException') || error?.message?.includes('cancelled')) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    if (
+                      message.includes('AbortException') || 
+                      message.includes('cancelled') || 
+                      message.includes('TextLayer task cancelled')
+                    ) {
                       return;
                     }
                     console.error('Page render error:', error);

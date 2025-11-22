@@ -7,12 +7,13 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
+  containerClassName?: string;
 }
 
 /**
  * Generic modal overlay with basic escape/overlay handling
  */
-export const Modal: React.FC<ModalProps> = ({ open, onClose, children, className = '' }) => {
+export const Modal: React.FC<ModalProps> = ({ open, onClose, children, className = '', containerClassName }) => {
   useEffect(() => {
     if (!open) return;
 
@@ -31,7 +32,7 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, children, className
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
+    <div className={`fixed inset-0 z-40 flex items-start justify-center px-4 ${containerClassName ?? 'pt-60'}`}>
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}

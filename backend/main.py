@@ -14,6 +14,14 @@ from dotenv import load_dotenv
 import pdfplumber
 import io
 
+# Voice assistant imports
+from voice.session import VoiceSessionManager
+from voice.deepgram_stt import DeepgramSTTProvider
+from voice.openai_tts import OpenAITTSProvider
+from voice.elevenlabs_tts import ElevenLabsTTSProvider
+from voice.claude_voice_integration import ClaudeVoiceIntegration
+from voice.state_machine import ConversationState
+
 # Load environment variables
 load_dotenv()
 
@@ -31,6 +39,17 @@ logger = logging.getLogger(__name__)
 
 # Import WebSocket manager
 
+# Initialize voice session manager
+voice_session_manager = VoiceSessionManager()
+
+# Initialize Claude voice integration
+try:
+    claude_voice = ClaudeVoiceIntegration()
+    logger.info("Claude voice integration initialized")
+except Exception as e:
+    logger.warning(f"Claude voice integration not available: {e}")
+    claude_voice = None
+
 app = FastAPI(
     title="Mimir Manim Worker",
     description="Job-based animation rendering service using Manim",
@@ -42,7 +61,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:3001",
-                   "http://localhost:3003", "http://localhost:3002"],  # Frontend URLs
+                   "http://localhost:3003", "http://localhost:3002",
+                   "http://127.0.0.1:3000", "http://127.0.0.1:3001",
+                   "http://127.0.0.1:3003", "http://127.0.0.1:3002"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -715,6 +736,28 @@ async def chat_stream(request: Request):
                         text_preview += f"\n... (truncated, showing first {max_pdf_length} characters of {len(pdf_context)} total)"
                     context_parts.append("\n[PDF Document Content:]")
                     context_parts.append(text_preview)
+                
+                # Add lecture transcript context (when @transcript is mentioned)
+                if hasattr(chat_request.workspaceContext, 'lectureTranscript') and chat_request.workspaceContext.lectureTranscript:
+                    transcript = chat_request.workspaceContext.lectureTranscript
+                    # Truncate very long transcript to avoid token limits
+                    max_length = 15000  # ~15KB
+                    text_preview = transcript[:max_length]
+                    if len(transcript) > max_length:
+                        text_preview += f"\n... (truncated, showing first {max_length} characters of {len(transcript)} total)"
+                    context_parts.append("\n[Lecture Transcript:]")
+                    context_parts.append(text_preview)
+                
+                # Add lecture slides context (when @slides/@pdf is mentioned)
+                if hasattr(chat_request.workspaceContext, 'lectureSlides') and chat_request.workspaceContext.lectureSlides:
+                    slides = chat_request.workspaceContext.lectureSlides
+                    # Truncate very long slides text to avoid token limits
+                    max_length = 15000  # ~15KB
+                    text_preview = slides[:max_length]
+                    if len(slides) > max_length:
+                        text_preview += f"\n... (truncated, showing first {max_length} characters of {len(slides)} total)"
+                    context_parts.append("\n[Lecture Slides Content:]")
+                    context_parts.append(text_preview)
 
                 if context_parts:
                     context_description = "\n".join(context_parts) + "\n"
@@ -726,7 +769,7 @@ async def chat_stream(request: Request):
                             f"Large workspace context detected: {context_size} characters, {len(chat_request.workspaceContext.instances)} instances")
 
             # System prompt for Claude
-            system_prompt = f"""You are an AI tutor for Mimir, an educational platform. Your role is to:
+            system_prompt = """You are an AI tutor for Mimir, an educational platform. Your role is to:
 
 1. Provide clear, engaging explanations of educational concepts
 2. Break down complex topics into understandable parts
@@ -748,15 +791,15 @@ Your responses support **markdown formatting** and **LaTeX math notation**:
 - For display/block math, use double dollar signs: $$equation$$
   Example:
   "The quadratic formula is:
-  $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$"
+  $$x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$$"
 
 - Use LaTeX for mathematical expressions, equations, formulas, matrices, integrals, summations, etc.
 - Examples of when to use LaTeX:
   * Equations: $ax^2 + bx + c = 0$
-  * Fractions: $\\frac{numerator}{denominator}$
+  * Fractions: $\\frac{{numerator}}{{denominator}}$
   * Integrals: $\\int_a^b f(x) dx$
-  * Summations: $\\sum_{i=1}^n i^2$
-  * Matrices: $\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$
+  * Summations: $\\sum_{{i=1}}^n i^2$
+  * Matrices: $\\begin{{bmatrix}} a & b \\\\ c & d \\end{{bmatrix}}$
   * Greek letters: $\\alpha, \\beta, \\gamma, \\theta$
   * Special symbols: $\\infty, \\nabla, \\partial$
 
@@ -785,7 +828,9 @@ When the user includes images (especially annotation canvases with handwritten o
 
 Example: If you see "5x = 10" in an image, read it as exactly that - not "5x = |D|" or "5x = ID". The number "10" should be recognized as the digits one and zero, not letters or symbols.
 
-{context_description if context_description else ""}
+=== USER'S WORKSPACE CONTEXT ===
+
+""" + (context_description if context_description else "") + """
 
 === ANIMATION SUGGESTIONS ===
 
@@ -796,7 +841,7 @@ CRITICAL INSTRUCTION: If the user's message contains ANY of these keywords or ph
 
 When the user explicitly requests a visualization (using any of the above keywords), you MUST append this exact marker at the END of your response:
 
-ANIMATION_SUGGESTION: {{"description": "brief description of what to animate", "topic": "math"}}
+ANIMATION_SUGGESTION: {"description": "brief description of what to animate", "topic": "math"}
 
 DO NOT skip this marker if the user asks for visualization. Even if you're unsure how to visualize it, create a reasonable description and include the marker.
 
@@ -813,7 +858,7 @@ When the user explicitly requests a visualization, ALWAYS provide an animation s
 Example response with animation:
 "Brownian motion describes the random movement of particles suspended in a fluid. Imagine a tiny pollen grain in water, constantly being bumped by water molecules from all directions. This creates an erratic, zigzag path that never repeats.
 
-ANIMATION_SUGGESTION: {{"description": "Brownian motion particle", "topic": "math"}}"
+ANIMATION_SUGGESTION: {"description": "Brownian motion particle", "topic": "math"}"
 """
 
             # Convert messages to Anthropic format, including images if present
@@ -1525,6 +1570,9 @@ Guidelines:
 8. Use LaTeX for mathematical notation in questions and options:
    - Inline math: $equation$ (e.g., $E = mc^2$)
    - Examples: $x^2$, $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$
+9. For EACH option, provide a brief explanation (1-2 sentences):
+   - If correct: explain WHY it's the right answer
+   - If incorrect: explain WHY it's wrong or what makes it incorrect
 
 Output format: Return ONLY a JSON array of questions, no other text.
 
@@ -1533,12 +1581,24 @@ Example output:
   {
     "question": "What is the capital of France?",
     "options": ["London", "Paris", "Berlin", "Madrid"],
-    "correctIndex": 1
+    "correctIndex": 1,
+    "optionExplanations": [
+      "London is the capital of the United Kingdom, not France.",
+      "Correct! Paris is the capital and largest city of France.",
+      "Berlin is the capital of Germany, not France.",
+      "Madrid is the capital of Spain, not France."
+    ]
   },
   {
     "question": "What is the derivative of $f(x) = x^3$?",
     "options": ["$3x^2$", "$x^2$", "$3x$", "$x^3$"],
-    "correctIndex": 0
+    "correctIndex": 0,
+    "optionExplanations": [
+      "Correct! Using the power rule: $\\\\frac{d}{dx}(x^n) = nx^{n-1}$, so $\\\\frac{d}{dx}(x^3) = 3x^2$.",
+      "This would be correct for $f(x) = \\\\frac{x^3}{3}$, but not for $x^3$ alone.",
+      "This is missing the exponent; the power rule reduces the exponent by 1, giving $x^2$, not $x$.",
+      "This is the original function, not its derivative. The derivative shows the rate of change."
+    ]
   }
 ]"""
 
@@ -1546,7 +1606,7 @@ Example output:
 
 {pdf_text}
 
-Return a JSON array of questions with "question", "options" (array of 4 strings), and "correctIndex" (0-3) fields."""
+Return a JSON array of questions with "question", "options" (array of 4 strings), "correctIndex" (0-3), and "optionExplanations" (array of 4 explanation strings, one for each option) fields."""
 
         # Call Claude API
         chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
@@ -1788,6 +1848,192 @@ Focus on clarity, organization, and helping students understand the key concepts
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.post("/study-tools/mindmap/stream")
+async def generate_mindmap_stream(request: dict):
+    """
+    Generate a mind map from PDF text using Claude AI with adaptive node count
+
+    Args:
+        request: dict with:
+          - pdfText: string (content)
+          - scope: string (description of scope)
+          - nodeCount: dict with min, max, levels (optional)
+
+    Returns:
+        StreamingResponse with SSE format containing mind map data
+    """
+    def generate():
+        try:
+            pdf_text = request.get('pdfText', '')
+            scope = request.get('scope', 'full document')
+            node_config = request.get('nodeCount', None)
+
+            if not pdf_text:
+                error_response = {
+                    "type": "error",
+                    "content": "PDF text is required"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Calculate adaptive node count if not provided
+            if not node_config:
+                word_count = len(pdf_text.split())
+                if word_count < 500:
+                    node_config = {'min': 5, 'max': 10, 'levels': 2}
+                elif word_count < 2000:
+                    node_config = {'min': 10, 'max': 15, 'levels': 3}
+                elif word_count < 5000:
+                    node_config = {'min': 15, 'max': 20, 'levels': 4}
+                else:
+                    node_config = {'min': 20, 'max': 25, 'levels': 4}
+
+            # Get Claude API key from environment
+            claude_api_key = os.getenv("CLAUDE_API_KEY")
+            if not claude_api_key:
+                error_response = {
+                    "type": "error",
+                    "content": "CLAUDE_API_KEY not configured"
+                }
+                yield f"data: {json.dumps(error_response)}\n\n"
+                return
+
+            # Initialize Anthropic client
+            client = Anthropic(api_key=claude_api_key)
+
+            # Limit PDF text to avoid token limits
+            max_text_length = 30000
+            if len(pdf_text) > max_text_length:
+                pdf_text = pdf_text[:max_text_length] + "...(truncated)"
+
+            # System prompt for mind map generation with adaptive node count
+            system_prompt = f"""You are an expert at creating interactive concept maps from educational content.
+
+Your task: Generate a hierarchical mind map that visualizes the key concepts and their relationships.
+
+**IMPORTANT: Adapt node count to content scope**
+- Target nodes: {node_config['min']}-{node_config['max']} nodes
+- Maximum levels: {node_config['levels']}
+- If the content is focused on a small topic, use fewer nodes and levels
+- If the content covers broad topics, use more nodes and deeper hierarchy
+- Focus on quality over quantity - don't pad with unnecessary nodes
+
+Guidelines:
+1. **Hierarchical Structure**:
+   - Level 0: Main concept/topic (1 node)
+   - Level 1: Major subtopics ({max(1, node_config['min'] // 4)}-{node_config['max'] // 4} nodes)
+   - Level 2: Key concepts under each subtopic
+   - Level 3: Important details (only if levels >= 4)
+
+2. **Node Types**:
+   - concept: Main central idea (level 0)
+   - topic: Major subject areas (level 1)
+   - subtopic: Specific concepts (level 2)
+   - detail: Specific facts, formulas, or examples (level 3)
+
+3. **Edge Types**:
+   - child: Hierarchical parent-child relationship
+   - related: Concepts that are related but not hierarchical
+   - prerequisite: Concept A must be understood before concept B
+   - example: Concept illustrates or exemplifies another
+
+4. **Constraints**:
+   - Total nodes: {node_config['min']}-{node_config['max']} (scale to content size)
+   - Maximum depth: {node_config['levels']} levels (0 to {node_config['levels'] - 1})
+   - Each node needs a concise label (2-6 words)
+   - Node descriptions are optional but helpful for detail nodes
+   - Create edges that show meaningful relationships
+   - Don't create unnecessary nodes just to hit the max count
+
+Output format: JSON object with this exact structure:
+{{
+  "title": "Brief title for the mind map",
+  "description": "One sentence describing the scope",
+  "nodes": [
+    {{
+      "label": "Short node label",
+      "description": "Optional detailed description",
+      "nodeType": "concept|topic|subtopic|detail",
+      "level": 0-{node_config['levels'] - 1}
+    }}
+  ],
+  "edges": [
+    {{
+      "sourceNodeIndex": 0,
+      "targetNodeIndex": 1,
+      "label": "Optional relationship label",
+      "edgeType": "child|related|prerequisite|example"
+    }}
+  ]
+}}
+
+IMPORTANT: Output ONLY valid JSON. No markdown code blocks, no explanations, just the JSON object."""
+
+            user_prompt = f"""Create an interactive concept map for the following educational content.
+
+Scope: {scope}
+
+Content:
+{pdf_text}
+
+Generate a hierarchical mind map with {node_config['min']}-{node_config['max']} nodes that captures the key concepts and their relationships. Scale the complexity to match the content scope - use fewer nodes for focused topics, more for broad coverage."""
+
+            # Call Claude API (non-streaming to get proper JSON)
+            chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")
+
+            message = client.messages.create(
+                model=chat_model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+
+            # Extract JSON from response
+            response_text = message.content[0].text.strip()
+
+            # Remove markdown code blocks if present
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+            # Parse JSON
+            mind_map_data = json.loads(response_text)
+
+            # Validate structure
+            if 'nodes' not in mind_map_data or 'edges' not in mind_map_data:
+                raise ValueError("Invalid mind map structure: missing nodes or edges")
+
+            logger.info(f"Generated mind map with {len(mind_map_data['nodes'])} nodes and {len(mind_map_data['edges'])} edges")
+
+            # Send final response
+            final_response = {
+                "type": "done",
+                "content": mind_map_data
+            }
+            yield f"data: {json.dumps(final_response)}\n\n"
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in mindmap generation: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Failed to parse mind map JSON: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+        except Exception as e:
+            logger.error(f"Error in mindmap streaming endpoint: {e}", exc_info=True)
+            error_response = {
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/chat/generate-title")
 async def generate_chat_title(request: dict):
     """
@@ -1874,6 +2120,350 @@ Return only the title text (3-8 words), nothing else."""
     except Exception as e:
         logger.error(f"Error generating chat title: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# VOICE ASSISTANT ENDPOINTS
+# ============================================================================
+
+@app.websocket("/ws/voice")
+async def voice_assistant_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time voice assistant
+
+    Protocol:
+    1. Client connects and sends auth message: {"type": "auth", "user_id": "...", "instance_id": "..."}
+    2. Server responds: {"type": "connected", "session_id": "..."}
+    3. Client streams audio chunks: {"type": "audio", "audio": "hex_string"}
+    4. Server streams back:
+       - {"type": "partial_transcript", "transcript": "..."}
+       - {"type": "final_transcript", "transcript": "..."}
+       - {"type": "audio_chunk", "audio": "hex_string"}
+       - {"type": "barge_in"} (when user interrupts)
+       - {"type": "state_change", "state": "..."}
+    5. Either side can close connection
+    """
+    logger.info("[Voice WS] New connection attempt")
+    session = None
+
+    try:
+        # Accept connection
+        await websocket.accept()
+        logger.info("[Voice WS] Connection accepted")
+
+        # Wait for auth message
+        try:
+            auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+        except asyncio.TimeoutError:
+            await websocket.send_json({"type": "error", "error": "Auth timeout"})
+            await websocket.close()
+            return
+
+        if auth_msg.get("type") != "auth":
+            await websocket.send_json({"type": "error", "error": "Expected auth message"})
+            await websocket.close()
+            return
+
+        user_id = auth_msg.get("user_id")
+        instance_id = auth_msg.get("instance_id", "default")
+        workspace_context = auth_msg.get("workspace_context")
+
+        if not user_id:
+            await websocket.send_json({"type": "error", "error": "user_id required"})
+            await websocket.close()
+            return
+
+        logger.warning(f"[Voice WS] Auth received: user_id={user_id}, instance_id={instance_id}, has_context={workspace_context is not None}")
+
+        # Debug: Log context details
+        if workspace_context:
+            logger.warning(f"[Voice WS] Context structure: {workspace_context.keys() if isinstance(workspace_context, dict) else type(workspace_context)}")
+            if isinstance(workspace_context, dict):
+                logger.warning(f"[Voice WS] Context instances: {len(workspace_context.get('instances', []))}, folders: {len(workspace_context.get('folders', []))}")
+        else:
+            logger.warning("[Voice WS] NO WORKSPACE CONTEXT RECEIVED")
+
+        # Initialize STT provider
+        deepgram_key = os.getenv("DEEPGRAM_API_KEY")
+        if not deepgram_key:
+            await websocket.send_json({"type": "error", "error": "Deepgram API key not configured"})
+            await websocket.close()
+            return
+
+        stt_provider = DeepgramSTTProvider(
+            api_key=deepgram_key,
+            model="nova-2",
+            language="en-US",
+            interim_results=True,
+            endpointing=1200  # 1200ms silence to end utterance (reduced sensitivity)
+        )
+
+        # Initialize TTS provider (prefer OpenAI for simplicity, fallback to ElevenLabs)
+        openai_key = os.getenv("OPENAI_API_KEY")
+        elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+
+        if openai_key:
+            tts_provider = OpenAITTSProvider(
+                api_key=openai_key,
+                model="tts-1",  # Fast model
+                voice="alloy",  # Clear, neutral voice
+                response_format="pcm"
+            )
+            logger.info("[Voice WS] Using OpenAI TTS")
+        elif elevenlabs_key:
+            tts_provider = ElevenLabsTTSProvider(
+                api_key=elevenlabs_key,
+                model_id="eleven_turbo_v2",
+                optimize_streaming_latency=4
+            )
+            logger.info("[Voice WS] Using ElevenLabs TTS")
+        else:
+            await websocket.send_json({"type": "error", "error": "No TTS provider configured"})
+            await websocket.close()
+            return
+
+        # Create voice session
+        session = await voice_session_manager.create_session(
+            user_id=user_id,
+            instance_id=instance_id,
+            websocket=websocket,
+            stt_provider=stt_provider,
+            tts_provider=tts_provider,
+            workspace_context=workspace_context
+        )
+
+        # Send connected message
+        await websocket.send_json({
+            "type": "connected",
+            "session_id": session.session_id,
+            "state": session.state_machine.get_state().value
+        })
+
+        logger.info(f"[Voice WS] Session created: {session.session_id}")
+
+        # Processing queue for sequential handling of utterances
+        processing_queue = asyncio.Queue()
+        
+        async def processor_worker():
+            """Worker to process utterances sequentially"""
+            while True:
+                try:
+                    queue_size = processing_queue.qsize()
+                    logger.warning(f"[Voice WS] Processing queue size: {queue_size}")
+
+                    utterance = await processing_queue.get()
+                    logger.warning(f"[Voice WS] Dequeued utterance: '{utterance}' (remaining queue: {processing_queue.qsize()})")
+
+                    # Wait for assistant to finish speaking before processing next utterance
+                    while session.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+                        logger.warning(f"[Voice WS] Waiting for assistant to finish speaking before processing: '{utterance}'")
+                        await asyncio.sleep(0.1)
+
+                    # Add 1-second buffer after speaking finishes to ensure audio playback completes
+                    if queue_size > 0:  # Only delay if there were queued items
+                        logger.warning(f"[Voice WS] Adding 1s buffer before processing queued utterance")
+                        await asyncio.sleep(1.0)
+
+                    # Ensure we are in PROCESSING state
+                    current_state = session.state_machine.get_state()
+                    logger.warning(f"[Voice WS] Current state before processing: {current_state.value}")
+
+                    if current_state == ConversationState.IDLE:
+                        await session.state_machine.transition_to(ConversationState.PROCESSING)
+
+                    # Process the utterance
+                    import datetime
+                    start_time = datetime.datetime.now()
+                    await process_utterance_with_claude(session, utterance)
+                    end_time = datetime.datetime.now()
+                    duration_ms = (end_time - start_time).total_seconds() * 1000
+
+                    logger.warning(f"[Voice WS] Completed processing '{utterance}' in {duration_ms:.0f}ms")
+
+                    processing_queue.task_done()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"[Voice WS] Error in processor worker: {e}", exc_info=True)
+                    processing_queue.task_done()
+
+        # Start processor worker
+        worker_task = asyncio.create_task(processor_worker())
+
+        # Main message loop
+        while session.is_active():
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+
+                if message.get("type") == "websocket.disconnect":
+                    logger.info(f"[Voice WS] Client disconnected: {session.session_id}")
+                    break
+
+                # Handle different message types
+                data = None
+                if "text" in message:
+                    data = json.loads(message["text"])
+                elif "json" in message:
+                    data = message["json"]
+
+                if not data:
+                    continue
+
+                msg_type = data.get("type")
+
+                if msg_type == "audio":
+                    # Receive audio chunk from client
+                    audio_hex = data.get("audio", "")
+                    audio_bytes = bytes.fromhex(audio_hex)
+                    await session.handle_audio_chunk(audio_bytes)
+
+                elif msg_type == "stop_speaking":
+                    # Client requested to stop assistant speaking (manual barge-in)
+                    if session.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+                        await session.state_machine.handle_barge_in()
+
+                        # Clear all pending utterances in the queue (they're now outdated)
+                        cleared_count = 0
+                        while not processing_queue.empty():
+                            try:
+                                cleared_utterance = processing_queue.get_nowait()
+                                processing_queue.task_done()
+                                cleared_count += 1
+                                logger.warning(f"[Voice WS] Cleared queued utterance after barge-in: '{cleared_utterance}'")
+                            except asyncio.QueueEmpty:
+                                break
+
+                        if cleared_count > 0:
+                            logger.warning(f"[Voice WS] Cleared {cleared_count} queued utterances after barge-in")
+
+                elif msg_type == "update_context":
+                    # Update workspace context
+                    new_context = data.get("workspace_context")
+                    session.update_workspace_context(new_context)
+                    logger.info(f"[Voice WS] Updated workspace context for session {session.session_id}")
+
+                elif msg_type == "ping":
+                    # Keepalive
+                    await websocket.send_json({"type": "pong"})
+
+                # Check if we have a complete utterance to process
+                if session.state_machine.get_state() == ConversationState.PROCESSING:
+                    utterance = session.get_current_utterance()
+                    if utterance:
+                        # Add to queue instead of spawning immediately
+                        logger.warning(f"[Voice WS] Adding utterance to queue: '{utterance}' (current queue size: {processing_queue.qsize()})")
+                        await processing_queue.put(utterance)
+                        session.clear_current_utterance()
+
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except:
+                    logger.info(f"[Voice WS] Connection closed during ping: {session.session_id}")
+                    break
+            except WebSocketDisconnect:
+                logger.info(f"[Voice WS] WebSocket disconnected: {session.session_id}")
+                break
+            except Exception as e:
+                logger.error(f"[Voice WS] Error in message loop: {e}", exc_info=True)
+                break
+
+    except Exception as e:
+        logger.error(f"[Voice WS] Error in voice endpoint: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "error": str(e)})
+        except:
+            pass
+    finally:
+        # Cancel worker task
+        if 'worker_task' in locals():
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
+                
+        if session:
+            await voice_session_manager.close_session(session.session_id)
+        logger.info("[Voice WS] Connection cleanup complete")
+
+
+async def process_utterance_with_claude(session, utterance: str):
+    """
+    Process user utterance with Claude and stream TTS response
+
+    Args:
+        session: VoiceSession
+        utterance: User's spoken text
+    """
+    try:
+        # TODO: Get conversation history from database or session storage
+        # For now, use empty history (each utterance is independent)
+        conversation_history = []
+
+        # Debug: Log workspace context being passed to Claude
+        logger.warning(f"[process_utterance_with_claude] session.workspace_context: {session.workspace_context is not None}")
+        if session.workspace_context:
+            logger.warning(f"[process_utterance_with_claude] Context structure: {session.workspace_context.keys() if isinstance(session.workspace_context, dict) else type(session.workspace_context)}")
+            if isinstance(session.workspace_context, dict):
+                logger.warning(f"[process_utterance_with_claude] Instances: {len(session.workspace_context.get('instances', []))}, Folders: {len(session.workspace_context.get('folders', []))}")
+        else:
+            logger.warning("[process_utterance_with_claude] NO WORKSPACE CONTEXT IN SESSION")
+
+        # Accumulate full Claude response before sending to TTS
+        full_response = ""
+        async for text_chunk in claude_voice.process_user_utterance(
+            utterance=utterance,
+            conversation_history=conversation_history,
+            workspace_context=session.workspace_context
+        ):
+            full_response += text_chunk
+
+        # Extract UI actions from full response
+        clean_text, ui_actions = claude_voice.extract_ui_actions(full_response)
+
+        # Send UI actions to client if any
+        if ui_actions:
+            await session._send_to_client({
+                "type": "ui_actions",
+                "actions": ui_actions
+            })
+
+        # Send to TTS as a single stream (ElevenLabs handles chunking internally)
+        await session.synthesize_and_stream(clean_text)
+
+        # Send complete text transcript
+        await session._send_to_client({
+            "type": "assistant_transcript",
+            "transcript": clean_text
+        })
+
+        # Signal that speaking is done
+        await session.finish_speaking()
+
+    except Exception as e:
+        logger.error(f"[Voice] Error processing utterance: {e}", exc_info=True)
+        await session._send_to_client({
+            "type": "error",
+            "error": f"Failed to process utterance: {str(e)}"
+        })
+
+
+# Lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on startup"""
+    logger.info("Starting up application...")
+    await voice_session_manager.start_cleanup_task()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Shutting down application...")
+    await voice_session_manager.stop_cleanup_task()
+    await voice_session_manager.close_all_sessions()
 
 if __name__ == "__main__":
     import uvicorn

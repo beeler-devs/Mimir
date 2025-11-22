@@ -2,49 +2,30 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { WorkspaceLayout } from '@/components/layout';
 import { AISidePanel, AISidePanelRef } from '@/components/ai/AISidePanel';
 import { PDFStudyPanel, PDFStudyPanelRef } from '@/components/ai/PDFStudyPanel';
-import { TextEditor, AnnotateCanvas } from '@/components/tabs';
-import { CodeWorkspace } from '@/components/code/CodeWorkspace';
 import { AnnotateCanvasRef } from '@/components/tabs/AnnotateCanvas';
 import { PDFViewerRef } from '@/components/tabs/PDFViewer';
 import { Button } from '@/components/common';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Upload, Download } from 'lucide-react';
 import { useWorkspace } from '../../WorkspaceProvider';
-
-// Dynamically import PDFViewer with SSR disabled to avoid DOMMatrix issues
-const PDFViewer = dynamic(
-  () => import('@/components/tabs/PDFViewer').then((mod) => ({ default: mod.PDFViewer })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-full flex items-center justify-center">
-        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-);
-
-// Dynamically import LectureViewer with SSR disabled
-const LectureViewer = dynamic(
-  () => import('@/components/tabs/LectureViewer').then((mod) => ({ default: mod.LectureViewer })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-full flex items-center justify-center">
-        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-);
-
-import type { InstanceType, CodeLanguage } from '@/lib/types';
+import { useDebouncedSave } from '@/hooks/useDebouncedSave';
+import { useInstanceUpdate } from '@/hooks/useInstanceUpdate';
+import {
+  TextInstanceRenderer,
+  CodeInstanceRenderer,
+  PDFInstanceRenderer,
+  LectureInstanceRenderer,
+  AnnotateInstanceRenderer,
+} from '@/components/instance-renderers';
 import {
   updateInstance as updateInstanceDB,
 } from '@/lib/db/instances';
+
+import type { InstanceType, CodeFile, FileTreeNode, TextInstance, CodeInstance, PDFInstance, LectureInstance, AnnotateInstance, LectureSourceType } from '@/lib/types';
+import type { LectureMetadata } from '@/components/tabs/LectureViewer';
 
 function InstancePageContent() {
   const params = useParams();
@@ -60,18 +41,9 @@ function InstancePageContent() {
     setActiveInstance,
     activeInstanceId,
     loading,
-    renameInstance,
-    deleteInstance,
-    selectInstance,
-    createFolder,
-    renameFolder,
-    deleteFolder,
-    moveFolder,
-    moveInstanceToFolder,
   } = useWorkspace();
 
   const [localError, setLocalError] = useState<string | null>(null);
-  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [contextText, setContextText] = useState<string | null>(null);
 
   // Refs for panel components
@@ -81,6 +53,18 @@ function InstancePageContent() {
   const pdfViewerRef = useRef<PDFViewerRef>(null);
 
   const effectiveInstanceId = activeInstanceId || routeInstanceId || null;
+
+  // Use the new debounced save hook
+  const { debouncedSave } = useDebouncedSave();
+
+  // Use the new instance update hook
+  const { updateField, updateFields } = useInstanceUpdate({
+    activeInstance,
+    effectiveInstanceId,
+    setActiveInstance,
+    setInstances,
+    debouncedSave,
+  });
 
   useEffect(() => {
     if (loading) return;
@@ -113,129 +97,28 @@ function InstancePageContent() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [activeInstance]);
 
-  const handleRename = async (id: string, title: string) => {
-    await renameInstance(id, title);
-  };
+  // Handler for text content
+  const handleTextContentChange = useCallback((value: string) => {
+    updateField('content', value);
+  }, [updateField]);
 
-  const handleDelete = async (id: string) => {
-    await deleteInstance(id);
-  };
+  // Handler for code workspace
+  const handleCodeSave = useCallback(({ files, fileTree, activeFilePath, openFiles }: {
+    files: CodeFile[];
+    fileTree: FileTreeNode[];
+    activeFilePath: string | null;
+    openFiles: string[];
+  }) => {
+    updateFields({ files, fileTree, activeFilePath, openFiles });
+  }, [updateFields]);
 
-  const handleSelect = (id: string) => {
-    selectInstance(id);
-  };
+  // Handler for annotation state
+  const handleAnnotationStateChange = useCallback((state: { elements: unknown[]; appState: unknown; files: unknown }) => {
+    updateField('excalidrawState', state);
+  }, [updateField]);
 
-  // Debounced save function
-  const debouncedSave = useCallback(
-    (instanceId: string, data: Record<string, unknown>) => {
-      if (saveTimeout) {
-        clearTimeout(saveTimeout);
-      }
-
-      const timeout = setTimeout(async () => {
-        try {
-          await updateInstanceDB(instanceId, { data });
-        } catch (error) {
-          console.error('Failed to save instance:', error);
-        }
-      }, 2000); // 2 second debounce
-
-      setSaveTimeout(timeout);
-    },
-    [saveTimeout]
-  );
-
-  const updateTextContent = (value: string) => {
-    if (!activeInstance || activeInstance.type !== 'text' || !effectiveInstanceId) return;
-    
-    // Update UI immediately
-    const updatedInstance = { ...activeInstance, data: { content: value } };
-    setActiveInstance(updatedInstance);
-    setInstances((prev) =>
-      prev.map((instance) =>
-        instance.id === effectiveInstanceId ? updatedInstance : instance
-      )
-    );
-
-    // Debounced save to database
-    debouncedSave(effectiveInstanceId, { content: value });
-  };
-
-  const updateCode = (value: string) => {
-    if (!activeInstance || activeInstance.type !== 'code' || !effectiveInstanceId) return;
-
-    // Update UI immediately
-    const updatedInstance = { 
-      ...activeInstance, 
-      data: { ...activeInstance.data, code: value } 
-    };
-    setActiveInstance(updatedInstance);
-    setInstances((prev) =>
-      prev.map((instance) =>
-        instance.id === effectiveInstanceId ? updatedInstance : instance
-      )
-    );
-
-    // Debounced save to database
-    debouncedSave(effectiveInstanceId, { 
-      language: activeInstance.data.language, 
-      code: value 
-    });
-  };
-
-  const updateLanguage = async (language: CodeLanguage) => {
-    if (!activeInstance || activeInstance.type !== 'code' || !effectiveInstanceId) return;
-
-    // Update UI immediately
-    const updatedInstance = {
-      ...activeInstance,
-      data: { ...activeInstance.data, language }
-    };
-    setActiveInstance(updatedInstance);
-    setInstances((prev) =>
-      prev.map((instance) =>
-        instance.id === effectiveInstanceId ? updatedInstance : instance
-      )
-    );
-
-    // Save immediately (no debounce for language changes)
-    try {
-      await updateInstanceDB(effectiveInstanceId, {
-        data: { language, code: activeInstance.data.code },
-      });
-    } catch (error) {
-      console.error('Failed to update language:', error);
-    }
-  };
-
-  const updateAnnotationState = (state: { elements: any[]; appState: any; files: any }) => {
-    if (!activeInstance || activeInstance.type !== 'annotate' || !effectiveInstanceId) return;
-
-    // Update UI immediately
-    const updatedInstance = {
-      ...activeInstance,
-      data: { excalidrawState: state }
-    };
-    setActiveInstance(updatedInstance);
-    setInstances((prev) =>
-      prev.map((instance) =>
-        instance.id === effectiveInstanceId ? updatedInstance : instance
-      )
-    );
-
-    // Debounced save to database
-    debouncedSave(effectiveInstanceId, { excalidrawState: state });
-  };
-
-  const triggerAnnotationUpload = () => {
-    annotationCanvasRef.current?.openPdfUpload();
-  };
-
-  const triggerAnnotationExport = () => {
-    annotationCanvasRef.current?.exportAnnotatedPdf();
-  };
-
-  const handlePDFUpload = async (
+  // Handler for PDF upload
+  const handlePDFUpload = useCallback(async (
     file: File,
     url: string,
     metadata: {
@@ -256,21 +139,19 @@ function InstancePageContent() {
   ) => {
     if (!activeInstance || activeInstance.type !== 'pdf' || !effectiveInstanceId) return;
 
-    // Update UI immediately with PDF data
-    const updatedInstance = {
-      ...activeInstance,
-      data: {
-        ...activeInstance.data,
-        pdfUrl: url,
-        fileName: file.name,
-        fileSize: file.size,
-        pageCount: metadata.pageCount,
-        summary: metadata.summary,
-        metadata: metadata.metadata,
-        fullText: metadata.fullText,
-        storagePath: metadata.storagePath,
-      },
+    const updatedData = {
+      ...activeInstance.data,
+      pdfUrl: url,
+      fileName: file.name,
+      fileSize: file.size,
+      pageCount: metadata.pageCount,
+      summary: metadata.summary,
+      metadata: metadata.metadata,
+      fullText: metadata.fullText,
+      storagePath: metadata.storagePath,
     };
+
+    const updatedInstance = { ...activeInstance, data: updatedData };
     setActiveInstance(updatedInstance);
     setInstances((prev) =>
       prev.map((instance) =>
@@ -278,24 +159,19 @@ function InstancePageContent() {
       )
     );
 
-    // Save to database
     try {
-      await updateInstanceDB(effectiveInstanceId, {
-        data: updatedInstance.data,
-      });
+      await updateInstanceDB(effectiveInstanceId, { data: updatedData });
     } catch (error) {
       console.error('Failed to save PDF upload:', error);
     }
-  };
+  }, [activeInstance, effectiveInstanceId, setActiveInstance, setInstances]);
 
-  const handlePDFSummaryReady = async (summary: string) => {
+  // Handler for PDF summary
+  const handlePDFSummaryReady = useCallback(async (summary: string) => {
     if (!activeInstance || activeInstance.type !== 'pdf' || !effectiveInstanceId) return;
 
-    // Update UI immediately
-    const updatedInstance = {
-      ...activeInstance,
-      data: { ...activeInstance.data, summary }
-    };
+    const updatedData = { ...activeInstance.data, summary };
+    const updatedInstance = { ...activeInstance, data: updatedData };
     setActiveInstance(updatedInstance);
     setInstances((prev) =>
       prev.map((instance) =>
@@ -303,41 +179,37 @@ function InstancePageContent() {
       )
     );
 
-    // Save to database
     try {
-      await updateInstanceDB(effectiveInstanceId, {
-        data: updatedInstance.data,
-      });
+      await updateInstanceDB(effectiveInstanceId, { data: updatedData });
     } catch (error) {
       console.error('Failed to save PDF summary:', error);
     }
-  };
+  }, [activeInstance, effectiveInstanceId, setActiveInstance, setInstances]);
 
-  const handleLectureUpload = async (data: {
-    sourceType: string;
+  // Handler for lecture upload
+  const handleLectureUpload = useCallback(async (data: {
+    sourceType?: LectureSourceType;
     videoUrl?: string;
     youtubeId?: string;
     transcript?: string;
-    transcriptSegments?: any[];
+    transcriptSegments?: Array<{ text: string; timestamp: number; duration?: number }>;
     slidesUrl?: string;
     slidesFileName?: string;
     slidesPageCount?: number;
     slidesFullText?: string;
     audioUrl?: string;
     duration?: number;
-    metadata?: any;
+    metadata?: LectureMetadata;
   }) => {
     if (!activeInstance || activeInstance.type !== 'lecture' || !effectiveInstanceId) return;
 
-    // Update UI immediately with lecture data
-    const updatedInstance = {
-      ...activeInstance,
-      data: {
-        ...activeInstance.data,
-        ...data,
-        processingStatus: 'ready',
-      },
+    const updatedData = {
+      ...activeInstance.data,
+      ...data,
+      processingStatus: 'ready' as const,
     };
+
+    const updatedInstance = { ...activeInstance, data: updatedData };
     setActiveInstance(updatedInstance);
     setInstances((prev) =>
       prev.map((instance) =>
@@ -345,30 +217,26 @@ function InstancePageContent() {
       )
     );
 
-    // Save to database
     try {
-      await updateInstanceDB(effectiveInstanceId, {
-        data: updatedInstance.data,
-      });
+      await updateInstanceDB(effectiveInstanceId, { data: updatedData });
     } catch (error) {
       console.error('Failed to save lecture upload:', error);
     }
-  };
+  }, [activeInstance, effectiveInstanceId, setActiveInstance, setInstances]);
 
-  const handleAddToChat = (text: string) => {
+  const handleAddToChat = useCallback((text: string) => {
     setContextText(text);
-  };
+  }, []);
 
-  const getCurrentPageImage = async (): Promise<string | null> => {
+  const getCurrentPageImage = useCallback(async (): Promise<string | null> => {
     if (pdfViewerRef.current) {
       return await pdfViewerRef.current.getCurrentPageImage();
     }
     return null;
-  };
+  }, []);
 
-  const handleCreateNewChat = async () => {
+  const handleCreateNewChat = useCallback(async () => {
     try {
-      // Use the ref to create a new chat without reloading the page
       if ((activeInstance?.type === 'pdf' || activeInstance?.type === 'lecture') && pdfStudyPanelRef.current) {
         await pdfStudyPanelRef.current.createNewChat();
       } else if (aiSidePanelRef.current) {
@@ -377,128 +245,59 @@ function InstancePageContent() {
     } catch (error) {
       console.error('Failed to create new chat:', error);
     }
-  };
+  }, [activeInstance?.type]);
 
-  const handleCreateFolder = async (name: string, parentId?: string) => {
-    await createFolder(name, parentId);
-  };
+  const triggerAnnotationUpload = useCallback(() => {
+    annotationCanvasRef.current?.openPdfUpload();
+  }, []);
 
-  const handleRenameFolder = async (id: string, name: string) => {
-    await renameFolder(id, name);
-  };
-
-  const handleDeleteFolder = async (id: string) => {
-    await deleteFolder(id);
-  };
-
-  const handleMoveFolder = async (folderId: string, parentFolderId: string | null) => {
-    await moveFolder(folderId, parentFolderId);
-  };
-
-  const handleMoveToFolder = async (instanceId: string, folderId: string | null) => {
-    await moveInstanceToFolder(instanceId, folderId);
-  };
+  const triggerAnnotationExport = useCallback(() => {
+    annotationCanvasRef.current?.exportAnnotatedPdf();
+  }, []);
 
   const renderActiveContent = () => {
     if (!activeInstance) return null;
-    
+
     switch (activeInstance.type) {
       case 'text':
         return (
-          <TextEditor
-            content={activeInstance.data.content}
-            onChange={updateTextContent}
+          <TextInstanceRenderer
+            instance={activeInstance as TextInstance}
+            onContentChange={handleTextContentChange}
           />
         );
       case 'code':
         return (
-          <CodeWorkspace
-            initialFiles={activeInstance.data.files}
-            initialFileTree={activeInstance.data.fileTree}
-            onSave={({ files, fileTree, activeFilePath, openFiles }) => {
-              if (!activeInstance || !effectiveInstanceId) return;
-
-              // Update UI immediately
-              const updatedInstance = {
-                ...activeInstance,
-                data: {
-                  ...activeInstance.data,
-                  files,
-                  fileTree,
-                  activeFilePath,
-                  openFiles,
-                },
-              };
-              setActiveInstance(updatedInstance);
-              setInstances((prev) =>
-                prev.map((instance) =>
-                  instance.id === effectiveInstanceId ? updatedInstance : instance
-                )
-              );
-
-              // Debounced save to database
-              debouncedSave(effectiveInstanceId, {
-                files,
-                fileTree,
-                activeFilePath,
-                openFiles,
-              });
-            }}
+          <CodeInstanceRenderer
+            instance={activeInstance as CodeInstance}
+            onSave={handleCodeSave}
           />
         );
       case 'pdf':
         return (
-          <div className="h-full flex flex-col">
-            <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center justify-between">
-              <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
-              <div className="text-sm font-medium text-muted-foreground">PDF</div>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <PDFViewer
-                ref={pdfViewerRef}
-                pdfUrl={activeInstance.data.pdfUrl}
-                fileName={activeInstance.data.fileName}
-                metadata={activeInstance.data.metadata}
-                fullText={activeInstance.data.fullText}
-                onUpload={handlePDFUpload}
-                onSummaryReady={handlePDFSummaryReady}
-                onAddToChat={handleAddToChat}
-              />
-            </div>
-          </div>
+          <PDFInstanceRenderer
+            ref={pdfViewerRef}
+            instance={activeInstance as PDFInstance}
+            onUpload={handlePDFUpload}
+            onSummaryReady={handlePDFSummaryReady}
+            onAddToChat={handleAddToChat}
+          />
         );
       case 'lecture':
         return (
-          <div className="h-full flex flex-col">
-            <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center justify-between">
-              <h2 className="text-xl font-semibold tracking-tight">{activeInstance.title}</h2>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <LectureViewer
-                sourceType={activeInstance.data.sourceType}
-                videoUrl={activeInstance.data.videoUrl}
-                youtubeId={activeInstance.data.youtubeId}
-                transcript={activeInstance.data.transcript}
-                transcriptSegments={activeInstance.data.transcriptSegments}
-                slidesUrl={activeInstance.data.slidesUrl}
-                slidesFileName={activeInstance.data.slidesFileName}
-                slidesPageCount={activeInstance.data.slidesPageCount}
-                audioUrl={activeInstance.data.audioUrl}
-                metadata={activeInstance.data.metadata}
-                onUpload={handleLectureUpload}
-                onAddToChat={handleAddToChat}
-              />
-            </div>
-          </div>
+          <LectureInstanceRenderer
+            instance={activeInstance as LectureInstance}
+            onUpload={handleLectureUpload}
+            onAddToChat={handleAddToChat}
+          />
         );
       case 'annotate':
       default:
         return (
-          <AnnotateCanvas
-            key={activeInstance.id}
+          <AnnotateInstanceRenderer
             ref={annotationCanvasRef}
-            initialData={activeInstance.data.excalidrawState}
-            onStateChange={updateAnnotationState}
+            instance={activeInstance as AnnotateInstance}
+            onStateChange={handleAnnotationStateChange}
           />
         );
     }
