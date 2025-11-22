@@ -1549,6 +1549,9 @@ Guidelines:
 8. Use LaTeX for mathematical notation in questions and options:
    - Inline math: $equation$ (e.g., $E = mc^2$)
    - Examples: $x^2$, $\\frac{a}{b}$, $\\sum_{i=1}^n$, $\\alpha$
+9. For EACH option, provide a brief explanation (1-2 sentences):
+   - If correct: explain WHY it's the right answer
+   - If incorrect: explain WHY it's wrong or what makes it incorrect
 
 Output format: Return ONLY a JSON array of questions, no other text.
 
@@ -1557,12 +1560,24 @@ Example output:
   {
     "question": "What is the capital of France?",
     "options": ["London", "Paris", "Berlin", "Madrid"],
-    "correctIndex": 1
+    "correctIndex": 1,
+    "optionExplanations": [
+      "London is the capital of the United Kingdom, not France.",
+      "Correct! Paris is the capital and largest city of France.",
+      "Berlin is the capital of Germany, not France.",
+      "Madrid is the capital of Spain, not France."
+    ]
   },
   {
     "question": "What is the derivative of $f(x) = x^3$?",
     "options": ["$3x^2$", "$x^2$", "$3x$", "$x^3$"],
-    "correctIndex": 0
+    "correctIndex": 0,
+    "optionExplanations": [
+      "Correct! Using the power rule: $\\\\frac{d}{dx}(x^n) = nx^{n-1}$, so $\\\\frac{d}{dx}(x^3) = 3x^2$.",
+      "This would be correct for $f(x) = \\\\frac{x^3}{3}$, but not for $x^3$ alone.",
+      "This is missing the exponent; the power rule reduces the exponent by 1, giving $x^2$, not $x$.",
+      "This is the original function, not its derivative. The derivative shows the rate of change."
+    ]
   }
 ]"""
 
@@ -1570,7 +1585,7 @@ Example output:
 
 {pdf_text}
 
-Return a JSON array of questions with "question", "options" (array of 4 strings), and "correctIndex" (0-3) fields."""
+Return a JSON array of questions with "question", "options" (array of 4 strings), "correctIndex" (0-3), and "optionExplanations" (array of 4 explanation strings, one for each option) fields."""
 
         # Call Claude API
         chat_model = os.getenv("CHAT_MODEL", "claude-sonnet-4-5")

@@ -446,6 +446,7 @@ export async function saveQuiz(
     options: string[];
     correctIndex: number;
     explanation?: string;
+    optionExplanations?: string[];
     difficulty?: 'easy' | 'medium' | 'hard';
   }>,
   title?: string,
@@ -477,6 +478,7 @@ export async function saveQuiz(
     options: q.options,
     correct_option_index: q.correctIndex,
     explanation: q.explanation || null,
+    option_explanations: q.optionExplanations || null,
     position: index,
     difficulty: q.difficulty || null,
   }));
@@ -828,6 +830,7 @@ function mapQuizQuestion(data: any): QuizQuestion {
     options: data.options,
     correctOptionIndex: data.correct_option_index,
     explanation: data.explanation,
+    optionExplanations: data.option_explanations,
     position: data.position,
     difficulty: data.difficulty,
     createdAt: data.created_at,
