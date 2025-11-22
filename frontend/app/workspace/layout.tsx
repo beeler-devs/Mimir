@@ -2,9 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { InstanceSidebar, NewInstanceModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
+import { OnboardingModal } from '@/components/onboarding';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 import { ResizeProvider, useResize } from '@/contexts/ResizeContext';
 import { ResizeHandle, DragOverlay } from '@/components/layout/ResizeHandle';
+import { useAuth } from '@/lib/auth';
+import { getOrCreateUserPreferences, markOnboardingComplete } from '@/lib/userPreferences';
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const {
@@ -37,8 +40,35 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     isDragging,
   } = useResize();
 
+  const { user } = useAuth();
   const [instanceSearchOpen, setInstanceSearchOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
+  // Check if user has completed onboarding
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (!user) {
+        setCheckingOnboarding(false);
+        return;
+      }
+
+      try {
+        const preferences = await getOrCreateUserPreferences(user.id);
+        if (!preferences.hasCompletedOnboarding) {
+          setOnboardingOpen(true);
+        }
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
+      } finally {
+        setCheckingOnboarding(false);
+      }
+    };
+
+    checkOnboarding();
+  }, [user]);
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toUpperCase().includes('MAC');
@@ -53,6 +83,18 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = async () => {
+    if (user) {
+      try {
+        await markOnboardingComplete(user.id);
+        setOnboardingOpen(false);
+      } catch (error) {
+        console.error('Error marking onboarding as complete:', error);
+      }
+    }
+  };
 
   // Keep the chrome rendered even while individual pages change
   return (
@@ -125,6 +167,11 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           open={newInstanceOpen}
           onClose={() => setNewInstanceOpen(false)}
           onCreate={createInstance}
+        />
+
+        <OnboardingModal
+          open={onboardingOpen}
+          onComplete={handleOnboardingComplete}
         />
       </div>
     </>

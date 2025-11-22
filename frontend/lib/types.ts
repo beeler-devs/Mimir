@@ -299,6 +299,16 @@ export type WorkspaceInstance = TextInstance | CodeInstance | AnnotateInstance |
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+// User Preferences types
+export interface UserPreferences {
+  id: string;
+  userId: string;
+  hasCompletedOnboarding: boolean;
+  onboardingCompletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Manim types
 export interface ManimRenderRequest {
   sceneCode: string;
