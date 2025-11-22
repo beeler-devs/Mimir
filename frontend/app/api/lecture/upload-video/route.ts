@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabaseServer';
 import { nanoid } from 'nanoid';
 
 export const runtime = 'nodejs';
-export const maxDuration = 600; // 10 minutes for large video files
+export const maxDuration = 300; // 5 minutes (max for Vercel hobby plan)
 
 /**
  * POST /api/lecture/upload-video
