@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       options: q.options,
       correctIndex: q.correctIndex,
       explanation: q.explanation || undefined,
+      optionExplanations: q.optionExplanations || undefined,
       difficulty: q.difficulty || undefined,
     }));
 
@@ -117,6 +118,8 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+
 
 
 

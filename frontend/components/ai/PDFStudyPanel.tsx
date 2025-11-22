@@ -118,7 +118,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   const [flashcards, setFlashcards] = useState<{ front: string; back: string }[]>([]);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [showFlashcardAnswer, setShowFlashcardAnswer] = useState(false);
-  const [quizQuestions, setQuizQuestions] = useState<{ id?: string; question: string; options: string[]; correctIndex: number }[]>([]);
+  const [quizQuestions, setQuizQuestions] = useState<{ id?: string; question: string; options: string[]; correctIndex: number; optionExplanations?: string[] }[]>([]);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [userAnswers, setUserAnswers] = useState<(number | null)[]>([]);
@@ -507,7 +507,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
             id: q.id,
             question: q.question,
             options: q.options,
-            correctIndex: q.correctOptionIndex
+            correctIndex: q.correctOptionIndex,
+            optionExplanations: q.optionExplanations
           })));
           setQuizId(savedQuiz.id);
           // Initialize user answers array
@@ -1102,7 +1103,8 @@ The user is studying this flashcard and may ask questions about it, need help un
             id: q.id,
             question: q.question,
             options: q.options,
-            correctIndex: q.correctOptionIndex
+            correctIndex: q.correctOptionIndex,
+            optionExplanations: q.optionExplanations
           })));
           setQuizId(savedQuiz.id);
           
@@ -1696,6 +1698,9 @@ The user is studying this flashcard and may ask questions about it, need help un
                   const isSelected = currentUserAnswer === idx;
                   const isCorrect = idx === currentQuestion.correctIndex;
                   const showResult = isAnswered;
+                  const explanation = currentQuestion.optionExplanations?.[idx];
+                  // Show explanation for selected option, OR for correct option if user was wrong
+                  const showExplanation = showResult && (isSelected || (isCorrect && currentUserAnswer !== currentQuestion.correctIndex));
 
                   let className = 'w-full text-left p-3 rounded-lg border-2 transition-all text-sm ';
                   let icon = '';
@@ -1717,44 +1722,57 @@ The user is studying this flashcard and may ask questions about it, need help un
                   }
 
                   return (
-                    <button
-                      key={idx}
-                      onClick={async () => {
-                        if (!isAnswered) {
-                          const newAnswers = [...userAnswers];
-                          newAnswers[currentQuizIndex] = idx;
-                          setUserAnswers(newAnswers);
-                          setSelectedAnswer(idx);
-                          
-                          // Save answer to database immediately
-                          if (currentQuizAttemptId && quizQuestions[currentQuizIndex].id) {
-                            try {
-                              await submitQuizAnswer(
-                                currentQuizAttemptId,
-                                quizQuestions[currentQuizIndex].id!,
-                                idx
-                              );
-                            } catch (error) {
-                              console.error('Error saving quiz answer:', error);
+                    <div key={idx} className="space-y-1.5">
+                      <button
+                        onClick={async () => {
+                          if (!isAnswered) {
+                            const newAnswers = [...userAnswers];
+                            newAnswers[currentQuizIndex] = idx;
+                            setUserAnswers(newAnswers);
+                            setSelectedAnswer(idx);
+                            
+                            // Save answer to database immediately
+                            if (currentQuizAttemptId && quizQuestions[currentQuizIndex].id) {
+                              try {
+                                await submitQuizAnswer(
+                                  currentQuizAttemptId,
+                                  quizQuestions[currentQuizIndex].id!,
+                                  idx
+                                );
+                              } catch (error) {
+                                console.error('Error saving quiz answer:', error);
+                              }
                             }
                           }
-                        }
-                      }}
-                      disabled={isAnswered}
-                      className={className}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${showResult
-                            ? (isCorrect ? 'bg-green-600 text-white' : isSelected ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground')
-                            : isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                          }`}>
-                          {icon || String.fromCharCode(65 + idx)}
+                        }}
+                        disabled={isAnswered}
+                        className={className}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${showResult
+                              ? (isCorrect ? 'bg-green-600 text-white' : isSelected ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground')
+                              : isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                            }`}>
+                            {icon || String.fromCharCode(65 + idx)}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <MarkdownRenderer content={option} />
+                          </div>
                         </div>
-                        <div className="flex-1 text-left">
-                          <MarkdownRenderer content={option} />
+                      </button>
+                      {/* Show explanation for selected option or correct option (if user was wrong) */}
+                      {showExplanation && explanation && (
+                        <div className={`ml-9 p-2.5 rounded-md text-xs ${
+                          isCorrect
+                            ? 'bg-green-50 text-green-800 border border-green-200'
+                            : isSelected
+                            ? 'bg-red-50 text-red-800 border border-red-200'
+                            : 'bg-green-50 text-green-800 border border-green-200'
+                        }`}>
+                          <MarkdownRenderer content={explanation} />
                         </div>
-                      </div>
-                    </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>

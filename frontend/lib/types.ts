@@ -402,6 +402,7 @@ export interface QuizQuestion {
   options: string[]; // JSONB array
   correctOptionIndex: number;
   explanation: string | null;
+  optionExplanations?: string[]; // JSONB array - explanation for each option
   position: number;
   difficulty: 'easy' | 'medium' | 'hard' | null;
   createdAt: string;
