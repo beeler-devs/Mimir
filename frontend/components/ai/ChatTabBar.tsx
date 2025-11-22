@@ -187,7 +187,7 @@ export const ChatTabBar: React.FC<ChatTabBarProps> = ({
               onClose={() => setHistoryOpen(false)}
               chats={allChats}
               onSelectChat={handleSelectChat}
-              buttonRef={historyButtonRef}
+              buttonRef={historyButtonRef as React.RefObject<HTMLElement>}
             />
           </div>
         </div>

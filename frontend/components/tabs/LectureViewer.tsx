@@ -38,7 +38,7 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
 
-interface LectureMetadata {
+export interface LectureMetadata {
   title?: string;
   speaker?: string;
   date?: string;

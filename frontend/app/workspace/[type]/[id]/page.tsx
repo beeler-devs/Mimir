@@ -24,7 +24,8 @@ import {
   updateInstance as updateInstanceDB,
 } from '@/lib/db/instances';
 
-import type { InstanceType, CodeFile, FileTreeNode, TextInstance, CodeInstance, PDFInstance, LectureInstance, AnnotateInstance } from '@/lib/types';
+import type { InstanceType, CodeFile, FileTreeNode, TextInstance, CodeInstance, PDFInstance, LectureInstance, AnnotateInstance, LectureSourceType } from '@/lib/types';
+import type { LectureMetadata } from '@/components/tabs/LectureViewer';
 
 function InstancePageContent() {
   const params = useParams();
@@ -187,7 +188,7 @@ function InstancePageContent() {
 
   // Handler for lecture upload
   const handleLectureUpload = useCallback(async (data: {
-    sourceType: string;
+    sourceType?: LectureSourceType;
     videoUrl?: string;
     youtubeId?: string;
     transcript?: string;
@@ -198,7 +199,7 @@ function InstancePageContent() {
     slidesFullText?: string;
     audioUrl?: string;
     duration?: number;
-    metadata?: Record<string, unknown>;
+    metadata?: LectureMetadata;
   }) => {
     if (!activeInstance || activeInstance.type !== 'lecture' || !effectiveInstanceId) return;
 

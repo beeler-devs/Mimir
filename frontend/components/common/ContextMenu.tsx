@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 interface ContextMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  triggerRef: RefObject<HTMLElement>;
+  triggerRef: RefObject<HTMLElement | null>;
   children: React.ReactNode;
   align?: 'left' | 'right';
   position?: { top: number; left: number };
