@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, Input, Modal, ContextMenu } from '@/components/common';
 import {
   FileText,
@@ -19,6 +20,7 @@ import {
   Video
 } from 'lucide-react';
 import type { WorkspaceInstance, Folder } from '@/lib/types';
+import { createFocusViewStorage } from '@/lib/storage/focusViewStorage';
 
 const typeMeta = {
   text: { label: 'Text', icon: FileText },
@@ -75,9 +77,31 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [creatingNewFolder, setCreatingNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('Untitled');
+  const [focusViewEnabled, setFocusViewEnabled] = useState(false);
+  const router = useRouter();
+  const storage = createFocusViewStorage();
   
   // Store refs for menu buttons - using useRef to hold a Map of refs
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  // Check focus view status
+  useEffect(() => {
+    const checkFocusView = async () => {
+      const enabled = await storage.isEnabled();
+      setFocusViewEnabled(enabled);
+    };
+    checkFocusView();
+  }, []);
+
+  const handleFocusViewToggle = async () => {
+    const newState = !focusViewEnabled;
+    await storage.setEnabled(newState);
+    setFocusViewEnabled(newState);
+    
+    if (newState) {
+      router.push('/workspace/focus');
+    }
+  };
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -522,13 +546,30 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     <aside className="w-64 border-r border-border bg-[var(--sidebar-bg)] dark:bg-card/80 backdrop-blur-xl flex flex-col transition-all duration-300">
       <div className="px-4 pt-5 pb-4 flex items-center justify-between gap-3">
         <div className="flex-1 text-xl font-semibold tracking-tight pl-3">Mimir</div>
-        <button
-          onClick={toggleCollapsed}
-          className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
-          aria-label="Collapse sidebar"
-        >
-          <PanelsLeftRight className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleFocusViewToggle}
+            className={`
+              h-10 w-10 rounded-full border border-border transition-colors
+              flex items-center justify-center
+              ${focusViewEnabled 
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
+                : 'bg-background hover:bg-muted'
+              }
+            `}
+            aria-label="Toggle Focus View"
+            title="Focus View"
+          >
+            <span className="text-sm font-semibold">F</span>
+          </button>
+          <button
+            onClick={toggleCollapsed}
+            className="p-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+            aria-label="Collapse sidebar"
+          >
+            <PanelsLeftRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-4 space-y-2">

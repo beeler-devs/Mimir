@@ -1,10 +1,13 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { InstanceSidebar, NewInstanceModal, SettingsModal } from '@/components/workspace';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 
 function WorkspaceShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isFocusView = pathname === '/workspace/focus';
   const {
     instances,
     folders,
@@ -30,21 +33,23 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // Keep the chrome rendered even while individual pages change
   return (
     <div className="flex h-screen bg-background">
-      <InstanceSidebar
-        instances={instances}
-        folders={folders}
-        activeInstanceId={activeInstanceId}
-        onSelect={selectInstance}
-        onCreateInstance={() => setNewInstanceOpen(true)}
-        onRename={renameInstance}
-        onDelete={deleteInstance}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onCreateFolder={createFolder}
-        onRenameFolder={renameFolder}
-        onDeleteFolder={deleteFolder}
-        onMoveToFolder={moveInstanceToFolder}
-        onMoveFolder={moveFolder}
-      />
+      {!isFocusView && (
+        <InstanceSidebar
+          instances={instances}
+          folders={folders}
+          activeInstanceId={activeInstanceId}
+          onSelect={selectInstance}
+          onCreateInstance={() => setNewInstanceOpen(true)}
+          onRename={renameInstance}
+          onDelete={deleteInstance}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolder}
+          onDeleteFolder={deleteFolder}
+          onMoveToFolder={moveInstanceToFolder}
+          onMoveFolder={moveFolder}
+        />
+      )}
 
       <div className="flex-1 h-full overflow-hidden">
         {loading ? (

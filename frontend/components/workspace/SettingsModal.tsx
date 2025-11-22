@@ -90,24 +90,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultLearningMode, setDefaultLearningMode] = useDefaultLearningMode();
   const allModes = getAllLearningModes();
 
-  // Focus View state
-  const [focusViewEnabled, setFocusViewEnabled] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('mimir.focusView.enabled') === 'true';
-    }
-    return false;
-  });
-
-  const handleFocusViewToggle = (enabled: boolean) => {
-    setFocusViewEnabled(enabled);
-    localStorage.setItem('mimir.focusView.enabled', String(enabled));
-
-    // Optionally redirect to focus view when enabled
-    if (enabled) {
-      router.push('/workspace/focus');
-    }
-  };
-
   const handleLogout = async () => {
     try {
       await signOut();
@@ -238,15 +220,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <section className="space-y-4">
-                <div className="flex items-center justify-between gap-6">
-                  <div>
-                    <p className="font-semibold">Focus View</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Enable freeform grid workspace with customizable component layouts
-                    </p>
-                  </div>
-                  <ToggleControl value={focusViewEnabled} onChange={handleFocusViewToggle} />
-                </div>
+                <p className="text-sm text-muted-foreground">More settings coming soon...</p>
               </section>
             </>
           )}

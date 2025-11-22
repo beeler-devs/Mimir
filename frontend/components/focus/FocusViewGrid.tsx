@@ -8,6 +8,7 @@ import { Button } from '@/components/common';
 import { ComponentPlacementModal } from './ComponentPlacementModal';
 import { ConfigurationPanel } from './ConfigurationPanel';
 import { FocusViewGridCell } from './FocusViewGridCell';
+import { ClearAllConfirmModal } from './ClearAllConfirmModal';
 
 interface FocusViewGridProps {
   components: GridComponent[];
@@ -31,8 +32,11 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
 }) => {
   const [isPlacementModalOpen, setIsPlacementModalOpen] = useState(false);
   const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
+  const [isToolbarVisible, setIsToolbarVisible] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
+  const hoverZoneRef = useRef<HTMLDivElement>(null);
 
   const handleAddComponent = useCallback((
     type: ComponentType,
@@ -69,17 +73,61 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   }, [handleUpdateComponent]);
 
   const handleClearAll = useCallback(() => {
-    if (confirm('Are you sure you want to remove all components?')) {
-      onComponentsChange([]);
-      setSelectedComponentId(null);
-    }
+    setIsClearAllModalOpen(true);
+  }, []);
+
+  const handleConfirmClearAll = useCallback(() => {
+    onComponentsChange([]);
+    setSelectedComponentId(null);
   }, [onComponentsChange]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const y = e.clientY;
+    // Show toolbar when cursor is within top 80px of screen
+    if (y <= 80) {
+      setIsToolbarVisible(true);
+    } else {
+      setIsToolbarVisible(false);
+    }
+  }, []);
+
+  const handleToolbarMouseEnter = useCallback(() => {
+    setIsToolbarVisible(true);
+  }, []);
+
+  const handleToolbarMouseLeave = useCallback(() => {
+    setIsToolbarVisible(false);
+  }, []);
 
   return (
     <FocusViewProvider>
-      <div className="h-screen flex flex-col bg-background">
+      <div 
+        className="h-screen flex flex-col bg-background relative"
+        onMouseMove={handleMouseMove}
+      >
+      {/* Hover Detection Zone */}
+      <div 
+        ref={hoverZoneRef}
+        className="fixed top-0 left-0 right-0 h-20 z-30 pointer-events-none"
+      />
+
       {/* Toolbar */}
-      <div className="h-14 border-b border-border bg-card/30 flex items-center justify-between px-4 gap-4">
+      <div 
+        className={`
+          fixed top-0 left-0 right-0 z-40
+          h-14 mx-4 mt-2
+          rounded-xl
+          border border-border bg-card/95 backdrop-blur-sm
+          flex items-center justify-between px-4 gap-4
+          transition-all duration-300 ease-in-out
+          ${isToolbarVisible 
+            ? 'opacity-100 translate-y-0 pointer-events-auto' 
+            : 'opacity-0 -translate-y-full pointer-events-none'
+          }
+        `}
+        onMouseEnter={handleToolbarMouseEnter}
+        onMouseLeave={handleToolbarMouseLeave}
+      >
         <div className="flex items-center gap-2">
           <Layout className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold">Focus View</h1>
@@ -132,7 +180,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
       </div>
 
       {/* Grid Container */}
-      <div ref={gridRef} className="flex-1 overflow-auto p-4 bg-muted/20">
+      <div ref={gridRef} className="flex-1 overflow-auto p-4 bg-grid-pattern pt-4">
         {components.length === 0 ? (
           // Empty State
           <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
@@ -141,10 +189,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
             </div>
             <div>
               <h2 className="text-2xl font-semibold mb-2">Your Focus Workspace</h2>
-              <p className="text-muted-foreground max-w-md mb-6">
-                Create a custom layout by adding components like code editors, PDF viewers, chat panels, and more.
-                Arrange them in a grid to build your perfect study or work environment.
-              </p>
+
               <div className="flex gap-3 justify-center">
                 <Button
                   onClick={() => setIsPlacementModalOpen(true)}
@@ -207,6 +252,13 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
           currentComponents={components}
         />
       )}
+
+      {/* Clear All Confirmation Modal */}
+      <ClearAllConfirmModal
+        open={isClearAllModalOpen}
+        onClose={() => setIsClearAllModalOpen(false)}
+        onConfirm={handleConfirmClearAll}
+      />
       </div>
     </FocusViewProvider>
   );

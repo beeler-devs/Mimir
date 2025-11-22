@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { FocusViewGrid } from '@/components/focus/FocusViewGrid';
 import { GridComponent } from '@/lib/focusView';
@@ -30,6 +30,7 @@ export default function FocusViewPage() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastEscapePressRef = useRef<number | null>(null);
 
   // Check if focus view is enabled and load configuration
   useEffect(() => {
@@ -72,6 +73,35 @@ export default function FocusViewPage() {
       });
     }
   }, [debouncedComponents, isLoading, isEnabled]);
+
+  // Double escape to exit focus view
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        const now = Date.now();
+        const lastPress = lastEscapePressRef.current;
+
+        if (lastPress && now - lastPress < 500) {
+          // Double escape detected - disable focus view and exit
+          storage.setEnabled(false).then(() => {
+            router.push('/workspace');
+          }).catch((err) => {
+            console.error('Failed to disable Focus View:', err);
+            router.push('/workspace');
+          });
+          lastEscapePressRef.current = null;
+        } else {
+          // First escape - record timestamp
+          lastEscapePressRef.current = now;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEnabled, router]);
 
   const handleSaveConfiguration = async () => {
     try {

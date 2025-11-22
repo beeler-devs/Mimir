@@ -85,7 +85,7 @@ export const ComponentPlacementModal: React.FC<ComponentPlacementModalProps> = (
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="w-[800px] max-h-[80vh] overflow-auto">
+      <div className="w-full max-h-[80vh] overflow-y-auto scrollbar-hide-show">
         <div className="p-6">
           <h2 className="text-2xl font-semibold mb-6">Add Component</h2>
 
