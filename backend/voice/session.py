@@ -200,10 +200,9 @@ class VoiceSession:
                     "stream_id": stream_id
                 })
 
-            # TTS complete, return to IDLE
-            if self.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
-                await self.state_machine.transition_to(ConversationState.IDLE)
-                self.state_machine.set_tts_stream_id(None)
+            # TTS chunk complete
+            # Note: We do NOT transition to IDLE here anymore, because there might be
+            # more chunks coming from the LLM. The caller must explicitly call finish_speaking()
 
         except Exception as e:
             logger.error(f"[{self.session_id}] Error in TTS streaming: {e}", exc_info=True)
@@ -212,6 +211,16 @@ class VoiceSession:
                 "error": str(e)
             })
             await self.state_machine.transition_to(ConversationState.ERROR)
+
+            await self.state_machine.transition_to(ConversationState.ERROR)
+
+    async def finish_speaking(self) -> None:
+        """
+        Signal that assistant has finished speaking all chunks
+        """
+        if self.state_machine.get_state() == ConversationState.ASSISTANT_SPEAKING:
+            await self.state_machine.transition_to(ConversationState.IDLE)
+            self.state_machine.set_tts_stream_id(None)
 
     async def _send_to_client(self, message: dict) -> None:
         """

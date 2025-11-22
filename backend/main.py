@@ -2347,6 +2347,9 @@ async def process_utterance_with_claude(session, utterance: str):
             "transcript": clean_text
         })
 
+        # Signal that speaking is done
+        await session.finish_speaking()
+
     except Exception as e:
         logger.error(f"[Voice] Error processing utterance: {e}", exc_info=True)
         await session._send_to_client({
