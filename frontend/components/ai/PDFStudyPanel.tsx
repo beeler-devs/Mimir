@@ -1450,7 +1450,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
                 {flashcardHistory.map((set) => {
                   const progressPercent = set.cardCount > 0 
                     ? Math.round((set.stats.reviewedCount / set.cardCount) * 100)
@@ -1695,13 +1695,13 @@ The user is studying this flashcard and may ask questions about it, need help un
                 <button
                   onClick={generateQuiz}
                   disabled={generatingQuiz}
-                  className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium transition-colors"
+                  className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 text-sm font-medium transition-colors"
                 >
                   Generate New Quiz
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
                 {quizHistory.map((quiz) => {
                   const percentage = quiz.stats.bestScore !== null ? Math.round(quiz.stats.bestScore) : 0;
                   const hasIncomplete = quiz.stats.hasIncompleteAttempt;
