@@ -1292,8 +1292,19 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
             <div className="w-px h-6 bg-border mx-1" />
 
             <button
-              onClick={() => setSlidesExpanded(!slidesExpanded)}
-              className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+              onClick={() => {
+                if (!slidesExpanded && !transcriptionExpanded) {
+                  // Don't allow collapsing if both are already collapsed
+                  return;
+                }
+                setSlidesExpanded(!slidesExpanded);
+              }}
+              disabled={!slidesExpanded && !transcriptionExpanded}
+              className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
+                !slidesExpanded && !transcriptionExpanded
+                  ? 'cursor-not-allowed opacity-50'
+                  : 'hover:opacity-80 cursor-pointer'
+              }`}
               aria-label={slidesExpanded ? "Collapse slides" : "Expand slides"}
             >
               {slidesExpanded ? (
@@ -1361,36 +1372,14 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
         {slidesExpanded && transcriptionExpanded && (
           <div
             onPointerDown={handleSplitResizeStart}
-            className={`
-              relative w-full h-1 cursor-row-resize
-              group select-none touch-none
-              ${isResizingSplit ? 'bg-[#F5F5F5]' : 'hover:bg-[#F5F5F5]/50'}
-              transition-colors duration-150
-              z-10
-              flex items-center justify-center
-            `}
+            className="relative w-full h-1 cursor-row-resize group select-none touch-none z-10"
             role="separator"
             aria-orientation="horizontal"
             aria-label="Resize slides and transcription panels"
           >
             {/* Wider hit area for easier grabbing */}
             <div
-              className={`
-                absolute left-0 right-0 top-1/2 -translate-y-1/2
-                h-4
-                cursor-row-resize
-              `}
-            />
-
-            {/* Visual indicator on hover */}
-            <div
-              className={`
-                absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2
-                h-1 w-8 rounded-full
-                pointer-events-none
-                ${isResizingSplit ? 'bg-[#F5F5F5]' : 'bg-transparent group-hover:bg-[#F5F5F5]/30'}
-                transition-colors duration-150
-              `}
+              className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-4 cursor-row-resize"
             />
           </div>
         )}
@@ -1519,8 +1508,19 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                   <span className="text-sm font-medium">Transcription</span>
                 </div>
                 <button
-                  onClick={() => setTranscriptionExpanded(false)}
-                  className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    if (!slidesExpanded && !transcriptionExpanded) {
+                      // Don't allow collapsing if both are already collapsed
+                      return;
+                    }
+                    setTranscriptionExpanded(false);
+                  }}
+                  disabled={!slidesExpanded && !transcriptionExpanded}
+                  className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
+                    !slidesExpanded && !transcriptionExpanded
+                      ? 'cursor-not-allowed opacity-50'
+                      : 'hover:opacity-80 cursor-pointer'
+                  }`}
                   aria-label="Collapse transcription"
                 >
                   <ChevronDown className="w-4 h-4" />
@@ -1536,8 +1536,19 @@ export const LectureViewer = React.forwardRef<LectureViewerRef, LectureViewerPro
                 <span className="text-sm font-medium">Transcription</span>
               </div>
               <button
-                onClick={() => setTranscriptionExpanded(true)}
-                className="flex items-center gap-1.5 px-2 text-sm font-medium hover:opacity-80 transition-opacity"
+                onClick={() => {
+                  if (!slidesExpanded && !transcriptionExpanded) {
+                    // Don't allow expanding if both are collapsed (shouldn't happen, but safety check)
+                    return;
+                  }
+                  setTranscriptionExpanded(true);
+                }}
+                disabled={!slidesExpanded && !transcriptionExpanded}
+                className={`flex items-center gap-1.5 px-2 text-sm font-medium transition-opacity ${
+                  !slidesExpanded && !transcriptionExpanded
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'hover:opacity-80 cursor-pointer'
+                }`}
                 aria-label="Expand transcription"
               >
                 <ChevronUp className="w-4 h-4" />

@@ -68,8 +68,6 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
         w-1 cursor-col-resize
         group select-none touch-none
         ${position === 'left' ? 'right-0' : 'left-0'}
-        ${isDragging ? 'bg-[#F5F5F5]' : 'hover:bg-[#F5F5F5]/50'}
-        transition-colors duration-150
         z-10
         focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1
         ${className}
@@ -81,22 +79,7 @@ export function ResizeHandle({ position, className = '' }: ResizeHandleProps) {
     >
       {/* Wider hit area for easier grabbing - covers the actual clickable region */}
       <div
-        className={`
-          absolute top-0 bottom-0 left-1/2 -translate-x-1/2
-          w-4
-          cursor-col-resize
-        `}
-      />
-
-      {/* Visual indicator on hover */}
-      <div
-        className={`
-          absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2
-          w-1 h-8 rounded-full
-          pointer-events-none
-          ${isDragging ? 'bg-[#F5F5F5]' : 'bg-transparent group-hover:bg-[#F5F5F5]/30'}
-          transition-colors duration-150
-        `}
+        className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-4 cursor-col-resize"
       />
     </div>
   );
