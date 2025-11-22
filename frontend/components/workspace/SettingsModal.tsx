@@ -85,7 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [accent, setAccent] = useState('default');
   const { signOut } = useAuth();
   const router = useRouter();
-  
+
   // Learning mode state
   const [defaultLearningMode, setDefaultLearningMode] = useDefaultLearningMode();
   const allModes = getAllLearningModes();
@@ -211,8 +211,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </>
           )}
 
+          {/* Advanced Tab */}
+          {activeMenu === 'advanced' && (
+            <>
+              <div>
+                <h2 className="text-2xl font-semibold">Advanced</h2>
+                <p className="text-sm text-muted-foreground">Experimental features and advanced settings.</p>
+              </div>
+
+              <section className="space-y-4">
+                <p className="text-sm text-muted-foreground">More settings coming soon...</p>
+              </section>
+            </>
+          )}
+
           {/* Other tabs placeholder */}
-          {activeMenu !== 'general' && activeMenu !== 'personalization' && (
+          {activeMenu !== 'general' && activeMenu !== 'personalization' && activeMenu !== 'advanced' && (
             <div>
               <h2 className="text-2xl font-semibold capitalize">{activeMenu}</h2>
               <p className="text-sm text-muted-foreground mt-2">Coming soon...</p>
