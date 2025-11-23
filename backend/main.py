@@ -683,6 +683,13 @@ async def chat_stream(request: Request):
 
                 # Add instance information
                 if chat_request.workspaceContext.instances:
+                    # Debug: Log instances received
+                    logger.warning("=== DEBUG: Backend received instances ===")
+                    for idx, inst in enumerate(chat_request.workspaceContext.instances):
+                        has_fulltext = hasattr(inst, 'fullText') and inst.fullText is not None
+                        fulltext_len = len(inst.fullText) if has_fulltext else 0
+                        logger.warning(f"Instance {idx}: type={inst.type}, title={inst.title}, hasFullText={has_fulltext}, fullTextLength={fulltext_len}")
+
                     context_parts.append(
                         "\nCurrent workspace context includes:")
                     # First instance is typically the active one
@@ -693,13 +700,27 @@ async def chat_stream(request: Request):
                             f"\n- {inst.title} ({inst.type}){active_marker}:")
 
                         if inst.type == "text" and inst.content:
-                            context_parts.append(
-                                f"  Content: {inst.content[:500]}{'...' if len(inst.content) > 500 else ''}")
+                            # Increase limit for better context
+                            max_length = 5000
+                            text_preview = inst.content[:max_length]
+                            if len(inst.content) > max_length:
+                                text_preview += f"\n... (truncated, showing first {max_length} of {len(inst.content)} characters)"
+                            context_parts.append(f"  Content:\n{text_preview}")
                         elif inst.type == "code" and inst.code:
-                            context_parts.append(
-                                f"  Language: {inst.language}")
-                            context_parts.append(
-                                f"  Code: {inst.code[:500]}{'...' if len(inst.code) > 500 else ''}")
+                            context_parts.append(f"  Language: {inst.language}")
+                            # Increase limit for better context
+                            max_length = 5000
+                            code_preview = inst.code[:max_length]
+                            if len(inst.code) > max_length:
+                                code_preview += f"\n... (truncated, showing first {max_length} of {len(inst.code)} characters)"
+                            context_parts.append(f"  Code:\n{code_preview}")
+                        elif inst.type in ["pdf", "lecture"] and inst.fullText:
+                            # Handle PDF and lecture instances with fullText
+                            max_length = 10000
+                            text_preview = inst.fullText[:max_length]
+                            if len(inst.fullText) > max_length:
+                                text_preview += f"\n... (truncated, showing first {max_length} of {len(inst.fullText)} characters)"
+                            context_parts.append(f"  Full Text:\n{text_preview}")
                         elif inst.type == "annotate":
                             if inst.id in chat_request.workspaceContext.annotationImages:
                                 context_parts.append(

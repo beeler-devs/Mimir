@@ -216,6 +216,16 @@ function buildInstanceContext(
     base.code = isPrioritized ? allCode : truncateCode(allCode, MAX_CODE_LINES);
   } else if (instance.type === 'pdf') {
     const fullText = instance.data.fullText || '';
+
+    // Debug: Log PDF context building
+    console.log('=== DEBUG: Building PDF context ===', {
+      id: instance.id,
+      title: instance.title,
+      hasFullText: !!fullText,
+      fullTextLength: fullText.length,
+      isPrioritized
+    });
+
     // Only truncate if not prioritized
     base.fullText = isPrioritized ? fullText : truncateText(fullText, MAX_TEXT_LENGTH);
   } else if (instance.type === 'lecture') {
