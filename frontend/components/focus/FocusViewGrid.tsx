@@ -42,6 +42,7 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   const [draggingComponentId, setDraggingComponentId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const [highlightedPosition, setHighlightedPosition] = useState<GridPosition | null>(null);
+  const [dragStartPosition, setDragStartPosition] = useState<GridPosition | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const hoverZoneRef = useRef<HTMLDivElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -232,13 +233,23 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
 
   /**
    * Handle mouse move during drag
+   * Use refs to avoid infinite loops - don't update components during drag,
+   * only update visual state. Final position will be set on drag end.
    */
+  const componentsRef = useRef(components);
+  useEffect(() => {
+    componentsRef.current = components;
+  }, [components]);
+
   const handleDragMove = useCallback((e: MouseEvent) => {
     if (!draggingComponentId || !gridContainerRef.current) return;
 
     const position = detectGridPosition(e.clientX, e.clientY);
     setHighlightedPosition(position);
     setDragPosition({ x: e.clientX, y: e.clientY });
+
+    // Don't update components during drag to avoid infinite loops
+    // Visual feedback is handled by highlightedPosition state
   }, [draggingComponentId, detectGridPosition]);
 
   /**
@@ -247,22 +258,30 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
   const handleDragEnd = useCallback((e: MouseEvent) => {
     if (!draggingComponentId) return;
 
-    const component = components.find(c => c.id === draggingComponentId);
+    const component = componentsRef.current.find(c => c.id === draggingComponentId);
     if (component) {
       // Get the final position from mouse coordinates
       const finalPosition = detectGridPosition(e.clientX, e.clientY);
-      
+
       if (finalPosition) {
         // Check if position is available (excluding the component being dragged)
-        const otherComponents = components.filter(c => c.id !== draggingComponentId);
-        if (!isPositionOccupied(finalPosition, otherComponents)) {
+        const otherComponents = componentsRef.current.filter(c => c.id !== draggingComponentId);
+        const occupyingComponent = otherComponents.find(c => c.position === finalPosition);
+
+        if (!occupyingComponent) {
+          // Position is empty, just move there
           handleMoveComponent(draggingComponentId, finalPosition);
-        } else {
-          // Try to find nearest available position
-          const suggested = getSuggestedPositions(component.type, otherComponents);
-          if (suggested.length > 0) {
-            handleMoveComponent(draggingComponentId, suggested[0]);
-          }
+        } else if (dragStartPosition) {
+          // Position is occupied - swap the components
+          const updatedComponents = componentsRef.current.map(c => {
+            if (c.id === draggingComponentId) {
+              return { ...c, position: finalPosition };
+            } else if (c.id === occupyingComponent.id) {
+              return { ...c, position: dragStartPosition };
+            }
+            return c;
+          });
+          onComponentsChange(updatedComponents);
         }
       }
     }
@@ -270,7 +289,8 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
     setDraggingComponentId(null);
     setDragPosition(null);
     setHighlightedPosition(null);
-  }, [draggingComponentId, components, detectGridPosition, handleMoveComponent]);
+    setDragStartPosition(null);
+  }, [draggingComponentId, detectGridPosition, handleMoveComponent, dragStartPosition, onComponentsChange]);
 
   // Set up global mouse event listeners for dragging
   useEffect(() => {
@@ -288,9 +308,13 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
    * Start dragging a component
    */
   const handleStartDrag = useCallback((componentId: string) => {
+    const component = components.find(c => c.id === componentId);
+    if (component) {
+      setDragStartPosition(component.position);
+    }
     setDraggingComponentId(componentId);
     setSelectedComponentId(componentId);
-  }, []);
+  }, [components]);
 
   return (
     <FocusViewProvider>
@@ -416,15 +440,33 @@ export const FocusViewGrid: React.FC<FocusViewGridProps> = ({
                 />
               ))}
 
-              {/* Visual Highlight Overlay */}
+              {/* Ghost Placeholder at Original Position */}
+              {dragStartPosition && draggingComponentId && (
+                <div
+                  className={`
+                    absolute pointer-events-none z-40
+                    ${GRID_POSITION_CLASSES[dragStartPosition]}
+                    border-2 border-dashed border-muted-foreground/30 bg-muted/20 rounded-lg
+                    transition-all duration-200
+                  `}
+                />
+              )}
+
+              {/* Visual Highlight Overlay with Accent Color */}
               {highlightedPosition && draggingComponentId && (
                 <div
                   className={`
                     absolute pointer-events-none z-50
                     ${GRID_POSITION_CLASSES[highlightedPosition]}
-                    border-2 border-primary bg-primary/10 rounded-lg
+                    border-4 rounded-2xl
                     transition-all duration-150
+                    animate-pulse
                   `}
+                  style={{
+                    borderColor: 'var(--primary)',
+                    backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+                    boxShadow: `0 0 30px color-mix(in srgb, var(--primary) 40%, transparent)`,
+                  }}
                 />
               )}
             </div>

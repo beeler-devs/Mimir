@@ -27,7 +27,7 @@ const GridComponentSchema = z.object({
   ]),
   position: z.string(),
   instanceId: z.string().optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   customSize: z.object({
     width: z.number().optional(),
     height: z.number().optional(),
@@ -127,7 +127,19 @@ export class LocalStorageFocusViewStorage implements IFocusViewStorage {
 
       const parsed = JSON.parse(stored);
 
-      // Validate with Zod
+      // Validate with Zod - check if schema is available
+      if (!ActiveConfigSchema || typeof ActiveConfigSchema.parse !== 'function') {
+        console.error('ActiveConfigSchema is not available');
+        // Fallback: return parsed data without validation
+        if (parsed && parsed.components && Array.isArray(parsed.components)) {
+          return {
+            components: parsed.components as GridComponent[],
+            updatedAt: parsed.updatedAt || new Date().toISOString(),
+          };
+        }
+        return null;
+      }
+
       const validated = ActiveConfigSchema.parse(parsed);
 
       return {

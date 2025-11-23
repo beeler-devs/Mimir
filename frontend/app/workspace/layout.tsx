@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { InstanceSidebar, NewInstanceModal, SearchInstancesModal, SettingsModal } from '@/components/workspace';
+import { InstanceSidebar, SearchInstancesModal, SettingsModal } from '@/components/workspace';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceProvider';
 import { ResizeProvider, useResize } from '@/contexts/ResizeContext';
 import { ResizeHandle, DragOverlay } from '@/components/layout/ResizeHandle';
@@ -125,12 +125,6 @@ function WorkspaceShell({ children }: { children: React.ReactNode }) {
           instances={instances}
           onClose={() => setInstanceSearchOpen(false)}
           onSelect={selectInstance}
-        />
-
-        <NewInstanceModal
-          open={newInstanceOpen}
-          onClose={() => setNewInstanceOpen(false)}
-          onCreate={createInstance}
         />
       </div>
     </>

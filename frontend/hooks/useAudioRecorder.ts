@@ -68,13 +68,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
         const inputData = e.inputBuffer.getChannelData(0);
 
         // Resample if necessary
-        let processedData = inputData;
+        let processedData: Float32Array = inputData;
         if (audioContext.sampleRate !== sampleRate) {
           processedData = resampleBuffer(
             inputData,
             audioContext.sampleRate,
             sampleRate
-          );
+          ) as Float32Array;
         }
 
         // Convert to Int16

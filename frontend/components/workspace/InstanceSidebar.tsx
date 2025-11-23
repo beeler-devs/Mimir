@@ -16,8 +16,6 @@ import {
   PanelsLeftRight,
   Folder as FolderIcon,
   FolderOpen,
-  ChevronRight,
-  ChevronDown,
   Search,
   Video,
   Focus,
@@ -304,8 +302,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
     const isActive = !isFolder && node.data.instance?.id === activeInstanceId;
     const isMenuOpen = menuOpenId === node.data.id;
 
-    const Chevron = node.isOpen ? ChevronDown : ChevronRight;
-
     // Get icon based on node type
     let Icon;
     if (isFolder) {
@@ -342,22 +338,13 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
             ${isActive ? 'bg-muted/90 text-foreground' : 'hover:bg-muted/70'}
           `}
         >
-          {/* Chevron for folders */}
-          {isFolder && (
-            <Chevron className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-          )}
-
           {/* Icon */}
-          {isFolder ? (
-            <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-          ) : (
-            <Icon
-              className={`
-                h-4 w-4 flex-shrink-0
-                ${isActive ? 'text-primary' : 'text-muted-foreground'}
-              `}
-            />
-          )}
+          <Icon
+            className={`
+              h-4 w-4 flex-shrink-0
+              ${isFolder ? 'text-muted-foreground' : isActive ? 'text-primary' : 'text-muted-foreground'}
+            `}
+          />
 
           {/* Name */}
           {node.isEditing ? (
@@ -591,7 +578,6 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               <button
                 className="w-full px-2.5 py-2 flex items-center gap-2.5 text-left rounded-lg text-sm transition-colors hover:bg-muted/70"
               >
-                <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                 <FolderIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
 
                 <div className="flex-1 min-w-0 pr-6">
@@ -616,7 +602,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
               openByDefault={false}
               width="100%"
               height={600}
-              indent={12}
+              indent={24}
               rowHeight={40}
               overscanCount={1}
               paddingTop={4}

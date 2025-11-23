@@ -165,7 +165,11 @@ export const FocusViewComponentRenderer: React.FC<FocusViewComponentRendererProp
     case 'voice-input':
       return (
         <div className="h-full flex flex-col items-center justify-center gap-4 p-8">
-          <VoiceButton size="md" />
+          <VoiceButton
+            size="md"
+            userId="focus-view-user"
+            instanceId={component.instanceId || component.id}
+          />
           <p className="text-sm text-muted-foreground text-center">
             Click to start voice interaction
           </p>

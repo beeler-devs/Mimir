@@ -100,7 +100,7 @@ export class ComponentErrorBoundary extends Component<Props, State> {
             <div className="flex gap-2 justify-center">
               <Button
                 onClick={this.handleReset}
-                variant="default"
+                variant="primary"
                 size="sm"
                 className="gap-2"
               >

@@ -58,10 +58,27 @@ const WorkspaceContextBridge: React.FC<{ children: React.ReactNode }> = ({ child
   const createInstanceLegacy = async (
     title: string,
     type: InstanceType,
-    additionalData?: Record<string, unknown>
+    additionalData?: Record<string, unknown>,
+    initialPrompt?: string
   ): Promise<void> => {
     const newInstance = await instanceCtx.createInstance(title, type, additionalData);
     if (newInstance) {
+      // If user provided an initial prompt, create a chat and add the message
+      if (initialPrompt && initialPrompt.trim().length > 0) {
+        try {
+          const { createChat, saveChatMessage } = await import('@/lib/db/chats');
+          const newChat = await createChat();
+          await saveChatMessage(newChat.id, {
+            parentId: null,
+            role: 'user',
+            content: initialPrompt.trim(),
+          });
+          localStorage.setItem('mimir.activeChatId', newChat.id);
+        } catch (error) {
+          console.error('Failed to create initial chat message:', error);
+          // Don't block instance creation if chat creation fails
+        }
+      }
       router.push(`/workspace/${newInstance.type}/${newInstance.id}`);
     }
   };

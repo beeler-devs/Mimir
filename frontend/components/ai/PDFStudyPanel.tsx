@@ -562,6 +562,34 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
       return;
     }
 
+    // Detect study material commands
+    const detectStudyCommand = (message: string): 'quiz' | 'flashcards' | 'summary' | null => {
+      const lower = message.toLowerCase();
+      if (/\b(generate|create|make)\s+(quiz|quizzes)\b/i.test(lower)) return 'quiz';
+      if (/\b(generate|create|make)\s+(flashcard|flashcards)\b/i.test(lower)) return 'flashcards';
+      if (/\b(generate|create|make|write)\s+(summary|summarize)\b/i.test(lower)) return 'summary';
+      return null;
+    };
+
+    const command = detectStudyCommand(content);
+    if (command && activeInstance) {
+      // Switch to the appropriate study mode and trigger generation
+      setStudyMode(command);
+
+      // Trigger the generation function after a brief delay to ensure UI updates
+      setTimeout(() => {
+        if (command === 'quiz') {
+          generateQuiz();
+        } else if (command === 'flashcards') {
+          generateFlashcards();
+        } else if (command === 'summary') {
+          generateSummary();
+        }
+      }, 100);
+
+      // Continue sending message to chat for context
+    }
+
     setLoading(true);
     let savedUserMessage: ChatNode | null = null;
 

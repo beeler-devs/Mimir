@@ -262,6 +262,22 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       return;
     }
 
+    // Detect study material commands (quiz, flashcards, summary)
+    const detectStudyCommand = (message: string): boolean => {
+      const lower = message.toLowerCase();
+      return /\b(generate|create|make|write)\s+(quiz|quizzes|flashcard|flashcards|summary|summarize)\b/i.test(lower);
+    };
+
+    // Check if user is requesting study materials
+    if (detectStudyCommand(content)) {
+      // Study materials only available for PDF and Lecture instances
+      if (!activeInstance || (activeInstance.type !== 'pdf' && activeInstance.type !== 'lecture')) {
+        // Show a toast/notification that study materials are only for PDFs
+        alert('Study materials (quizzes, flashcards, summaries) are only available for PDF and Lecture instances. Please open a PDF or Lecture to use these features.');
+        return;
+      }
+    }
+
     setLoading(true);
     let savedUserMessage: ChatNode | null = null;
 
