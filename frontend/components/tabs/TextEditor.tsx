@@ -82,7 +82,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({ content, onChange }) => 
         placeholder="Start writing your notes, problem sets, or essays here...&#10;&#10;Select any text and click 'Ask Mimir' to get explanations or guidance."
       />
       
-      <div className="mt-4 text-sm text-muted-foreground">
+      <div className="my-4 px-4 text-sm text-muted-foreground">
         {content.split(/\s+/).filter(Boolean).length} words · {content.length} characters
       </div>
     </div>
