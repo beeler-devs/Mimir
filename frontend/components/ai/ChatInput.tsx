@@ -7,7 +7,8 @@ import { findMentionableItems } from '@/lib/mentions';
 import { useActiveLearningMode, getAllLearningModes, getLearningModeConfig } from '@/lib/learningMode';
 
 interface ChatInputProps {
-  onSend: (message: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => void;
+  onSend: (message: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[], ensuredChatId?: string) => void;
+  onCreateChat?: () => Promise<string>;
   disabled?: boolean;
   loading?: boolean;
   instances?: WorkspaceInstance[];
@@ -34,6 +35,7 @@ export interface ChatInputRef {
  */
 export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   onSend,
+  onCreateChat,
   disabled = false,
   loading = false,
   instances = [],
@@ -109,32 +111,43 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     }
   }, [autocompleteQuery, showAutocomplete, instances, folders, activeInstance]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (message.trim() && !loading) {
+      // If onCreateChat is provided, call it first (creates chat if none exists)
+      let ensuredChatId: string | undefined;
+      if (onCreateChat) {
+        try {
+          ensuredChatId = await onCreateChat();
+        } catch (error) {
+          console.error('Failed to ensure chat exists:', error);
+          return;
+        }
+      }
+
       let messageToSend = message.trim();
-      
+
       // Auto-detect lecture keywords and add mentions if in lecture context
       if (activeInstance?.type === 'lecture') {
         const hasAtTranscript = /@transcript\b/i.test(messageToSend);
         const hasAtSlides = /@(slides|pdf)\b/i.test(messageToSend);
         const hasTranscriptKeyword = /\btranscript\b/i.test(messageToSend);
         const hasSlidesKeyword = /\b(slides|pdf)\b/i.test(messageToSend);
-        
+
         // Add @transcript if user mentioned transcript without @
         if (!hasAtTranscript && hasTranscriptKeyword) {
           messageToSend = messageToSend.replace(/\btranscript\b/i, '@transcript');
         }
-        
+
         // Add @slides if user mentioned slides or pdf without @
         if (!hasAtSlides && hasSlidesKeyword) {
           messageToSend = messageToSend.replace(/\b(slides|pdf)\b/i, '@$1');
         }
       }
-      
-      const finalMessage = contextText 
+
+      const finalMessage = contextText
         ? `Context: ${contextText}\n\n${messageToSend}`
         : messageToSend;
-      onSend(finalMessage, activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined);
+      onSend(finalMessage, activeMode, attachedPdfs.length > 0 ? attachedPdfs : undefined, ensuredChatId);
       setMessage('');
       setContextText('');
       setShowAutocomplete(false);

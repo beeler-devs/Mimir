@@ -126,8 +126,19 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     },
   }));
 
+  // Handler for ensuring a chat exists (creates only if needed)
+  const handleEnsureChat = async (): Promise<string> => {
+    // If chat already exists, return it
+    if (chatId) {
+      return chatId;
+    }
+
+    // Otherwise, create a new chat and return its ID
+    return await handleNewChat();
+  };
+
   // Handler for creating a new chat
-  const handleNewChat = async () => {
+  const handleNewChat = async (): Promise<string> => {
     try {
       const newChat = await createChat();
       setNodes([]);
@@ -144,8 +155,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       // Reload chats list
       const userChats = await loadUserChats();
       setChats(userChats);
+
+      return newChat.id;
     } catch (error) {
       console.error('Failed to create new chat:', error);
+      throw error;
     }
   };
 
@@ -227,6 +241,9 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     const initializeChat = async () => {
       try {
         const storedChatId = localStorage.getItem('mimir.activeChatId');
+        const userChats = await loadUserChats();
+        setChats(userChats);
+
         if (storedChatId) {
           const messages = await loadChatMessages(storedChatId);
           setNodes(messages);
@@ -234,13 +251,30 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
           if (messages.length > 0) {
             setActiveNodeId(messages[messages.length - 1].id);
           }
+
+          // Add to open tabs if not already present
+          const chat = userChats.find(c => c.id === storedChatId);
+          if (chat) {
+            setOpenChatTabs(prev => {
+              const exists = prev.some(tab => tab.id === storedChatId);
+              if (!exists) {
+                return [...prev, { id: chat.id, title: chat.title || 'New Chat' }];
+              }
+              return prev;
+            });
+          }
         } else {
           const newChat = await createChat();
           setChatId(newChat.id);
           localStorage.setItem('mimir.activeChatId', newChat.id);
+
+          // Add new chat to tabs
+          setOpenChatTabs([{ id: newChat.id, title: 'New Chat' }]);
+
+          // Reload chats to include the new one
+          const updatedChats = await loadUserChats();
+          setChats(updatedChats);
         }
-        const userChats = await loadUserChats();
-        setChats(userChats);
       } catch (error) {
         console.error('Error initializing chat:', error);
       } finally {
@@ -256,9 +290,13 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
     }
   }, [chatId]);
 
-  const handleSendMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[]) => {
-    if (!chatId) {
-      console.error('No active chat');
+  const handleSendMessage = async (content: string, learningMode?: LearningMode, pdfAttachments?: PdfAttachment[], ensuredChatId?: string) => {
+    // Use ensured chat ID if provided, otherwise fall back to state
+    const activeChatId = ensuredChatId || chatId;
+
+    // Guard: Don't send if no active chat or empty content
+    if (!activeChatId || !content?.trim()) {
+      console.error('Cannot send message: no active chat or empty content');
       return;
     }
 
@@ -320,7 +358,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
         }
       }
 
-      savedUserMessage = await saveChatMessage(chatId, {
+      savedUserMessage = await saveChatMessage(activeChatId, {
         parentId: activeNodeId,
         role: 'user',
         content: content,
@@ -335,11 +373,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       if (nodes.length === 0) {
         // Use simple title initially
         const simpleTitle = generateChatTitle(content);
-        await updateChatTitle(chatId, simpleTitle);
+        await updateChatTitle(activeChatId, simpleTitle);
 
         // Update tab title immediately
         setOpenChatTabs(prev => prev.map(tab =>
-          tab.id === chatId ? { ...tab, title: simpleTitle } : tab
+          tab.id === activeChatId ? { ...tab, title: simpleTitle } : tab
         ));
       }
 
@@ -423,7 +461,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
                 fullContent = data.content;
                 suggestedAnimation = data.suggestedAnimation;
 
-                const savedAIMessage = await saveChatMessage(chatId, {
+                const savedAIMessage = await saveChatMessage(activeChatId, {
                   parentId: savedUserMessage.id,
                   role: 'assistant',
                   content: fullContent,
@@ -447,11 +485,11 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
                   // Generate AI title asynchronously (don't block UI)
                   generateAIChatTitle(titleMessages).then(async (aiTitle) => {
-                    await updateChatTitle(chatId, aiTitle);
+                    await updateChatTitle(activeChatId, aiTitle);
 
                     // Update tab title
                     setOpenChatTabs(prev => prev.map(tab =>
-                      tab.id === chatId ? { ...tab, title: aiTitle } : tab
+                      tab.id === activeChatId ? { ...tab, title: aiTitle } : tab
                     ));
 
                     // Reload chats list
@@ -581,6 +619,7 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       <ChatInput
         ref={chatInputRef}
         onSend={handleSendMessage}
+        onCreateChat={handleEnsureChat}
         loading={loading}
         instances={instances}
         folders={folders}
