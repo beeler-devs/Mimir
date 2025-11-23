@@ -45,6 +45,35 @@ function InstancePageContent() {
 
   const [localError, setLocalError] = useState<string | null>(null);
   const [contextText, setContextText] = useState<string | null>(null);
+  
+  // Handle auto-trigger from URL parameters
+  const [autoTrigger, setAutoTrigger] = useState<{ mode: 'quiz' | 'flashcards' | 'summary'; instructions?: string | null } | null>(null);
+  
+  // Extract and parse auto-trigger from URL on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const autoTriggerParam = urlParams.get('autoTrigger');
+      
+      if (autoTriggerParam) {
+        try {
+          const parsed = JSON.parse(autoTriggerParam);
+          if (parsed && parsed.mode && ['quiz', 'flashcards', 'summary'].includes(parsed.mode)) {
+            setAutoTrigger({
+              mode: parsed.mode,
+              instructions: parsed.instructions || null,
+            });
+            
+            // Clean up URL (remove the query parameter)
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+          }
+        } catch (error) {
+          console.error('Failed to parse autoTrigger param:', error);
+        }
+      }
+    }
+  }, []);
 
   // Refs for panel components
   const aiSidePanelRef = useRef<AISidePanelRef>(null);
@@ -339,6 +368,8 @@ function InstancePageContent() {
               contextText={contextText}
               onContextRemoved={() => setContextText(null)}
               getCurrentPageImage={getCurrentPageImage}
+              autoTrigger={autoTrigger}
+              onAutoTriggerComplete={() => setAutoTrigger(null)}
             />
           ) : (
             <AISidePanel

@@ -198,6 +198,36 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
     }
   }, [showModeDropdown]);
 
+  // Parse study material commands from user input
+  const parseStudyCommand = (text: string): { command: 'quiz' | 'flashcards' | 'summary' | null; instructions: string | null } => {
+    const lower = text.toLowerCase().trim();
+    
+    // Detect quiz command
+    if (/\b(generate|create|make|write)\s+(quiz|quizzes)\b/i.test(lower)) {
+      // Extract additional instructions (everything after the command)
+      const match = lower.match(/\b(generate|create|make|write)\s+(quiz|quizzes)\s+(.+)/i);
+      const instructions = match?.[3]?.trim() || null;
+      return { command: 'quiz', instructions };
+    }
+    
+    // Detect flashcards command
+    if (/\b(generate|create|make|write)\s+(flashcard|flashcards)\b/i.test(lower)) {
+      const match = lower.match(/\b(generate|create|make|write)\s+(flashcard|flashcards)\s+(.+)/i);
+      const instructions = match?.[3]?.trim() || null;
+      return { command: 'flashcards', instructions };
+    }
+    
+    // Detect summary command
+    if (/\b(generate|create|make|write|summarize)\s+(summary|summarize)?\b/i.test(lower) || /^summarize\b/i.test(lower)) {
+      const match = lower.match(/\b(generate|create|make|write|summarize)\s+(summary|summarize)?\s*(.+)/i) || 
+                    lower.match(/^summarize\s+(.+)/i);
+      const instructions = match?.[3]?.trim() || match?.[1]?.trim() || null;
+      return { command: 'summary', instructions };
+    }
+    
+    return { command: null, instructions: null };
+  };
+
   const handleSubmit = async () => {
     if (isSubmitDisabled()) return;
 
@@ -306,6 +336,15 @@ export const CentralDashboard: React.FC<CentralDashboardProps> = ({ onCreateInst
               storagePath: uploadResult.path,
               processingStatus: 'completed',
             };
+            
+            // Check if user provided a study command (quiz/flashcards/summary)
+            const studyCommand = parseStudyCommand(input);
+            if (studyCommand.command) {
+              additionalData.autoTrigger = {
+                mode: studyCommand.command,
+                instructions: studyCommand.instructions,
+              };
+            }
           } catch (uploadError) {
             console.error('PDF upload failed:', uploadError);
             setUploadProgress('PDF upload failed');

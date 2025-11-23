@@ -53,6 +53,8 @@ interface PDFStudyPanelProps {
   contextText?: string | null;
   onContextRemoved?: () => void;
   getCurrentPageImage?: () => Promise<string | null>;
+  autoTrigger?: { mode: 'quiz' | 'flashcards' | 'summary'; instructions?: string | null } | null;
+  onAutoTriggerComplete?: () => void;
 }
 
 export interface PDFStudyPanelRef {
@@ -109,6 +111,8 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
   contextText,
   onContextRemoved,
   getCurrentPageImage,
+  autoTrigger,
+  onAutoTriggerComplete,
 }, ref) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -536,6 +540,69 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     loadStudyMaterials();
   }, [activeInstance]);
 
+  // Auto-trigger study mode generation when autoTrigger prop is provided
+  useEffect(() => {
+    if (!autoTrigger || !activeInstance) return;
+    
+    console.log('[PDFStudyPanel] Auto-trigger detected:', autoTrigger);
+    
+    // Switch to the requested study mode
+    setStudyMode(autoTrigger.mode);
+    
+    // Wait for content to be available, then trigger generation
+    const triggerGeneration = async () => {
+      try {
+        // Wait for content to be loaded (with timeout)
+        const maxWaitTime = 10000; // 10 seconds max
+        const startTime = Date.now();
+        let contentAvailable = false;
+        
+        console.log('[PDFStudyPanel] Waiting for content to load...');
+        
+        // Poll for content availability
+        while (Date.now() - startTime < maxWaitTime) {
+          const contentContext = getContentContext();
+          if (contentContext && contentContext.trim().length > 0) {
+            contentAvailable = true;
+            console.log('[PDFStudyPanel] Content loaded, proceeding with generation');
+            break;
+          }
+          
+          // Wait a bit before checking again (exponential backoff)
+          const waitTime = Math.min(1000, 100 * Math.pow(2, Math.floor((Date.now() - startTime) / 1000)));
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+        
+        if (!contentAvailable) {
+          console.error('[PDFStudyPanel] Content not available after timeout');
+          alert('PDF content is not ready yet. Please wait for the PDF to finish loading and try again manually.');
+          onAutoTriggerComplete?.();
+          return;
+        }
+        
+        // Content is available, proceed with generation
+        if (autoTrigger.mode === 'quiz') {
+          await generateQuiz(autoTrigger.instructions);
+        } else if (autoTrigger.mode === 'flashcards') {
+          await generateFlashcards(autoTrigger.instructions);
+        } else if (autoTrigger.mode === 'summary') {
+          await generateSummary(autoTrigger.instructions);
+        }
+        
+        console.log('[PDFStudyPanel] Auto-trigger generation complete');
+        
+        // Notify parent that trigger is complete
+        onAutoTriggerComplete?.();
+      } catch (error) {
+        console.error('[PDFStudyPanel] Auto-trigger generation failed:', error);
+        // Still notify parent even if there's an error
+        onAutoTriggerComplete?.();
+      }
+    };
+    
+    triggerGeneration();
+  }, [autoTrigger]); // Only trigger when autoTrigger changes
+
   // Get content text for context (supports both PDF and Lecture instances)
   const getContentContext = (): string => {
     if (activeInstance?.type === 'pdf' && activeInstance.data.fullText) {
@@ -828,7 +895,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
     }
   };
 
-  const generateFlashcards = async () => {
+  const generateFlashcards = async (instructions?: string | null) => {
     setGeneratingFlashcards(true);
     // Clear flashcard chat when generating new flashcards
     setFlashcardChatNodes([]);
@@ -843,13 +910,14 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
-      // Build request body based on focus input
+      // Build request body based on focus input or instructions
+      const focusValue = instructions || studyModeFocus;
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
         pdfText: contentContext,
-        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+        scope: focusValue.trim().length === 0 ? 'entire' : 'custom',
       };
-      if (studyModeFocus.trim().length > 0) {
-        requestBody.focus = studyModeFocus;
+      if (focusValue.trim().length > 0) {
+        requestBody.focus = focusValue;
       }
 
       const response = await fetch(`${backendUrl}/study-tools/flashcards`, {
@@ -876,7 +944,7 @@ export const PDFStudyPanel = React.forwardRef<PDFStudyPanelRef, PDFStudyPanelPro
             data.flashcards,
             'Flashcards',
             undefined,
-            { focus: studyModeFocus || undefined }
+            { focus: focusValue || undefined }
           );
           setLoadedFlashcardSetId(savedFlashcardSet.id);
           setSelectedFlashcardSetId(savedFlashcardSet.id);
@@ -1100,7 +1168,7 @@ The user is studying this flashcard and may ask questions about it, need help un
     }
   };
 
-  const generateQuiz = async () => {
+  const generateQuiz = async (instructions?: string | null) => {
     setGeneratingQuiz(true);
     try {
       const contentContext = getContentContext();
@@ -1112,13 +1180,14 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
-      // Build request body based on focus input
+      // Build request body based on focus input or instructions
+      const focusValue = instructions || studyModeFocus;
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
         pdfText: contentContext,
-        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+        scope: focusValue.trim().length === 0 ? 'entire' : 'custom',
       };
-      if (studyModeFocus.trim().length > 0) {
-        requestBody.focus = studyModeFocus;
+      if (focusValue.trim().length > 0) {
+        requestBody.focus = focusValue;
       }
 
       const response = await fetch(`${backendUrl}/study-tools/quiz`, {
@@ -1148,7 +1217,7 @@ The user is studying this flashcard and may ask questions about it, need help un
             })),
             'Quiz',
             undefined,
-            { focus: studyModeFocus || undefined }
+            { focus: focusValue || undefined }
           );
 
           // Update quiz questions with IDs from saved quiz
@@ -1197,7 +1266,7 @@ The user is studying this flashcard and may ask questions about it, need help un
     }
   };
 
-  const generateSummary = async () => {
+  const generateSummary = async (instructions?: string | null) => {
     setGeneratingSummary(true);
     setSummary(''); // Clear previous summary
     try {
@@ -1210,13 +1279,14 @@ The user is studying this flashcard and may ask questions about it, need help un
 
       const backendUrl = process.env.NEXT_PUBLIC_MANIM_WORKER_URL || process.env.MANIM_WORKER_URL || 'http://localhost:8001';
 
-      // Build request body based on focus input
+      // Build request body based on focus input or instructions
+      const focusValue = instructions || studyModeFocus;
       const requestBody: { pdfText: string; scope: string; focus?: string } = {
         pdfText: contentContext,
-        scope: studyModeFocus.trim().length === 0 ? 'entire' : 'custom',
+        scope: focusValue.trim().length === 0 ? 'entire' : 'custom',
       };
-      if (studyModeFocus.trim().length > 0) {
-        requestBody.focus = studyModeFocus;
+      if (focusValue.trim().length > 0) {
+        requestBody.focus = focusValue;
       }
 
       const response = await fetch(`${backendUrl}/study-tools/summary/stream`, {
@@ -1275,7 +1345,7 @@ The user is studying this flashcard and may ask questions about it, need help un
           await saveSummary(
             activeInstance.id,
             fullContent,
-            { focus: studyModeFocus || undefined }
+            { focus: focusValue || undefined }
           );
         } catch (error) {
           console.error('Error saving summary:', error);
@@ -1472,7 +1542,7 @@ The user is studying this flashcard and may ask questions about it, need help un
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Flashcard Sets</h3>
                 <button
-                  onClick={generateFlashcards}
+                  onClick={() => generateFlashcards()}
                   disabled={generatingFlashcards}
                   className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm font-medium transition-colors"
                 >
@@ -1579,7 +1649,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
                 {/* Generate Button */}
                 <button
-                  onClick={generateFlashcards}
+                  onClick={() => generateFlashcards()}
                   disabled={generatingFlashcards}
                   className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
@@ -1617,7 +1687,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                   </div>
                   <div className="flex items-center gap-4">
                     <button
-                      onClick={generateFlashcards}
+                      onClick={() => generateFlashcards()}
                       className="text-primary hover:underline"
                     >
                       Regenerate
@@ -1723,7 +1793,7 @@ The user is studying this flashcard and may ask questions about it, need help un
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">Quiz History</h3>
                 <button
-                  onClick={generateQuiz}
+                  onClick={() => generateQuiz()}
                   disabled={generatingQuiz}
                   className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90 text-sm font-medium transition-colors"
                 >
@@ -1849,7 +1919,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
                 {/* Generate Button */}
                 <button
-                  onClick={generateQuiz}
+                  onClick={() => generateQuiz()}
                   disabled={generatingQuiz}
                   className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
@@ -1969,7 +2039,7 @@ The user is studying this flashcard and may ask questions about it, need help un
                 </div>
               </div>
               <button
-                onClick={generateQuiz}
+                onClick={() => generateQuiz()}
                 className="text-xs text-primary hover:underline"
               >
                 New Quiz
@@ -2207,7 +2277,7 @@ The user is studying this flashcard and may ask questions about it, need help un
 
                 {/* Generate Button */}
                 <button
-                  onClick={generateSummary}
+                  onClick={() => generateSummary()}
                   disabled={generatingSummary}
                   className="w-full px-4 py-3 bg-muted text-foreground rounded-md hover:opacity-80 disabled:opacity-50 font-medium text-sm"
                 >
@@ -2223,7 +2293,7 @@ The user is studying this flashcard and may ask questions about it, need help un
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Document Summary</h3>
               <button
-                onClick={generateSummary}
+                onClick={() => generateSummary()}
                 className="text-xs text-primary hover:underline"
               >
                 Regenerate

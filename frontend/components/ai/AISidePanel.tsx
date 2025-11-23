@@ -546,17 +546,19 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
 
       setNodes(prev => prev.filter(node => !node.id.startsWith('streaming-')));
 
-      try {
-        const errorMessage = await saveChatMessage(chatId, {
-          parentId: savedUserMessage?.id || activeNodeId,
-          role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
-        });
-        setNodes(prev => [...prev, errorMessage]);
-        setActiveNodeId(errorMessage.id);
-      } catch (dbError) {
-        console.error('Failed to save error message:', dbError);
-        console.error('Database error details:', JSON.stringify(dbError, null, 2));
+      if (chatId) {
+        try {
+          const errorMessage = await saveChatMessage(chatId, {
+            parentId: savedUserMessage?.id || activeNodeId,
+            role: 'assistant',
+            content: 'Sorry, I encountered an error. Please try again.',
+          });
+          setNodes(prev => [...prev, errorMessage]);
+          setActiveNodeId(errorMessage.id);
+        } catch (dbError) {
+          console.error('Failed to save error message:', dbError);
+          console.error('Database error details:', JSON.stringify(dbError, null, 2));
+        }
       }
     } finally {
       setLoading(false);

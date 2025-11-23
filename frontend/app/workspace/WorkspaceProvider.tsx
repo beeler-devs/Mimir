@@ -79,7 +79,19 @@ const WorkspaceContextBridge: React.FC<{ children: React.ReactNode }> = ({ child
           // Don't block instance creation if chat creation fails
         }
       }
-      router.push(`/workspace/${newInstance.type}/${newInstance.id}`);
+      
+      // Extract auto-trigger data if present (for PDF/Lecture instances)
+      const autoTrigger = additionalData?.autoTrigger as { mode: string; instructions?: string } | undefined;
+      
+      // Build navigation URL with auto-trigger query param if present
+      let navUrl = `/workspace/${newInstance.type}/${newInstance.id}`;
+      if (autoTrigger) {
+        const params = new URLSearchParams();
+        params.set('autoTrigger', JSON.stringify(autoTrigger));
+        navUrl += `?${params.toString()}`;
+      }
+      
+      router.push(navUrl);
     }
   };
 

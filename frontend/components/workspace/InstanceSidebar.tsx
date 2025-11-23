@@ -543,7 +543,7 @@ export const InstanceSidebar: React.FC<InstanceSidebarProps> = ({
         <div className="px-4 pt-4 space-y-2">
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg text-sm transition-colors hover:bg-[var(--sidebar-hover)] dark:hover:bg-muted/70"
-            onClick={onCreateInstance}
+            onClick={() => router.push('/workspace')}
           >
             <Plus className="h-4 w-4" />
             <span>Add instance</span>
