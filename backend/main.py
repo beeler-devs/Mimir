@@ -683,6 +683,13 @@ async def chat_stream(request: Request):
 
                 # Add instance information
                 if chat_request.workspaceContext.instances:
+                    # Debug: Log instances received
+                    logger.warning("=== DEBUG: Backend received instances ===")
+                    for idx, inst in enumerate(chat_request.workspaceContext.instances):
+                        has_fulltext = hasattr(inst, 'fullText') and inst.fullText is not None
+                        fulltext_len = len(inst.fullText) if has_fulltext else 0
+                        logger.warning(f"Instance {idx}: type={inst.type}, title={inst.title}, hasFullText={has_fulltext}, fullTextLength={fulltext_len}")
+
                     context_parts.append(
                         "\nCurrent workspace context includes:")
                     # First instance is typically the active one

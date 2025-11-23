@@ -307,6 +307,17 @@ export const AISidePanel = React.forwardRef<AISidePanelRef, AISidePanelProps>(({
       const rawMentions = parseMentions(content);
       const resolvedMentions = resolveMentions(rawMentions, instances, folders);
 
+      // Debug: Log instances and mention resolution
+      console.log('=== DEBUG: Instances available ===');
+      console.log('Instances:', instances.map(i => ({
+        id: i.id,
+        title: i.title,
+        type: i.type,
+        hasFullText: i.type === 'pdf' ? !!i.data?.fullText : 'N/A',
+        fullTextLength: i.type === 'pdf' ? i.data?.fullText?.length : 'N/A'
+      })));
+      console.log('Resolved mentions:', resolvedMentions);
+
       const annotationExports: Record<string, string> = {};
       if (activeInstance?.type === 'annotate' && annotationCanvasRef?.current) {
         try {
