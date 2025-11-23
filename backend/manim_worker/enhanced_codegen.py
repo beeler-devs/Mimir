@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Optional, Callable
 
 # Add Math-To-Manim to Python path
-# Path from backend/manim_worker to manim-to-code/Math-To-Manim/src
+# Path from backend/manim_worker to manim-to-code/Math-To-Manim (root, not src)
 _current_file = Path(__file__).resolve()
-_math_to_manim_path = _current_file.parent.parent.parent / "manim-to-code" / "Math-To-Manim" / "src"
+_math_to_manim_path = _current_file.parent.parent.parent / "manim-to-code" / "Math-To-Manim"
 if str(_math_to_manim_path) not in sys.path:
     sys.path.insert(0, str(_math_to_manim_path))
 
@@ -58,7 +58,7 @@ from manim_worker.layout_validator import validate_layout, suggest_layout_fixes
 
 # Try to import orchestrator
 try:
-    from agents.orchestrator import ReverseKnowledgeTreeOrchestrator, AnimationResult
+    from src.agents.orchestrator import ReverseKnowledgeTreeOrchestrator, AnimationResult
     ORCHESTRATOR_AVAILABLE = True
     logger.info("=" * 70)
     logger.info("✓ Math-To-Manim orchestrator successfully imported")
@@ -70,7 +70,7 @@ except ImportError as e:
     logger.error("✗ Math-To-Manim orchestrator import failed")
     logger.error(f"  Error: {e}")
     logger.error("  This means videos will use simple codegen (shorter, less educational)")
-    logger.error("  To fix: Ensure claude-agent-sdk is installed: pip install claude-agent-sdk")
+    logger.error("  To fix: Ensure Math-To-Manim is cloned and claude-agent-sdk is installed")
     logger.error("=" * 70)
     ORCHESTRATOR_AVAILABLE = False
     ReverseKnowledgeTreeOrchestrator = None
