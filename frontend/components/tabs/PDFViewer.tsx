@@ -70,6 +70,13 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// Create PDF.js options object outside component for stable reference
+const PDF_OPTIONS = {
+  cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
+
 interface PDFMetadata {
   title?: string;
   author?: string;
@@ -129,6 +136,7 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
   // Refs for scroll tracking
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
@@ -141,16 +149,6 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
 
   // Metadata panel
   const [showMetadata, setShowMetadata] = useState(false);
-
-  // Memoize PDF.js options to prevent unnecessary reloads
-  const pdfOptions = useMemo(
-    () => ({
-      cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
-    }),
-    [] // Empty deps - these values never change
-  );
 
   // Expose methods via ref
   React.useImperativeHandle(ref, () => ({
@@ -341,27 +339,85 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
     setScale(prev => Math.max(prev - 0.25, 0.5));
   };
 
-  // Text selection for chat
-  const handleTextSelection = () => {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-
-    if (text && text.length > 0) {
-      setSelectedText(text);
-      const range = selection?.getRangeAt(0);
-      const rect = range?.getBoundingClientRect();
-
-      if (rect) {
-        setPopupPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top - 10,
-        });
-        setShowPopup(true);
-      }
-    } else {
-      setShowPopup(false);
+  // Text selection for chat with debouncing and container scoping
+  const handleTextSelection = useCallback(() => {
+    // Clear any pending timeout
+    if (selectionTimeoutRef.current) {
+      clearTimeout(selectionTimeoutRef.current);
     }
-  };
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      setShowPopup(false);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const text = selection.toString().trim();
+
+    // Check if selection is within the PDF container
+    if (!containerRef.current) {
+      setShowPopup(false);
+      return;
+    }
+
+    const containerElement = containerRef.current;
+
+    // Check if the selection is within the PDF container
+    const isSelectionInContainer = containerElement.contains(range.commonAncestorContainer);
+
+    if (!isSelectionInContainer) {
+      setShowPopup(false);
+      return;
+    }
+
+    // Validate that selection is within a text layer element (not canvas)
+    // Use a more lenient check that traverses the parent chain
+    let node: Node | null = range.commonAncestorContainer;
+    let foundTextLayer = false;
+    
+    // Traverse up the parent chain to find text layer
+    while (node && node !== containerElement) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as Element;
+        if (element.classList?.contains('react-pdf__Page__textContent')) {
+          foundTextLayer = true;
+          break;
+        }
+      }
+      node = node.parentNode;
+    }
+    
+    if (!foundTextLayer) {
+      // Selection is not in text layer - don't show popup but don't clear selection
+      // (user might be selecting from elsewhere)
+      setShowPopup(false);
+      return;
+    }
+
+    // Debounce popup appearance to avoid interrupting selection
+    selectionTimeoutRef.current = setTimeout(() => {
+      if (text && text.length > 0) {
+        const rect = range.getBoundingClientRect();
+
+        // Validate rect has valid dimensions
+        if (rect && rect.width > 0 && rect.height > 0) {
+          setSelectedText(text);
+          setPopupPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top - 10,
+          });
+          setShowPopup(true);
+        } else {
+          setShowPopup(false);
+          setSelectedText('');
+        }
+      } else {
+        setShowPopup(false);
+        setSelectedText('');
+      }
+    }, 150); // 150ms delay to allow selection to complete
+  }, []);
 
   const handleAddToChat = () => {
     if (selectedText && onAddToChat) {
@@ -405,12 +461,17 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
     }
   };
 
+  // Use selectionchange event instead of mouseup for better selection handling
   useEffect(() => {
-    document.addEventListener('mouseup', handleTextSelection);
+    document.addEventListener('selectionchange', handleTextSelection);
     return () => {
-      document.removeEventListener('mouseup', handleTextSelection);
+      document.removeEventListener('selectionchange', handleTextSelection);
+      // Clean up any pending timeout on unmount
+      if (selectionTimeoutRef.current) {
+        clearTimeout(selectionTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [handleTextSelection]);
 
   useEffect(() => {
     handleSearch();
@@ -759,7 +820,7 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
               console.error('PDF load error:', error);
             }}
             className="pdf-document"
-            options={pdfOptions}
+            options={PDF_OPTIONS}
           >
             {Array.from({ length: numPages }, (_, index) => index + 1).map((pageNumber) => (
               <div
@@ -769,8 +830,10 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
                 }}
                 className="relative shadow-2xl mb-4 bg-white"
                 data-page-number={pageNumber}
+                style={{ display: 'inline-block' }}
               >
                 <Page
+                  key={`page-${pageNumber}-scale-${scale}`}
                   pageNumber={pageNumber}
                   scale={scale}
                   renderTextLayer={true}
@@ -801,19 +864,16 @@ export const PDFViewer = React.forwardRef<PDFViewerRef, PDFViewerProps>(({
       {/* Text Selection Popup */}
       {showPopup && (
         <div
-          className="fixed z-50 px-3 py-2 border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
+          className="fixed z-50 px-3 py-2 bg-card border border-border rounded-lg shadow-lg animate-in fade-in zoom-in-95"
           style={{
             left: `${popupPosition.x}px`,
             top: `${popupPosition.y}px`,
             transform: 'translate(-50%, -100%)',
-            backgroundColor: '#F5F5F5',
-            borderRadius: '0.85rem',
-            borderColor: 'var(--border)',
           }}
         >
           <button
             onClick={handleAddToChat}
-            className="flex items-center gap-2 text-sm font-medium text-foreground hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 text-sm font-medium text-card-foreground hover:opacity-80 transition-opacity"
           >
             <MessageSquarePlus className="w-3.5 h-3.5" />
             Ask Mimir
