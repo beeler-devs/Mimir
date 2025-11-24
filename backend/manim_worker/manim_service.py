@@ -659,10 +659,15 @@ class ManimService:
                     )
 
                 scene_class = getattr(module, scene_class_name)
-                logger.info(f"Successfully imported {scene_class_name} class from {scene_path}")
-                
+                logger.info(f"✅ Successfully imported {scene_class_name} class from {scene_path}")
+                logger.info(f"🎬 RENDERING PHASE STARTING:")
+                logger.info(f"   • Scene class: {scene_class_name}")
+                logger.info(f"   • Code length: {len(code_content)} chars")
+                logger.info(f"   • Lines of code: {len(code_content.splitlines())}")
+                logger.info("")
+
             except Exception as e:
-                logger.error(f"Failed to import {scene_class_name}: {e}")
+                logger.error(f"❌ Failed to import {scene_class_name}: {e}")
                 logger.error(f"Generated code content:\n{code_content}")
                 raise
             

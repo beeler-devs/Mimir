@@ -221,69 +221,149 @@ def generate_and_validate_manim_scene(
     try:
         # Ensure API key is available
         _ensure_api_key()
-        
+
         report_progress("code_generation", "Initializing orchestrator...", 5)
-        
-        logger.info("=" * 70)
-        logger.info("🚀 USING MATH-TO-MANIM ORCHESTRATOR (Full Pipeline)")
-        logger.info(f"   Concept: {concept}")
-        logger.info(f"   Max tree depth: {max_depth}")
-        logger.info("=" * 70)
-        
+
+        logger.info("")
+        logger.info("🎬" + "=" * 68 + "🎬")
+        logger.info("║" + " " * 68 + "║")
+        logger.info("║" + " MATH-TO-MANIM ORCHESTRATOR - FULL 6-AGENT PIPELINE ".center(68) + "║")
+        logger.info("║" + " " * 68 + "║")
+        logger.info("🎬" + "=" * 68 + "🎬")
+        logger.info("")
+        logger.info("📋 INPUT:")
+        logger.info(f"   • Concept: {concept}")
+        logger.info(f"   • Max tree depth: {max_depth}")
+        logger.info(f"   • Student context: {'Yes (' + str(len(student_context)) + ' chars)' if student_context else 'No'}")
+        logger.info("")
+
         # Build full prompt with student context
         user_prompt = concept
         if student_context:
             user_prompt = f"{concept}\n\nStudent context: {student_context}"
-        
+            logger.info("📝 User prompt with context:")
+            logger.info(f"   {user_prompt[:200]}{'...' if len(user_prompt) > 200 else ''}")
+
         # Initialize orchestrator
         report_progress("code_generation", "Initializing orchestrator...", 10)
-        # Use the same model as the orchestrator agents (claude-sonnet-4-5)
-        # Allow override via CLAUDE_MODEL env var
         model_name = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
-        logger.info(f"Using Claude model: {model_name}")
+
+        logger.info("")
+        logger.info("⚙️  ORCHESTRATOR INITIALIZATION:")
+        logger.info(f"   • Model: {model_name}")
+        logger.info(f"   • Max tree depth: {max_depth}")
+        logger.info(f"   • Code generation: ENABLED")
+        logger.info(f"   • Nomic Atlas: DISABLED")
+        logger.info("")
+
         orchestrator = ReverseKnowledgeTreeOrchestrator(
             model=model_name,
             max_tree_depth=max_depth,
             enable_code_generation=True,
             enable_atlas=False
         )
-        
+
+        logger.info("✅ Orchestrator initialized successfully")
+        logger.info("")
+        logger.info("🚀 STARTING 6-AGENT PIPELINE...")
+        logger.info("   This will execute:")
+        logger.info("   1️⃣  ConceptAnalyzer - Parse user input")
+        logger.info("   2️⃣  PrerequisiteExplorer - Build knowledge tree recursively")
+        logger.info("   3️⃣  MathematicalEnricher - Add LaTeX equations")
+        logger.info("   4️⃣  VisualDesigner - Design visuals/colors/animations")
+        logger.info("   5️⃣  NarrativeComposer - Generate verbose prompt (2000+ tokens)")
+        logger.info("   6️⃣  CodeGenerator - Convert verbose prompt to Manim code")
+        logger.info("")
+
         report_progress("code_generation", "Building knowledge tree...", 20)
-        
+
         # Process through the full pipeline
-        # Use a temporary output directory
         temp_output_dir = Path(tempfile.gettempdir()) / "manim_orchestrator_output"
         temp_output_dir.mkdir(exist_ok=True)
-        
+
+        logger.info("📂 Output directory: " + str(temp_output_dir))
+        logger.info("")
+        logger.info("⏳ Running orchestrator.process()...")
+        logger.info("   (This may take 30-60 seconds for the full pipeline)")
+        logger.info("")
+
         report_progress("code_generation", "Processing through orchestrator pipeline...", 30)
+
+        import time
+        start_time = time.time()
         result: AnimationResult = orchestrator.process(user_prompt, output_dir=str(temp_output_dir))
+        elapsed_time = time.time() - start_time
+
+        logger.info("")
+        logger.info("✅ ORCHESTRATOR COMPLETED!")
+        logger.info(f"   Execution time: {elapsed_time:.1f} seconds")
+        logger.info("")
         
         report_progress("code_generation", "Code generation complete, validating...", 40)
-        
+
         # Extract Manim code
         if not result.manim_code:
+            logger.error("❌ CRITICAL: Orchestrator did not generate Manim code!")
             raise ValueError("Orchestrator did not generate Manim code")
 
         code = result.manim_code
 
+        logger.info("📊 ORCHESTRATOR RESULTS:")
         logger.info("=" * 70)
-        logger.info(f"✓ Orchestrator generated code ({len(code)} characters)")
-        logger.info(f"  Scene count: {result.scene_count}")
-        logger.info(f"  Total duration: {result.total_duration} seconds")
-        logger.info(f"  Concepts covered: {len(result.concept_order)}")
-        logger.info("  Full 6-agent pipeline completed successfully!")
+        logger.info(f"✅ Target Concept: {result.target_concept}")
+        logger.info(f"✅ Scene Count: {result.scene_count}")
+        logger.info(f"✅ Total Duration: {result.total_duration} seconds")
+        logger.info(f"✅ Concepts Covered: {len(result.concept_order)}")
+        logger.info("")
+        logger.info("📚 Concept Progression (Foundation → Target):")
+        for i, concept in enumerate(result.concept_order, 1):
+            marker = "🎯" if i == len(result.concept_order) else f"{i}."
+            logger.info(f"   {marker} {concept}")
+        logger.info("")
+        logger.info("📝 Verbose Prompt Generated:")
+        logger.info(f"   • Length: {len(result.verbose_prompt)} characters")
+        logger.info(f"   • Preview (first 300 chars):")
+        preview = result.verbose_prompt[:300].replace('\n', ' ')
+        logger.info(f"     \"{preview}...\"")
+        logger.info("")
+        logger.info("💻 Manim Code Generated:")
+        logger.info(f"   • Length: {len(code)} characters")
+        logger.info(f"   • Lines: {len(code.splitlines())}")
+        code_preview = '\n'.join(code.splitlines()[:15])
+        logger.info(f"   • Preview (first 15 lines):")
+        for line in code_preview.splitlines():
+            logger.info(f"     {line}")
+        if len(code.splitlines()) > 15:
+            logger.info(f"     ... ({len(code.splitlines()) - 15} more lines)")
+        logger.info("")
         logger.info("=" * 70)
+        logger.info("✅ FULL 6-AGENT PIPELINE COMPLETED SUCCESSFULLY!")
+        logger.info("=" * 70)
+        logger.info("")
+        logger.info("🔍 PROOF OF ORCHESTRATOR USAGE:")
+        logger.info(f"   ✓ Orchestrator initialized with max_depth={max_depth}")
+        logger.info(f"   ✓ orchestrator.process() called and completed")
+        logger.info(f"   ✓ Knowledge tree built with {len(result.concept_order)} concepts")
+        logger.info(f"   ✓ Verbose prompt generated ({len(result.verbose_prompt)} chars)")
+        logger.info(f"   ✓ Manim code generated from verbose prompt ({len(code)} chars)")
+        logger.info(f"   ✓ This code is now being used for rendering")
+        logger.info("")
 
         # Validate layout (non-blocking, just warnings)
+        logger.info("🔍 VALIDATION PHASE:")
+        logger.info("   • Checking layout constraints...")
         is_layout_valid, layout_warnings, layout_metrics = validate_layout(code)
         if layout_warnings:
-            logger.warning(f"Layout validation found {len(layout_warnings)} potential issues")
+            logger.warning(f"   ⚠️  Layout validation found {len(layout_warnings)} potential issues")
             suggestions = suggest_layout_fixes(code, layout_warnings)
             if suggestions:
-                logger.info(suggestions)
+                logger.info(f"   💡 Layout suggestions: {suggestions}")
+        else:
+            logger.info("   ✅ Layout validation passed")
 
         # For orchestrator-generated code, use lightweight validation
         # Only check Python syntax, don't try to run it or force scene names
+        logger.info("   • Checking Python syntax...")
         temp_dir = Path(tempfile.gettempdir()) / "manim_validation"
         temp_dir.mkdir(exist_ok=True)
 
@@ -295,8 +375,8 @@ def generate_and_validate_manim_scene(
         ok_py, py_err = funcs['check_python_compiles'](tmp_path)
 
         if not ok_py:
-            logger.warning(f"Python syntax error in orchestrator code: {py_err}")
-            logger.warning("Attempting repair with simple codegen...")
+            logger.warning(f"   ⚠️  Python syntax error detected: {py_err}")
+            logger.warning("   🔧 Attempting automatic repair...")
 
             # Try to repair with simple codegen's repair function
             funcs = _get_codegen_funcs()
@@ -307,14 +387,19 @@ def generate_and_validate_manim_scene(
             ok_py, py_err = funcs['check_python_compiles'](tmp_path)
 
             if not ok_py:
-                logger.error(f"Repair failed: {py_err}")
-                logger.warning("Falling back to simple codegen")
+                logger.error(f"   ❌ Repair failed: {py_err}")
+                logger.error("   ⚠️  FALLING BACK TO SIMPLE CODEGEN")
+                logger.error("   (Orchestrator code had unfixable syntax errors)")
                 from manim_worker.codegen import generate_and_validate_manim_scene as simple_generate
                 try:
                     tmp_path.unlink()
                 except:
                     pass
                 return simple_generate(concept, student_context)
+            else:
+                logger.info("   ✅ Code repaired successfully")
+        else:
+            logger.info("   ✅ Python syntax validation passed")
 
         # Clean up temp file
         try:
@@ -322,7 +407,19 @@ def generate_and_validate_manim_scene(
         except:
             pass
 
-        logger.info("✓ Orchestrator code validated successfully")
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info("✅ ORCHESTRATOR CODE VALIDATED AND READY FOR RENDERING")
+        logger.info("=" * 70)
+        logger.info("")
+        logger.info("📤 RETURNING ORCHESTRATOR-GENERATED CODE:")
+        logger.info(f"   • {len(code)} characters")
+        logger.info(f"   • {len(code.splitlines())} lines")
+        logger.info(f"   • {result.scene_count} scenes/concepts")
+        logger.info(f"   • {result.total_duration}s estimated duration")
+        logger.info("")
+        logger.info("🎬 This code will now be rendered by Manim...")
+        logger.info("")
 
         # Return the orchestrator code as-is (don't force GeneratedScene rename)
         return code
