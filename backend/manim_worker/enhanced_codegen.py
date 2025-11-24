@@ -206,7 +206,8 @@ def generate_and_validate_manim_scene(
     
     # Check if orchestrator should be used
     use_advanced = os.getenv("USE_MATH_TO_MANIM", "true").lower() == "true"
-    max_depth = int(os.getenv("MATH_TO_MANIM_MAX_DEPTH", "3"))
+    # Default to 4 to match Math-To-Manim's default (more comprehensive trees)
+    max_depth = int(os.getenv("MATH_TO_MANIM_MAX_DEPTH", "4"))
     
     # Fallback to simple codegen if orchestrator not available or disabled
     if not use_advanced or not ORCHESTRATOR_AVAILABLE:
