@@ -618,42 +618,51 @@ class ManimService:
             scene_path = job_dir / "generated_scene.py"
             with open(scene_path, 'w', encoding='utf-8') as f:
                 f.write(validated_code)
-            
+
             logger.info(f"Code validated and written to {scene_path}")
-            
-            # Verify the code contains GeneratedScene class before importing
+
+            # Extract the Scene class name from the generated code
+            import re
             with open(scene_path, 'r', encoding='utf-8') as f:
                 code_content = f.read()
-                if 'class GeneratedScene' not in code_content:
-                    raise ValueError(
-                        f"Generated code does not contain 'class GeneratedScene'. "
-                        f"Code preview: {code_content[:500]}..."
-                    )
-            
-            # Dynamically import the GeneratedScene class
+
+            # Find all Scene class definitions
+            scene_classes = re.findall(r'class\s+(\w+)\s*\(\s*(?:Three)?Scene\s*\)', code_content)
+
+            if not scene_classes:
+                raise ValueError(
+                    f"Generated code does not contain any Scene class definition. "
+                    f"Code preview: {code_content[:500]}..."
+                )
+
+            # Use the first Scene class found
+            scene_class_name = scene_classes[0]
+            logger.info(f"Found Scene class: {scene_class_name}")
+
+            # Dynamically import the Scene class
             try:
                 spec = importlib.util.spec_from_file_location("generated_scene", scene_path)
                 if spec is None or spec.loader is None:
                     raise ValueError(f"Failed to create module spec from {scene_path}")
-                
+
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                
+
                 # Verify the class exists
-                if not hasattr(module, 'GeneratedScene'):
+                if not hasattr(module, scene_class_name):
                     # Log what's actually in the module
                     available_attrs = [attr for attr in dir(module) if not attr.startswith('_')]
                     raise AttributeError(
-                        f"Module 'generated_scene' does not have 'GeneratedScene' attribute. "
+                        f"Module 'generated_scene' does not have '{scene_class_name}' attribute. "
                         f"Available attributes: {available_attrs}. "
                         f"Code preview: {code_content[:500]}..."
                     )
-                
-                scene_class = module.GeneratedScene
-                logger.info(f"Successfully imported GeneratedScene class from {scene_path}")
+
+                scene_class = getattr(module, scene_class_name)
+                logger.info(f"Successfully imported {scene_class_name} class from {scene_path}")
                 
             except Exception as e:
-                logger.error(f"Failed to import GeneratedScene: {e}")
+                logger.error(f"Failed to import {scene_class_name}: {e}")
                 logger.error(f"Generated code content:\n{code_content}")
                 raise
             

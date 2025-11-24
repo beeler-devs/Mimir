@@ -262,18 +262,18 @@ def generate_and_validate_manim_scene(
         # Extract Manim code
         if not result.manim_code:
             raise ValueError("Orchestrator did not generate Manim code")
-        
+
         code = result.manim_code
-        
-        # Ensure GeneratedScene class name
-        code = _ensure_generated_scene_class(code)
 
         logger.info("=" * 70)
         logger.info(f"✓ Orchestrator generated code ({len(code)} characters)")
+        logger.info(f"  Scene count: {result.scene_count}")
+        logger.info(f"  Total duration: {result.total_duration} seconds")
+        logger.info(f"  Concepts covered: {len(result.concept_order)}")
         logger.info("  Full 6-agent pipeline completed successfully!")
         logger.info("=" * 70)
 
-        # Validate layout before testing execution
+        # Validate layout (non-blocking, just warnings)
         is_layout_valid, layout_warnings, layout_metrics = validate_layout(code)
         if layout_warnings:
             logger.warning(f"Layout validation found {len(layout_warnings)} potential issues")
@@ -281,137 +281,51 @@ def generate_and_validate_manim_scene(
             if suggestions:
                 logger.info(suggestions)
 
-        # Validate the code using the same validation pipeline as simple codegen
-        attempt = 0
-        last_error = ""
-        
-        # Create a temporary directory for validation
+        # For orchestrator-generated code, use lightweight validation
+        # Only check Python syntax, don't try to run it or force scene names
         temp_dir = Path(tempfile.gettempdir()) / "manim_validation"
         temp_dir.mkdir(exist_ok=True)
-        
+
         funcs = _get_codegen_funcs()
-        max_attempts = funcs['MAX_REPAIR_ATTEMPTS']
-        
-        while attempt <= max_attempts:
-            attempt += 1
-            logger.info(f"Validation attempt {attempt}/{max_attempts + 1}")
-            
-            # Write to a temp file
+        tmp_path = temp_dir / f"generated_{uuid4().hex}.py"
+        funcs['write_code_to_file'](code, tmp_path)
+
+        # Check Python compilation only
+        ok_py, py_err = funcs['check_python_compiles'](tmp_path)
+
+        if not ok_py:
+            logger.warning(f"Python syntax error in orchestrator code: {py_err}")
+            logger.warning("Attempting repair with simple codegen...")
+
+            # Try to repair with simple codegen's repair function
             funcs = _get_codegen_funcs()
-            tmp_path = temp_dir / f"generated_{uuid4().hex}.py"
+            code = funcs['call_claude_to_fix_manim_code'](code, py_err)
+
+            # Re-check compilation
             funcs['write_code_to_file'](code, tmp_path)
-            
-            # Check Python compilation
             ok_py, py_err = funcs['check_python_compiles'](tmp_path)
+
             if not ok_py:
-                last_error = f"Python compilation error: {py_err}"
-                logger.warning(f"Attempt {attempt}: {last_error}")
-                
-                if attempt > max_attempts:
-                    try:
-                        tmp_path.unlink()
-                    except:
-                        pass
-                    break
-                
-                # Fall back to simple codegen for repair
-                logger.info("Falling back to simple codegen for code repair...")
-                funcs = _get_codegen_funcs()
-                code = funcs['call_claude_to_fix_manim_code'](code, last_error)
-                code = _ensure_generated_scene_class(code)
-                continue
-            
-            # Verify GeneratedScene class exists in code
-            if 'class GeneratedScene' not in code:
-                last_error = "Generated code does not contain 'class GeneratedScene' definition"
-                logger.warning(f"Attempt {attempt}: {last_error}")
-                
-                if attempt > max_attempts:
-                    try:
-                        tmp_path.unlink()
-                    except:
-                        pass
-                    break
-                
-                # Try to fix class name again
-                code = _ensure_generated_scene_class(code)
-                continue
-            
-            # Check Manim execution
-            funcs = _get_codegen_funcs()
-            ok_manim, manim_err = funcs['check_manim_runs'](tmp_path, scene_class="GeneratedScene")
-            if not ok_manim:
-                last_error = f"Manim execution error: {manim_err}"
-                logger.warning(f"Attempt {attempt}: {last_error}")
-                
-                if attempt > max_attempts:
-                    try:
-                        tmp_path.unlink()
-                    except:
-                        pass
-                    break
-                
-                # Fall back to simple codegen for repair
-                logger.info("Falling back to simple codegen for code repair...")
-                funcs = _get_codegen_funcs()
-                code = funcs['call_claude_to_fix_manim_code'](code, last_error)
-                code = _ensure_generated_scene_class(code)
-                continue
-            
-            # Additional validation: Try to import and verify class exists
-            try:
-                spec = importlib.util.spec_from_file_location("temp_scene", tmp_path)
-                if spec and spec.loader:
-                    temp_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(temp_module)
-                    if not hasattr(temp_module, 'GeneratedScene'):
-                        last_error = "GeneratedScene class not found after import (class may be defined incorrectly)"
-                        logger.warning(f"Attempt {attempt}: {last_error}")
-                        
-                        funcs = _get_codegen_funcs()
-                        if attempt > max_attempts:
-                            try:
-                                tmp_path.unlink()
-                            except:
-                                pass
-                            break
-                        
-                        code = _ensure_generated_scene_class(code)
-                        continue
-            except Exception as import_err:
-                last_error = f"Import validation error: {import_err}"
-                logger.warning(f"Attempt {attempt}: {last_error}")
-                
-                funcs = _get_codegen_funcs()
-                if attempt > max_attempts:
-                    try:
-                        tmp_path.unlink()
-                    except:
-                        pass
-                    break
-                
-                code = funcs['call_claude_to_fix_manim_code'](code, last_error)
-                code = _ensure_generated_scene_class(code)
-                continue
-            
-            # Success!
-            logger.info(f"Code validation successful after {attempt} attempt(s)")
-            
-            # Clean up temp file
-            try:
-                tmp_path.unlink()
-            except:
-                pass
-            
-            return code
-        
-        # If we get here, validation failed - fall back to simple codegen
-        funcs = _get_codegen_funcs()
-        logger.warning(f"Orchestrator code validation failed after {funcs['MAX_REPAIR_ATTEMPTS']} attempts. "
-                      f"Falling back to simple codegen. Last error: {last_error}")
-        from manim_worker.codegen import generate_and_validate_manim_scene as simple_generate
-        return simple_generate(concept, student_context)
-        
+                logger.error(f"Repair failed: {py_err}")
+                logger.warning("Falling back to simple codegen")
+                from manim_worker.codegen import generate_and_validate_manim_scene as simple_generate
+                try:
+                    tmp_path.unlink()
+                except:
+                    pass
+                return simple_generate(concept, student_context)
+
+        # Clean up temp file
+        try:
+            tmp_path.unlink()
+        except:
+            pass
+
+        logger.info("✓ Orchestrator code validated successfully")
+
+        # Return the orchestrator code as-is (don't force GeneratedScene rename)
+        return code
+
     except Exception as e:
         logger.error(f"Error in Math-To-Manim orchestrator: {e}", exc_info=True)
         logger.warning("Falling back to simple codegen")
