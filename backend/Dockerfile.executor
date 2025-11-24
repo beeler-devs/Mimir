@@ -1,0 +1,35 @@
+# Mimir Code Executor Docker Image
+# Contains compilers for C, C++, Java, and Rust
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install compilers and runtime environments
+RUN apt-get update && apt-get install -y \
+    # C/C++ compiler
+    gcc \
+    g++ \
+    # Java Development Kit
+    default-jdk \
+    # Rust compiler
+    rustc \
+    # Utilities
+    time \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN useradd -m -u 1000 -s /bin/bash executor
+
+# Create project directory
+RUN mkdir -p /project && chown executor:executor /project
+
+# Set working directory
+WORKDIR /project
+
+# Switch to non-root user
+USER executor
+
+# Default command (will be overridden)
+CMD ["/bin/bash"]
